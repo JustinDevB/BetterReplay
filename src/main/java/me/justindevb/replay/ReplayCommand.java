@@ -40,12 +40,21 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
         switch (args[0].toLowerCase()) {
             case "start" -> {
                 if (args.length < 3) {
-                    p.sendMessage("§cUsage: /replay start <name> <player1,player2,...> [durationSeconds]");
+                    p.sendMessage("§cUsage: /replay start <name> <player1 player2 ...> [durationSeconds]");
                     return true;
                 }
 
                 String sessionName = args[1];
-                String[] playerNames = args[2].split(",");
+                int duration = -1;
+
+                try {
+                    duration = Integer.parseInt(args[args.length - 1]);
+                } catch (NumberFormatException ignored) {}
+
+                int endIndex = (duration != -1 ? args.length - 1 : args.length);
+
+                String[] playerNames = new String[endIndex - 2];
+                System.arraycopy(args, 2, playerNames, 0, endIndex - 2);
 
                 List<Player> targets = new ArrayList<>();
                 for (String pn : playerNames) {
@@ -54,15 +63,6 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                         targets.add(target);
                     } else {
                         p.sendMessage("§cPlayer not found: " + pn);
-                    }
-                }
-
-                int duration = -1; // infinite by default
-                if (args.length >= 4) {
-                    try {
-                        duration = Integer.parseInt(args[3]);
-                    } catch (NumberFormatException e) {
-                        p.sendMessage("§cInvalid duration, using infinite.");
                     }
                 }
 
