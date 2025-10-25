@@ -25,4 +25,8 @@ public class ReplayRegistry {
         }
         return null;
     }
+
+    public static Set<ReplaySession> getActiveSessions() {
+        return activeSessions;
+    }
 }

@@ -20,7 +20,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
     public ReplayCommand(RecorderManager manager) {
         this.manager = manager;
-        this.storage = new ReplayStorage(Replay.getInstance());
+        this.storage = Replay.getInstance().getReplayStorage();
     }
 
     @Override
