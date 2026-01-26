@@ -17,9 +17,12 @@ import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
 import me.justindevb.replay.api.events.ReplayStartEvent;
 import me.justindevb.replay.api.events.ReplayStopEvent;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -29,8 +32,10 @@ import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import java.io.File;
@@ -44,12 +49,13 @@ public class ReplaySession implements Listener, PacketListener {
     private final Replay replay;
     private final Gson gson = new Gson();
 
+    private int replayTaskId = -1;
+
     private List<Map<String, Object>> timeline;
     private List<Integer> trackedEntityIds = new ArrayList<>();
     Map<UUID, RecordedEntity> recordedEntities = new HashMap<>();
     private int tick = 0;
     private boolean paused = false;
-    private final Set<Integer> controlSlots = Set.of(0, 1, 2);
     private ItemStack[] viewerInventory;
     private ItemStack[] viewerArmor;
     private ItemStack viewerOffHand;
@@ -93,6 +99,7 @@ public class ReplaySession implements Listener, PacketListener {
         new BukkitRunnable() {
             @Override
             public void run() {
+                replayTaskId = getTaskId();
                 if (tick >= timeline.size()) {
                     cancel();
                     stop();
@@ -145,6 +152,8 @@ public class ReplaySession implements Listener, PacketListener {
 
                 if (!paused)
                     tick++;
+
+                sendActionBar();
             }
         }.runTaskTimer(replay, 1L, 1L);
 
@@ -258,9 +267,17 @@ public class ReplaySession implements Listener, PacketListener {
     */
 
     public void stop() {
+        viewer.sendActionBar(Component.empty());
+
         Bukkit.getPluginManager().callEvent(new ReplayStopEvent(viewer, this));
         recordedEntities.values().forEach(RecordedEntity::destroy);
         recordedEntities.clear();
+
+        if (replayTaskId != -1) {
+            Bukkit.getScheduler().cancelTask(replayTaskId);
+            replayTaskId = -1;
+        }
+
         viewer.sendMessage("Replay finished");
 
         ReplayRegistry.remove(this);
@@ -363,35 +380,37 @@ public class ReplaySession implements Listener, PacketListener {
     }
 
     private void giveReplayControls(Player viewer) {
-        ItemStack[] items = new ItemStack[3];
 
-        // Create items in order
         ItemStack pauseButton = new ItemStack(Material.REDSTONE_BLOCK);
         ItemMeta pauseMeta = pauseButton.getItemMeta();
         pauseMeta.setDisplayName("§cPause / Play");
         pauseButton.setItemMeta(pauseMeta);
-        items[0] = pauseButton;
 
         ItemStack skipForward = new ItemStack(Material.LIME_CONCRETE);
         ItemMeta forwardMeta = skipForward.getItemMeta();
         forwardMeta.setDisplayName("§a+5 seconds");
         skipForward.setItemMeta(forwardMeta);
-        items[1] = skipForward;
 
         ItemStack skipBackward = new ItemStack(Material.YELLOW_CONCRETE);
         ItemMeta backwardMeta = skipBackward.getItemMeta();
         backwardMeta.setDisplayName("§e-5 seconds");
         skipBackward.setItemMeta(backwardMeta);
-        items[2] = skipBackward;
 
-        // Assign items to slots in order
-        int i = 0;
-        for (int slot : controlSlots) {
-            if (i >= items.length)
-                break;
-            viewer.getInventory().setItem(slot, items[i]);
-            i++;
-        }
+        ItemStack stopReplay = new ItemStack(Material.BARRIER);
+        ItemMeta stopMeta = stopReplay.getItemMeta();
+        stopMeta.setDisplayName("§4Exit Replay");
+        stopReplay.setItemMeta(stopMeta);
+
+        ItemStack playerMenu = new ItemStack(Material.PLAYER_HEAD);
+        ItemMeta menuMeta = playerMenu.getItemMeta();
+        menuMeta.setDisplayName("§bPlayers");
+        playerMenu.setItemMeta(menuMeta);
+
+        viewer.getInventory().setItem(0, pauseButton);
+        viewer.getInventory().setItem(1, skipForward);
+        viewer.getInventory().setItem(2, skipBackward);
+        viewer.getInventory().setItem(5, playerMenu);
+        viewer.getInventory().setItem(8, stopReplay);
     }
 
 
@@ -429,6 +448,7 @@ public class ReplaySession implements Listener, PacketListener {
             case "§cPause / Play" -> togglePause();
             case "§a+5 seconds" -> skipSeconds(5);
             case "§e-5 seconds" -> skipSeconds(-5);
+            case "§4Exit Replay" -> stop();
         }
 
         e.setCancelled(true); // Prevent any default use (placing blocks, etc.)
@@ -458,15 +478,39 @@ public class ReplaySession implements Listener, PacketListener {
 
         if(!isActive())
             return;
-        // Check if the clicked slot is one of the controls
-        if (controlSlots.contains(e.getSlot())) {
-            e.setCancelled(true);
-        }
+
 
         if (e.getView().getTitle().contains("'s Inventory")) {
             e.setCancelled(true);
         }
     }
+
+    @EventHandler
+    public void onPlayerMenuClick(InventoryClickEvent e) {
+        if (!e.getView().getTitle().equals("§8Recorded Players"))
+            return;
+
+        e.setCancelled(true);
+
+        if (!(e.getWhoClicked() instanceof Player player))
+            return;
+
+        ItemStack item = e.getCurrentItem();
+        if (item == null || !(item.getItemMeta() instanceof SkullMeta meta))
+            return;
+
+        OfflinePlayer target = meta.getOwningPlayer();
+        if (target == null)
+            return;
+
+
+        RecordedEntity recorded = recordedEntities.get(target.getUniqueId());
+        if (recorded == null)
+            return;
+
+        player.teleport(recorded.getCurrentLocation());
+    }
+
 
     @EventHandler
     public void onInventoryDrag(InventoryDragEvent e) {
@@ -623,6 +667,59 @@ public class ReplaySession implements Listener, PacketListener {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, spawn);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, meta);
     }
+
+    private void openPlayerMenu() {
+        Inventory inv = Bukkit.createInventory(
+                null,
+                27,
+                "§8Recorded Players"
+        );
+
+        for (RecordedEntity entity : recordedEntities.values()) {
+            if (!(entity instanceof RecordedPlayer rp))
+                continue;
+
+            ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+            SkullMeta meta = (SkullMeta) head.getItemMeta();
+            meta.setOwningPlayer(Bukkit.getOfflinePlayer(rp.getUuid()));
+            meta.setDisplayName("§e" + rp.getName());
+            head.setItemMeta(meta);
+
+            inv.addItem(head);
+        }
+
+        viewer.openInventory(inv);
+    }
+
+    private String formatTime(int ticks) {
+        int seconds = ticks / 20;
+        int minutes = seconds / 60;
+        seconds %= 60;
+        return String.format("%02d:%02d", minutes, seconds);
+    }
+
+    private void sendActionBar() {
+        int totalTicks = timeline.size();
+
+        String current = formatTime(tick);
+        String total = formatTime(totalTicks);
+        int percent = totalTicks > 0 ? (tick * 100 / totalTicks) : 0;
+
+        Component bar;
+
+        if (paused) {
+            bar = Component.text("⏸ Replay paused: ", NamedTextColor.YELLOW)
+                    .append(Component.text(current + " / " + total, NamedTextColor.GRAY));
+        } else {
+            bar = Component.text("▶ Replay: ", NamedTextColor.GREEN)
+                    .append(Component.text(current + " / " + total, NamedTextColor.GRAY))
+                    .append(Component.text(" (" + percent + "%)", NamedTextColor.DARK_GRAY));
+        }
+
+        viewer.sendActionBar(bar);
+    }
+
+
 
 }
 

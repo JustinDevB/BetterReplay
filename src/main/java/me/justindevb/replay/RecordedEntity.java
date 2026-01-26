@@ -18,6 +18,7 @@ public abstract class RecordedEntity {
     protected final EntityType type;
     protected final Player viewer;
     protected int fakeEntityId;
+    protected Location currentLocation;
 
     protected RecordedEntity(UUID uuid, EntityType type, Player viewer) {
         this.uuid = uuid;
@@ -36,8 +37,8 @@ public abstract class RecordedEntity {
                 new WrapperPlayServerDestroyEntities(new int[]{fakeEntityId}));
 
         if (this instanceof RecordedPlayer rp) {
-            if (!viewer.getUniqueId().equals(rp.uuid)) {
-               WrapperPlayServerPlayerInfoRemove remove =  new WrapperPlayServerPlayerInfoRemove(Collections.singletonList(rp.uuid));
+            if (!viewer.getUniqueId().equals(rp.getUuid())) {
+               WrapperPlayServerPlayerInfoRemove remove =  new WrapperPlayServerPlayerInfoRemove(Collections.singletonList(rp.getUuid()));
                PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, remove);
             }
         }
@@ -57,5 +58,7 @@ public abstract class RecordedEntity {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, packet);
     }
 
-
+    public Location getCurrentLocation() {
+        return currentLocation;
+    }
 }

@@ -32,6 +32,8 @@ public class RecordedPlayer extends RecordedEntity {
     private byte metadataFlags = 0x00;
 
     private boolean spawned = false;
+    private final UUID uuid;
+
 
     private Map<String, Object> currentInventory;
 
@@ -39,6 +41,7 @@ public class RecordedPlayer extends RecordedEntity {
     protected RecordedPlayer(UUID uuid, String name, EntityType type, Player viewer) {
         super(uuid, type, viewer);
         this.name = name;
+        this.uuid = uuid;
         this.currentInventory = new HashMap<>();
     }
 
@@ -82,6 +85,15 @@ public class RecordedPlayer extends RecordedEntity {
         byte headYaw = (byte) ((loc.getYaw() * 256f) / 360f);
         WrapperPlayServerEntityHeadLook headLook = new WrapperPlayServerEntityHeadLook(fakeEntityId, headYaw);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, headLook);
+        super.currentLocation = loc;
+    }
+
+    public UUID getUuid() {
+        return uuid;
+    }
+
+    public String getName() {
+        return name;
     }
 
 
