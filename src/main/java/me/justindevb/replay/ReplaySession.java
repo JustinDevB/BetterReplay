@@ -487,6 +487,13 @@ public class ReplaySession implements Listener, PacketListener {
             case "mob_spawn" -> {
                 spawnFakeMob(entity, event);
             }
+            case "player_quit" -> {
+                if (entity instanceof RecordedPlayer rp) {
+                    entity.destroy();
+                    recordedEntities.remove(rp.getUuid());
+                    trackedEntityIds.remove(entity.getFakeEntityId());
+                }
+            }
         }
     }
 
@@ -651,10 +658,8 @@ public class ReplaySession implements Listener, PacketListener {
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
-        if (!event.getPlayer().equals(viewer))
-            return;
-
-        stop();
+        if (event.getPlayer().equals(viewer))
+            stop();
     }
 
 

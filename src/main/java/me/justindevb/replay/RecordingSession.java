@@ -336,6 +336,20 @@ public class RecordingSession implements Listener, PacketListener {
         timeline.add(event);
     }
 
+    @EventHandler
+    public void onQuit(PlayerQuitEvent e) {
+        Player p = e.getPlayer();
+
+        if (trackedPlayers.contains(p.getUniqueId())) {
+            Map<String, Object> event = new HashMap<>();
+            event.put("tick", tick);
+            event.put("type", "player_quit");
+            event.put("uuid", p.getUniqueId().toString());
+
+            timeline.add(event);
+        }
+    }
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void swapItem(PlayerSwapHandItemsEvent e) {
         Player p = (Player) e.getPlayer();
