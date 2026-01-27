@@ -58,11 +58,18 @@ public class Replay extends JavaPlugin {
     @Override
     public void onDisable() {
         recorderManager.shutdown();
+
+        for (ReplaySession session : ReplayRegistry.getActiveSessions()) {
+            if (session != null)
+                session.stop();
+        }
+
         PacketEvents.getAPI().terminate();
         ReplayAPI.shutdown();
 
         if (connectionManager != null)
             connectionManager.shutdown();
+
 
 
         instance = null;

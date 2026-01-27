@@ -26,12 +26,14 @@ import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -282,6 +284,8 @@ public class ReplaySession implements Listener, PacketListener {
 
         ReplayRegistry.remove(this);
 
+        HandlerList.unregisterAll(this);
+
         restoreInventory();
 
     }
@@ -406,11 +410,13 @@ public class ReplaySession implements Listener, PacketListener {
         menuMeta.setDisplayName("§bPlayers");
         playerMenu.setItemMeta(menuMeta);
 
-        viewer.getInventory().setItem(0, pauseButton);
-        viewer.getInventory().setItem(1, skipForward);
-        viewer.getInventory().setItem(2, skipBackward);
-        viewer.getInventory().setItem(5, playerMenu);
+        viewer.getInventory().setItem(4, pauseButton);
+        viewer.getInventory().setItem(5, skipForward);
+        viewer.getInventory().setItem(3, skipBackward);
+        viewer.getInventory().setItem(6, playerMenu);
         viewer.getInventory().setItem(8, stopReplay);
+
+        viewer.getInventory().setHeldItemSlot(4);
     }
 
 
@@ -436,7 +442,7 @@ public class ReplaySession implements Listener, PacketListener {
     public void onPlayerInteract(PlayerInteractEvent e) {
         Player player = e.getPlayer();
         if (!player.equals(this.viewer))
-            return; // Only for the replay viewer
+            return;
 
         ItemStack handItem = e.getItem();
         if (handItem == null || !handItem.hasItemMeta())
@@ -449,6 +455,7 @@ public class ReplaySession implements Listener, PacketListener {
             case "§a+5 seconds" -> skipSeconds(5);
             case "§e-5 seconds" -> skipSeconds(-5);
             case "§4Exit Replay" -> stop();
+            case "§bPlayers" -> openPlayerMenu();
         }
 
         e.setCancelled(true); // Prevent any default use (placing blocks, etc.)
@@ -479,10 +486,8 @@ public class ReplaySession implements Listener, PacketListener {
         if(!isActive())
             return;
 
+        e.setCancelled(true);
 
-        if (e.getView().getTitle().contains("'s Inventory")) {
-            e.setCancelled(true);
-        }
     }
 
     @EventHandler
@@ -511,12 +516,20 @@ public class ReplaySession implements Listener, PacketListener {
         player.teleport(recorded.getCurrentLocation());
     }
 
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        if (!event.getPlayer().equals(viewer))
+            return;
+
+        stop();
+    }
+
 
     @EventHandler
     public void onInventoryDrag(InventoryDragEvent e) {
         if (e.getWhoClicked() != viewer)
             return;
-        if (isActive())
+        if (!isActive())
             return;
         if (!e.getView().getTitle().contains("'s Inventory"))
             return;
@@ -528,7 +541,7 @@ public class ReplaySession implements Listener, PacketListener {
     public void onPlayerDropItem(PlayerDropItemEvent e) {
         Player player = e.getPlayer();
 
-        if (isActive())
+        if (!isActive())
             return;
 
         if (!player.equals(viewer))
