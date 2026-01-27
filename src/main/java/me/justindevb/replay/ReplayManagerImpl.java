@@ -4,6 +4,7 @@ import me.justindevb.replay.api.ReplayManager;
 import me.justindevb.replay.util.ReplayObject;
 import me.justindevb.replay.util.storage.FileReplayStorage;
 import me.justindevb.replay.util.storage.ReplayStorage;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.io.File;
@@ -59,6 +60,60 @@ public class ReplayManagerImpl implements ReplayManager {
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
+        // Check if the replay exists first
+        return replay.getReplayStorage().replayExists(replayName)
+                .thenCompose(exists -> {
+                    if (!exists) {
+                        runSync(() -> viewer.sendMessage("§cReplay not found: " + replayName));
+                        return CompletableFuture.completedFuture(Optional.<ReplaySession>empty());
+                    }
+
+                    // Replay exists, load the timeline
+                    return replay.getReplayStorage().loadReplay(replayName)
+                            .thenApply(rawTimeline -> {
+                                if (rawTimeline == null || rawTimeline.isEmpty()) {
+                                    runSync(() -> viewer.sendMessage("§cReplay is empty or corrupted: " + replayName));
+                                    return Optional.<ReplaySession>empty();
+                                }
+
+                                List<Map<String, Object>> timeline = castTimeline(rawTimeline);
+                                ReplaySession session = new ReplaySession(timeline, viewer, replay);
+
+                                runSync(session::start);
+
+                                return Optional.of(session);
+                            });
+                })
+                .exceptionally(ex -> {
+                    ex.printStackTrace();
+                    runSync(() -> viewer.sendMessage("§cFailed to start replay: " + replayName));
+                    return Optional.empty();
+                });
+    }
+
+    // Helper to cast List<?> to List<Map<String, Object>>
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> castTimeline(List<?> raw) {
+        return (List<Map<String, Object>>) (List<?>) raw;
+    }
+
+    // Helper to run code on the main thread
+    private void runSync(Runnable task) {
+        if (Bukkit.isPrimaryThread()) {
+            task.run();
+        } else {
+            Bukkit.getScheduler().runTask(replay, task);
+        }
+    }
+
+
+
+   /* @Override
+    public CompletableFuture<Optional<ReplaySession>> startReplay(String replayName, Player viewer) {
+        if (viewer == null || replayName == null || replayName.isEmpty()) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
+
         // Load the replay timeline from storage
         return replay.getReplayStorage().loadReplay(replayName)
                 .thenApply(rawTimeline -> {
@@ -83,7 +138,7 @@ public class ReplayManagerImpl implements ReplayManager {
                     return Optional.empty();
                 });
     }
-
+*/
 
 
    /* @Override

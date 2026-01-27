@@ -27,13 +27,11 @@ import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
 
 import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 public class RecordingSession implements Listener, PacketListener {
 
+    private final Replay replay;
     private final String name;
     private final File file;
     private final Gson gson;
@@ -52,6 +50,7 @@ public class RecordingSession implements Listener, PacketListener {
         this.trackedPlayers = new HashSet<>();
         for (Player p : players) this.trackedPlayers.add(p.getUniqueId());
         this.durationTicks = durationSeconds > 0 ? durationSeconds * 20 : -1;
+        this.replay = Replay.getInstance();
     }
 
     public void start() {
@@ -61,7 +60,7 @@ public class RecordingSession implements Listener, PacketListener {
                 + " player(s), duration=" + (durationTicks == -1 ? "∞" : durationTicks / 20 + "s"));
 
         // Register Bukkit listeners for this session
-        Bukkit.getPluginManager().registerEvents(this, Replay.getInstance());
+        Bukkit.getPluginManager().registerEvents(this, replay);
 
         captureInitialInventory();
     }
@@ -291,14 +290,27 @@ public class RecordingSession implements Listener, PacketListener {
 
         trackedPlayers.clear();
 
-        if (save) {
-            ReplayObject replayObject = new ReplayObject(name, timeline, Replay.getInstance().getReplayStorage());
-            replayObject.save().thenRun(() ->
-                    Bukkit.getLogger().info("Recording " + name + " saved!")).exceptionally(ex -> {
-                        ex.printStackTrace();
-                        return null;
-            });
-        }
+        if (!save) return;
+
+        ReplayObject replayObject = new ReplayObject(
+                name,
+                timeline,
+                replay.getReplayStorage()
+        );
+
+        replayObject.save()
+                .thenCompose(v ->
+                        replay.getReplayStorage().listReplays()
+                )
+                .thenAccept(replays -> {
+                    replay.getReplayCache().setReplays(replays);
+                    replay.getLogger().info("Recording " + name + " saved!");
+                })
+                .exceptionally(ex -> {
+                    ex.printStackTrace();
+                    return null;
+                });
+
 
     /*    if (save) {
             try (FileWriter writer = new FileWriter(file)) {

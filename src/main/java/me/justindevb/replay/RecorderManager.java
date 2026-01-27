@@ -73,6 +73,7 @@ public class RecorderManager {
         return activeSessions;
     }
 
+    @Deprecated
     public void replaySession(String name, Player viewer) {
         replay.getReplayStorage().loadReplay(name)
                 .thenAccept(rawTimeline -> {

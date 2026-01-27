@@ -22,6 +22,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
      //   this.storage = Replay.getInstance().getReplayStorage();
     }
 
+    //TODO: Refactor this mess to strictly utilize the API instead of plugin internals
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player p)) {
@@ -30,9 +31,11 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
         }
 
         if (args.length == 0) {
-            p.sendMessage("/replay start <name>");
-            p.sendMessage("/replay stop");
+            p.sendMessage("/replay start <name> <player> [durationSeconds]");
+            p.sendMessage("/replay stop <name>");
             p.sendMessage("/replay play <name>");
+            p.sendMessage("/replay delete <name>");
+            p.sendMessage("/replay list");
             return true;
         }
 
@@ -105,7 +108,13 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     p.sendMessage("§c/replay play <name>");
                     return true;
                 }
-                manager.replaySession(args[1], p);
+                //manager.replaySession(args[1], p);
+
+                Replay.getInstance()
+                        .getReplayManagerImpl()
+                        .startReplay(args[1], p);
+
+                return true;
             }
 
             case "list" -> {
@@ -175,14 +184,8 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                */
 
             }
-
             default -> sender.sendMessage("Unknown command");
-
-
-
-
-
-          /*  case "test" -> {
+            /*  case "test" -> {
                 new SpawnFakePlayer(p.getUniqueId(), p.getName(), p.getLocation(), p);
 
                 return true;
@@ -194,41 +197,60 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
+
         if (args.length == 1) {
             List<String> completions = new ArrayList<>();
 
             if (sender.hasPermission("replay.list")) completions.add("list");
             if (sender.hasPermission("replay.delete")) completions.add("delete");
             if (sender.hasPermission("replay.play")) completions.add("play");
+            if (sender.hasPermission("replay.start")) completions.add("start");
 
             return completions.stream()
                     .filter(s -> s.startsWith(args[0].toLowerCase()))
                     .toList();
         }
-        /*else if (args.length == 2 && args[0].equalsIgnoreCase("delete")) {
-            if (!sender.hasPermission("replay.delete")) return Collections.emptyList();
-            return storage.listReplays().stream()
-                    .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
-                    .toList();
-        }
-        else if (args.length == 2 && args[0].equalsIgnoreCase("play")) {
-            if (!sender.hasPermission("replay.play")) return Collections.emptyList();
-            return storage.listReplays().stream()
-                    .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
-                    .toList();
 
-        }
-         */
         if (args.length == 2 && (args[0].equalsIgnoreCase("delete") || args[0].equalsIgnoreCase("play"))) {
-            if (!sender.hasPermission("replay." + args[0].toLowerCase())) return Collections.emptyList();
+            if (!sender.hasPermission("replay." + args[0].toLowerCase()))
+                return Collections.emptyList();
 
-            List<String> cachedReplays = Replay.getInstance().getReplayCache().getReplays();
+            List<String> cachedReplays = Replay.getInstance()
+                    .getReplayCache()
+                    .getReplays();
 
             return cachedReplays.stream()
                     .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
                     .toList();
         }
 
+        if (args.length == 2 && args[0].equalsIgnoreCase("stop")) {
+            if (!sender.hasPermission("replay.stop"))
+                return Collections.emptyList();
+
+            return Replay.getInstance()
+                    .getRecorderManager()
+                    .getActiveSessions()
+                    .keySet()
+                    .stream()
+                    .filter(name -> name.toLowerCase().startsWith(args[1].toLowerCase()))
+                    .toList();
+        }
+
+
+        if (args.length == 2 && args[0].equalsIgnoreCase("start")) {
+            return Collections.emptyList();
+        }
+
+        if (args.length == 3 && args[0].equalsIgnoreCase("start")) {
+            if (!sender.hasPermission("replay.start"))
+                return Collections.emptyList();
+
+            return Bukkit.getOnlinePlayers().stream()
+                    .map(Player::getName)
+                    .filter(name -> name.toLowerCase().startsWith(args[2].toLowerCase()))
+                    .toList();
+        }
 
         return Collections.emptyList();
     }

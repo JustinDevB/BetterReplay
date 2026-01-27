@@ -23,6 +23,7 @@ public class Replay extends JavaPlugin {
   //  private FileReplayStorage fileReplayStorage;
     private MySQLConnectionManager connectionManager;
     private ReplayCache replayCache;
+    private ReplayManagerImpl manager;
 
     @Override
     public void onLoad() {
@@ -50,7 +51,7 @@ public class Replay extends JavaPlugin {
         }
 
         //Initialize API
-        ReplayAPI.init(new ReplayManagerImpl(this, recorderManager));
+        ReplayAPI.init(manager = new ReplayManagerImpl(this, recorderManager));
 
         initStorage();
     }
@@ -136,5 +137,9 @@ public class Replay extends JavaPlugin {
 
     public ReplayCache getReplayCache() {
         return replayCache;
+    }
+
+    public ReplayManagerImpl getReplayManagerImpl() {
+        return manager;
     }
 }
