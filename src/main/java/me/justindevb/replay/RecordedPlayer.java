@@ -48,8 +48,8 @@ public class RecordedPlayer extends RecordedEntity {
     @Override
     public void spawn(Location location) {
         // Use your existing helper that creates the fake player and returns its entity id
-        SpawnFakePlayer fakePlayer = new SpawnFakePlayer(uuid, name, location, viewer);
-        this.fakeEntityId = fakePlayer.getEntityId();
+        SpawnFakePlayer fakePlayer = new SpawnFakePlayer(uuid, name, location, viewer, super.fakeEntityId);
+        //this.fakeEntityId = fakePlayer.getEntityId();
         this.spawned = true;
 
         // Send initial metadata so the entity has correct flags on spawn

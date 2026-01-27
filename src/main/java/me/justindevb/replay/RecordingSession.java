@@ -36,6 +36,7 @@ public class RecordingSession implements Listener, PacketListener {
     private final File file;
     private final Gson gson;
     private final Set<UUID> trackedPlayers;
+    private final Map<UUID, EntityType> trackedEntities = new HashMap<>();
     private final List<Map<String, Object>> timeline = new ArrayList<>();
 
     private int tick = 0;
@@ -94,6 +95,25 @@ public class RecordingSession implements Listener, PacketListener {
             moveEvent.put("pitch", loc.getPitch());
             timeline.add(moveEvent);
         }
+
+        for (Map.Entry<UUID, EntityType> entry : trackedEntities.entrySet()) {
+            UUID uuid = entry.getKey();
+            Entity e = Bukkit.getEntity(uuid);
+            if (e == null || e.isDead()) continue;
+
+            Map<String, Object> moveEvent = new HashMap<>();
+            moveEvent.put("tick", tick);
+            moveEvent.put("type", "entity_move");
+            moveEvent.put("uuid", uuid.toString());
+            moveEvent.put("etype", e.getType().name());
+            moveEvent.put("x", e.getLocation().getX());
+            moveEvent.put("y", e.getLocation().getY());
+            moveEvent.put("z", e.getLocation().getZ());
+            moveEvent.put("yaw", e.getLocation().getYaw());
+            moveEvent.put("pitch", e.getLocation().getPitch());
+            timeline.add(moveEvent);
+        }
+
         //TODO: For when I work on this next. Replays are back to showing a player moving, and it's logging sneak events, but not showing them in the replay. That is what I need to work on next. Don't focus on entityIds
 
         tick++;
@@ -146,6 +166,8 @@ public class RecordingSession implements Listener, PacketListener {
     }
 
 
+
+
     @EventHandler(priority = EventPriority.MONITOR)
     public void onBlockPlace(BlockPlaceEvent e) {
         if (!trackedPlayers.contains(e.getPlayer().getUniqueId())) return;
@@ -165,6 +187,8 @@ public class RecordingSession implements Listener, PacketListener {
         if (!(e.getDamager() instanceof Player p)) return;
         if (!trackedPlayers.contains(p.getUniqueId())) return;
 
+        Entity entity = e.getEntity();
+
         Map<String, Object> event = new HashMap<>();
         event.put("tick", tick);
         event.put("type", "attack");
@@ -172,7 +196,25 @@ public class RecordingSession implements Listener, PacketListener {
         if (e.getEntity() instanceof Player target) {
             event.put("targetUuid", target.getUniqueId().toString());
         }
+
+        event.put("entityUuid", entity.getUniqueId().toString());
+        event.put("entityType", entity.getType().name());
         timeline.add(event);
+
+        if (!(entity instanceof Player) && !trackedEntities.containsKey(entity.getUniqueId())) {
+            trackedEntities.put(entity.getUniqueId(), entity.getType());
+
+            // Add initial spawn for the mob
+            Map<String, Object> spawnEvent = new HashMap<>();
+            spawnEvent.put("tick", tick);
+            spawnEvent.put("type", "entity_spawn");
+            spawnEvent.put("uuid", entity.getUniqueId().toString());
+            spawnEvent.put("etype", entity.getType().name());
+            spawnEvent.put("x", entity.getLocation().getX());
+            spawnEvent.put("y", entity.getLocation().getY());
+            spawnEvent.put("z", entity.getLocation().getZ());
+            timeline.add(spawnEvent);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -224,22 +266,46 @@ public class RecordingSession implements Listener, PacketListener {
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
+    public void onEntitySpawn(org.bukkit.event.entity.EntitySpawnEvent e) {
+        if (!isNearbyTrackedPlayer(e.getEntity().getLocation())) return;
+
+        UUID uuid = e.getEntity().getUniqueId();
+        if (trackedEntities.containsKey(uuid)) return;
+
+        trackedEntities.put(uuid, e.getEntityType());
+
+        Map<String, Object> spawnEvent = new HashMap<>();
+        spawnEvent.put("tick", tick);
+        spawnEvent.put("type", "entity_spawn");
+        spawnEvent.put("uuid", uuid.toString());
+        spawnEvent.put("etype", e.getEntityType().name());
+        spawnEvent.put("x", e.getEntity().getLocation().getX());
+        spawnEvent.put("y", e.getEntity().getLocation().getY());
+        spawnEvent.put("z", e.getEntity().getLocation().getZ());
+        timeline.add(spawnEvent);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
     public void onEntityDeath(EntityDeathEvent e) {
         Entity entity = e.getEntity();
 
         // Only record entities we are tracking
         UUID uuid = entity.getUniqueId();
-        if (!isTrackedPlayer(uuid)) return;
+        if (!trackedEntities.containsKey(uuid)) return;
 
         Map<String, Object> event = new HashMap<>();
         event.put("tick", tick);
         event.put("type", "entity_death");
         event.put("uuid", uuid.toString());
+        event.put("etype", e.getEntityType().name());
         event.put("x", entity.getLocation().getX());
         event.put("y", entity.getLocation().getY());
         event.put("z", entity.getLocation().getZ());
 
         timeline.add(event);
+
+        if (!(e instanceof Player))
+            trackedEntities.remove(uuid);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -452,6 +518,14 @@ public class RecordingSession implements Listener, PacketListener {
         return map;
     }
 
+    private boolean isNearbyTrackedPlayer(Location loc) {
+        for (UUID uuid : trackedPlayers) {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p == null || !p.isOnline()) continue;
+            if (p.getLocation().distanceSquared(loc) < 50*50) return true; // 50-block radius
+        }
+        return false;
+    }
 
 
 }

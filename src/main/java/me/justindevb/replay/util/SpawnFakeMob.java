@@ -1,26 +1,27 @@
 package me.justindevb.replay.util;
 
 import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.protocol.entity.type.EntityType;
 import com.github.retrooper.packetevents.util.Vector3d;
 import com.github.retrooper.packetevents.wrapper.play.server.*;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
 import org.bukkit.Location;
-import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
 import java.util.UUID;
 
 public class SpawnFakeMob {
-    private final int entityId;
+   private final int entityId;
     private final UUID uuid;
     private final EntityType type;
     private final Location spawnLocation;
     private final Player viewer;
 
-    public SpawnFakeMob(EntityType type, Location spawnLocation, Player viewer) {
-        this.entityId = SpigotReflectionUtil.generateEntityId();
+    public SpawnFakeMob(EntityType type, Location spawnLocation, Player viewer, int entityId) {
+      //  this.entityId = SpigotReflectionUtil.generateEntityId();
+        this.entityId = entityId;
         this.uuid = UUID.randomUUID();
         this.type = type;
         this.spawnLocation = spawnLocation;
@@ -34,7 +35,8 @@ public class SpawnFakeMob {
         WrapperPlayServerSpawnEntity spawnEntity = new WrapperPlayServerSpawnEntity(
                 entityId,
                 UUID.randomUUID(),
-                EntityTypes.getByName(type.toString()),
+               // EntityTypes.getByName(type.toString()),
+                type,
                 SpigotConversionUtil.fromBukkitLocation(spawnLocation),
                 spawnLocation.getYaw(),
                 0,

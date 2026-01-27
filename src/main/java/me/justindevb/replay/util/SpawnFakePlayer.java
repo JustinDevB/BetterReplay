@@ -31,12 +31,13 @@ public class SpawnFakePlayer {
 
     private final UUID fakeUuid;
 
-    public SpawnFakePlayer(UUID profileUuid, String name, Location spawnLocation, Player viewer) {
-        this.entityId = SpigotReflectionUtil.generateEntityId();
+    public SpawnFakePlayer(UUID profileUuid, String name, Location spawnLocation, Player viewer, int entityId) {
+      //  this.entityId = SpigotReflectionUtil.generateEntityId();
         this.profileUuid = profileUuid;
         this.name = name;
         this.spawnLocation = spawnLocation;
         this.viewer = viewer;
+        this.entityId = entityId;
 
         this.fakeUuid = UUID.randomUUID();
 
