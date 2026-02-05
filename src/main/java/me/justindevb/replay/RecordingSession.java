@@ -10,6 +10,7 @@ import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import me.justindevb.replay.util.ReplayObject;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
@@ -39,6 +40,7 @@ public class RecordingSession implements Listener, PacketListener {
     private final Map<UUID, EntityType> trackedEntities = new HashMap<>();
     private final List<Map<String, Object>> timeline = new ArrayList<>();
 
+    private static final double NEARBY_RADIUS_SQUARED = 32.0 * 32.0;
     private int tick = 0;
     private int durationTicks = -1;
     private boolean stopped = false;
@@ -60,7 +62,6 @@ public class RecordingSession implements Listener, PacketListener {
         Bukkit.getLogger().info("Started recording: " + name + " for " + trackedPlayers.size()
                 + " player(s), duration=" + (durationTicks == -1 ? "∞" : durationTicks / 20 + "s"));
 
-        // Register Bukkit listeners for this session
         Bukkit.getPluginManager().registerEvents(this, replay);
 
         captureInitialInventory();
@@ -70,13 +71,11 @@ public class RecordingSession implements Listener, PacketListener {
     public void tick() {
         if (stopped) return;
 
-        // Stop automatically after duration
         if (durationTicks != -1 && tick >= durationTicks) {
             stop(true);
             return;
         }
 
-        // Capture player positions each tick
         for (UUID uuid : trackedPlayers) {
             Player p = Bukkit.getPlayer(uuid);
             if (p == null || !p.isOnline()) continue;
@@ -93,6 +92,9 @@ public class RecordingSession implements Listener, PacketListener {
             moveEvent.put("z", loc.getZ());
             moveEvent.put("yaw", loc.getYaw());
             moveEvent.put("pitch", loc.getPitch());
+
+            moveEvent.put("pose", p.getPose().name());
+
             timeline.add(moveEvent);
         }
 
@@ -324,14 +326,20 @@ public class RecordingSession implements Listener, PacketListener {
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onHeldItemSwap(PlayerItemHeldEvent e) {
-        Player p = (Player) e.getPlayer();
+        Player p = e.getPlayer();
         if (!trackedPlayers.contains(p.getUniqueId())) return;
 
+        UUID uuid = p.getUniqueId();
         Map<String, Object> event = new HashMap<>();
         event.put("tick", tick);
         event.put("type", "inventory_update");
-        event.put("uuid", p.getUniqueId().toString());
-        event.putAll(captureInventory(p));
+        event.put("uuid", uuid.toString());
+
+        ItemStack mainHand = p.getInventory().getItem(e.getNewSlot());
+        ItemStack offHand = p.getInventory().getItemInOffHand();
+
+        event.put("mainHand", serializeItem(mainHand));
+        event.put("offHand", serializeItem(offHand));
 
         timeline.add(event);
     }
@@ -347,6 +355,7 @@ public class RecordingSession implements Listener, PacketListener {
             event.put("uuid", p.getUniqueId().toString());
 
             timeline.add(event);
+            trackedPlayers.remove(p.getUniqueId());
         }
     }
 
@@ -450,7 +459,6 @@ public class RecordingSession implements Listener, PacketListener {
 
 
 
-            // Only care if the entity is one of our tracked players
             if (!isTrackedPlayer(breaker.getUniqueId())) return;
 
             int stage = packet.getDestroyStage();
@@ -481,26 +489,22 @@ public class RecordingSession implements Listener, PacketListener {
     private Map<String, Object> captureInventory(Player p) {
         Map<String, Object> invSnapshot = new HashMap<>();
 
-        // Main and offhand
         invSnapshot.put("mainHand", serializeItem(p.getInventory().getItemInMainHand()));
         invSnapshot.put("offHand", serializeItem(p.getInventory().getItemInOffHand()));
 
-        // Armor
-        invSnapshot.put("armor", List.of(
-                serializeItem(p.getInventory().getBoots()),
-                serializeItem(p.getInventory().getLeggings()),
-                serializeItem(p.getInventory().getChestplate()),
-                serializeItem(p.getInventory().getHelmet())
-        ));
+        List<Map<String, Object>> armor = new ArrayList<>(4);
+        armor.add(serializeItem(p.getInventory().getBoots()));
+        armor.add(serializeItem(p.getInventory().getLeggings()));
+        armor.add(serializeItem(p.getInventory().getChestplate()));
+        armor.add(serializeItem(p.getInventory().getHelmet()));
+        invSnapshot.put("armor", armor);
 
-        // Full inventory slots
         List<Map<String, Object>> items = new ArrayList<>();
         for (ItemStack item : p.getInventory().getContents()) {
             items.add(serializeItem(item));
         }
         invSnapshot.put("contents", items);
 
-        // Add to timeline
         Map<String, Object> event = new HashMap<>();
         event.put("tick", tick);
         event.put("type", "inventory_update");
@@ -532,12 +536,24 @@ public class RecordingSession implements Listener, PacketListener {
         return map;
     }
 
-    private boolean isNearbyTrackedPlayer(Location loc) {
-        for (UUID uuid : trackedPlayers) {
-            Player p = Bukkit.getPlayer(uuid);
-            if (p == null || !p.isOnline()) continue;
-            if (p.getLocation().distanceSquared(loc) < 50*50) return true; // 50-block radius
+    private boolean isNearbyTrackedPlayer(Location spawnLoc) {
+        if (spawnLoc == null || spawnLoc.getWorld() == null) {
+            return false;
         }
+
+        World spawnWorld = spawnLoc.getWorld();
+
+        for (UUID uuid : Set.copyOf(trackedPlayers)) {
+            Player tracked = Bukkit.getPlayer(uuid);
+            if (tracked == null) continue;
+
+            if (tracked.getWorld() != spawnWorld) continue;
+
+            if (tracked.getLocation().distanceSquared(spawnLoc) <= NEARBY_RADIUS_SQUARED) {
+                return true;
+            }
+        }
+
         return false;
     }
 

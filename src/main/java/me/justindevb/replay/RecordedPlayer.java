@@ -9,17 +9,15 @@ import com.github.retrooper.packetevents.protocol.player.EquipmentSlot;
 import com.github.retrooper.packetevents.wrapper.play.server.*;
 import com.github.retrooper.packetevents.util.Vector3i;
 import io.github.retrooper.packetevents.util.SpigotConversionUtil;
-import me.justindevb.replay.util.Pair;
 import me.justindevb.replay.util.SpawnFakePlayer;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
-import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.entity.Pose;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.*;
@@ -34,6 +32,15 @@ public class RecordedPlayer extends RecordedEntity {
     private boolean spawned = false;
     private final UUID uuid;
 
+    private ItemStack lastMainHand = null;
+    private ItemStack lastOffHand = null;
+    private final ItemStack[] lastArmor = new ItemStack[] {
+            new ItemStack(Material.AIR),
+            new ItemStack(Material.AIR),
+            new ItemStack(Material.AIR),
+            new ItemStack(Material.AIR)
+    };
+
 
     private Map<String, Object> currentInventory;
 
@@ -47,18 +54,14 @@ public class RecordedPlayer extends RecordedEntity {
 
     @Override
     public void spawn(Location location) {
-        // Use your existing helper that creates the fake player and returns its entity id
         SpawnFakePlayer fakePlayer = new SpawnFakePlayer(uuid, name, location, viewer, super.fakeEntityId);
-        //this.fakeEntityId = fakePlayer.getEntityId();
         this.spawned = true;
 
-        // Send initial metadata so the entity has correct flags on spawn
         Bukkit.getScheduler().runTaskLater(Replay.getInstance(), this::sendMetadata, 1L);
 
 
     }
 
-    // send current metadataFlags to viewer
     private void sendMetadata() {
         if (!spawned) return;
         EntityData data = new EntityData(0, EntityDataTypes.BYTE, metadataFlags);
@@ -71,9 +74,18 @@ public class RecordedPlayer extends RecordedEntity {
         }
     }
 
+    public void setPose(Pose pose) {
+        EntityData poseData = new EntityData(6, EntityDataTypes.ENTITY_POSE, EntityPose.valueOf(pose.name()));
+        WrapperPlayServerEntityMetadata metadata = new WrapperPlayServerEntityMetadata(
+                fakeEntityId,
+                Collections.singletonList(poseData)
+        );
+
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, metadata);
+    }
+
     @Override
     public void moveTo(Location loc) {
-        // Teleport/move packet (position + rotation)
         WrapperPlayServerEntityTeleport tp = new WrapperPlayServerEntityTeleport(
                 fakeEntityId,
                 SpigotConversionUtil.fromBukkitLocation(loc),
@@ -81,7 +93,6 @@ public class RecordedPlayer extends RecordedEntity {
         );
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, tp);
 
-        // Head look packet so the head follows yaw (client expects separate head packet)
         byte headYaw = (byte) ((loc.getYaw() * 256f) / 360f);
         WrapperPlayServerEntityHeadLook headLook = new WrapperPlayServerEntityHeadLook(fakeEntityId, headYaw);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, headLook);
@@ -94,6 +105,16 @@ public class RecordedPlayer extends RecordedEntity {
 
     public String getName() {
         return name;
+    }
+
+    public void updateInventory(Map<String, Object> snapshot) {
+        this.currentInventory = snapshot;
+
+        if (!spawned)
+            return;
+
+        showInventorySnapshot(currentInventory);
+
     }
 
 
@@ -112,7 +133,6 @@ public class RecordedPlayer extends RecordedEntity {
             metadataFlags &= ~0x02;
         }
 
-        // Two metadata entries: flags + pose
         EntityData flagsData = new EntityData(0, EntityDataTypes.BYTE, metadataFlags);
         EntityData poseData = new EntityData(6, EntityDataTypes.ENTITY_POSE, sneaking ? EntityPose.CROUCHING : EntityPose.STANDING);
 
@@ -178,81 +198,87 @@ public class RecordedPlayer extends RecordedEntity {
 
     }
 
-   /* public void showInventorySnapshot(Map<String, Object> event) {
-        List<Equipment> packets = new ArrayList<>();
-
-        // Main hand
-        Object mainHandObj = event.get("mainHand");
-        if (mainHandObj instanceof Map<?, ?> mainHandMap) {
-            @SuppressWarnings("unchecked")
-            ItemStack mainHand = deserializeItem((Map<String, Object>) mainHandMap);
-            if (mainHand != null) packets.add(new Equipment(EquipmentSlot.MAIN_HAND, SpigotConversionUtil.fromBukkitItemStack(mainHand)));
-        }
-
-        // Offhand
-        Object offHandObj = event.get("offHand");
-        if (offHandObj instanceof Map<?, ?> offHandMap) {
-            @SuppressWarnings("unchecked")
-            ItemStack offHand = deserializeItem((Map<String, Object>) offHandMap);
-            if (offHand != null) packets.add(new Equipment(EquipmentSlot.OFF_HAND, SpigotConversionUtil.fromBukkitItemStack(offHand)));
-        }
-
-        // Armor
-        Object rawArmorObj = event.get("armor");
-
-        if (rawArmorObj instanceof List<?> rawArmorList) {
-            EquipmentSlot[] armorSlots = {EquipmentSlot.BOOTS, EquipmentSlot.LEGGINGS, EquipmentSlot.CHEST_PLATE, EquipmentSlot.HELMET};
-
-            for (int i = 0; i < rawArmorList.size() && i < armorSlots.length; i++) {
-                Object obj = rawArmorList.get(i);
-                ItemStack armorItem = null;
-
-                if (obj instanceof Map<?, ?> armorMap) {
-                    armorItem = deserializeItem((Map<String, Object>) armorMap);
-                }
-
-                if (armorItem == null) armorItem = new ItemStack(Material.AIR);
-                packets.add(new Equipment(armorSlots[i], SpigotConversionUtil.fromBukkitItemStack(armorItem)));
-            }
-
-        }
-
-        // Send the equipment packet
-        WrapperPlayServerEntityEquipment packet = new WrapperPlayServerEntityEquipment(fakeEntityId, packets);
-        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, packet);
-    }
-*/
-
     public void showInventorySnapshot(Map<String, Object> event) {
+        boolean changed = false;
         List<Equipment> packets = new ArrayList<>();
 
-        // Always include main hand and offhand
         ItemStack mainHand = deserializeItem(event.get("mainHand"));
-        ItemStack offHand = deserializeItem(event.get("offHand"));
-        packets.add(new Equipment(EquipmentSlot.MAIN_HAND, SpigotConversionUtil.fromBukkitItemStack(mainHand != null ? mainHand : new ItemStack(Material.AIR))));
-        packets.add(new Equipment(EquipmentSlot.OFF_HAND, SpigotConversionUtil.fromBukkitItemStack(offHand != null ? offHand : new ItemStack(Material.AIR))));
 
-        // Always include armor slots
+        if (!areItemsEqual(mainHand, lastMainHand)) {
+            lastMainHand = mainHand != null ? mainHand.clone() : new ItemStack(Material.AIR);
+            changed = true;
+        }
+
+        ItemStack offHand = deserializeItem(event.get("offHand"));
+        if (!areItemsEqual(offHand, lastOffHand)) {
+            lastOffHand = offHand != null ? offHand.clone() : new ItemStack(Material.AIR);
+            changed = true;
+        }
+
         EquipmentSlot[] armorSlots = {EquipmentSlot.BOOTS, EquipmentSlot.LEGGINGS, EquipmentSlot.CHEST_PLATE, EquipmentSlot.HELMET};
-        List<Map<String, Object>> rawArmorList = (List<Map<String, Object>>) event.get("armor");
+        List<Map<String, Object>> rawArmorList =
+                (List<Map<String, Object>>) event.get("armor");
+
+        if (rawArmorList != null) {
+            for (int i = 0; i < armorSlots.length; i++) {
+                ItemStack armorItem = extractArmor(rawArmorList, i);
+
+                if (!areItemsEqual(armorItem, lastArmor[i])) {
+                    lastArmor[i] = armorItem.clone();
+                    changed = true;
+                }
+            }
+        }
+
+        if (!changed) return;
+
+        packets.add(new Equipment(EquipmentSlot.MAIN_HAND,
+                SpigotConversionUtil.fromBukkitItemStack(lastMainHand)));
+
+        packets.add(new Equipment(EquipmentSlot.OFF_HAND,
+                SpigotConversionUtil.fromBukkitItemStack(lastOffHand)));
 
         for (int i = 0; i < armorSlots.length; i++) {
-            ItemStack armorItem = null;
-
-            if (rawArmorList != null && i < rawArmorList.size()) {
-                Object obj = rawArmorList.get(i);
-                if (obj instanceof Map<?, ?> armorMap) {
-                    armorItem = deserializeItem((Map<String, Object>) armorMap);
-                }
-            }
-
-            if (armorItem == null) armorItem = new ItemStack(Material.AIR);
-            packets.add(new Equipment(armorSlots[i], SpigotConversionUtil.fromBukkitItemStack(armorItem)));
+            packets.add(new Equipment(armorSlots[i],
+                    SpigotConversionUtil.fromBukkitItemStack(lastArmor[i])));
         }
 
-        // Send the equipment packet
-        WrapperPlayServerEntityEquipment packet = new WrapperPlayServerEntityEquipment(fakeEntityId, packets);
+        WrapperPlayServerEntityEquipment packet =
+                new WrapperPlayServerEntityEquipment(fakeEntityId, packets);
+
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, packet);
+    }
+
+    private ItemStack extractArmor(List<Map<String, Object>> rawArmorList, int index) {
+        if (rawArmorList == null || index >= rawArmorList.size()) {
+            return new ItemStack(Material.AIR);
+        }
+
+        Object obj = rawArmorList.get(index);
+        if (!(obj instanceof Map<?, ?> armorMap)) {
+            return new ItemStack(Material.AIR);
+        }
+
+        ItemStack item = deserializeItem((Map<String, Object>) armorMap);
+        return item != null ? item : new ItemStack(Material.AIR);
+    }
+
+    private boolean areItemsEqual(ItemStack a, ItemStack b) {
+        if (a == null && b == null) return true;
+        if (a == null || b == null) return false;
+        if (a.getType() != b.getType()) return false;
+        if (a.getAmount() != b.getAmount()) return false;
+
+        ItemMeta metaA = a.getItemMeta();
+        ItemMeta metaB = b.getItemMeta();
+
+        if (metaA == null && metaB == null) return true;
+        if (metaA == null || metaB == null) return false;
+
+        if (!Objects.equals(metaA.getDisplayName(), metaB.getDisplayName())) return false;
+        if (!Objects.equals(metaA.getLore(), metaB.getLore())) return false;
+
+        return true;
     }
 
 
@@ -264,7 +290,6 @@ public class RecordedPlayer extends RecordedEntity {
         int amount = ((Number) map.get("amount")).intValue();
         ItemStack item = new ItemStack(type, amount);
 
-        // Optional: simple meta reconstruction
         if (map.containsKey("displayName") || map.containsKey("lore")) {
             ItemMeta meta = item.getItemMeta();
             if (meta != null) {
@@ -290,21 +315,9 @@ public class RecordedPlayer extends RecordedEntity {
         return new Location(Bukkit.getWorld(world), x, y, z, yaw, pitch);
     }
 
-    public void updateInventory(Map<String, Object> snapshot) {
-        this.currentInventory = snapshot;
-
-        if (!spawned)
-            return;
-
-        showInventorySnapshot(currentInventory);
-
-    }
-
     public void openInventoryForViewer(Player viewer) {
-        // Player inventory has 36 slots + 4 armor slots + 1 offhand slot (we'll fake it)
-        Inventory inv = Bukkit.createInventory(null, 45, name + "'s Inventory"); // 5 rows of 9
+        Inventory inv = Bukkit.createInventory(null, 45, name + "'s Inventory");
 
-        // --- Main inventory & hotbar (slots 0-35) ---
         List<Map<String, Object>> contents = (List<Map<String, Object>>) currentInventory.get("contents");
         if (contents != null) {
             for (int i = 0; i < contents.size() && i < 36; i++) {
@@ -312,20 +325,16 @@ public class RecordedPlayer extends RecordedEntity {
             }
         }
 
-        // --- Armor (slots 36-39) ---
         List<Map<String, Object>> armor = (List<Map<String, Object>>) currentInventory.get("armor");
         if (armor != null && armor.size() == 4) {
-            // Minecraft inventory shows armor in reverse order
-            inv.setItem(39, deserializeItem(armor.get(3))); // Helmet
-            inv.setItem(38, deserializeItem(armor.get(2))); // Chestplate
-            inv.setItem(37, deserializeItem(armor.get(1))); // Leggings
-            inv.setItem(36, deserializeItem(armor.get(0))); // Boots
+            inv.setItem(39, deserializeItem(armor.get(3)));
+            inv.setItem(38, deserializeItem(armor.get(2)));
+            inv.setItem(37, deserializeItem(armor.get(1)));
+            inv.setItem(36, deserializeItem(armor.get(0)));
         }
 
-        // --- Offhand (slot 40) ---
         inv.setItem(40, deserializeItem(currentInventory.get("offHand")));
 
-        // Open inventory for the viewer
         Bukkit.getScheduler().runTask(Replay.getInstance(), () -> viewer.openInventory(inv));
     }
 
