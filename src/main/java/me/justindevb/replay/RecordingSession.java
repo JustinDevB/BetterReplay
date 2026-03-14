@@ -26,9 +26,14 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.io.BukkitObjectOutputStream;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.IOException;
 import java.util.*;
+
+import static me.justindevb.replay.util.ItemStackSerializer.serializeItem;
 
 public class RecordingSession implements Listener, PacketListener {
 
@@ -454,15 +459,37 @@ public class RecordingSession implements Listener, PacketListener {
         }
     }
 
-    private List<Map<String, Object>> serializeItems(ItemStack[] items) {
-        List<Map<String, Object>> list = new ArrayList<>();
-        for (ItemStack item : items) {
-            list.add(serializeItem(item));
+    private Map<String, Object> captureInventory(Player p) {
+        Map<String, Object> invSnapshot = new HashMap<>();
+
+        invSnapshot.put("mainHand", serializeItem(p.getInventory().getItemInMainHand()));
+        invSnapshot.put("offHand", serializeItem(p.getInventory().getItemInOffHand()));
+
+        List<String> armor = new ArrayList<>(4);
+        armor.add(serializeItem(p.getInventory().getBoots()));
+        armor.add(serializeItem(p.getInventory().getLeggings()));
+        armor.add(serializeItem(p.getInventory().getChestplate()));
+        armor.add(serializeItem(p.getInventory().getHelmet()));
+        invSnapshot.put("armor", armor);
+
+        List<String> contents = new ArrayList<>();
+        for (ItemStack item : p.getInventory().getContents()) {
+            contents.add(serializeItem(item));
         }
-        return list;
+        invSnapshot.put("contents", contents);
+
+        Map<String, Object> event = new HashMap<>();
+        event.put("tick", tick);
+        event.put("type", "inventory_update");
+        event.put("uuid", p.getUniqueId().toString());
+        event.put("inventory", invSnapshot);
+
+        timeline.add(event);
+        return invSnapshot;
     }
 
-    private Map<String, Object> captureInventory(Player p) {
+
+    /*private Map<String, Object> captureInventory(Player p) {
         Map<String, Object> invSnapshot = new HashMap<>();
 
         invSnapshot.put("mainHand", serializeItem(p.getInventory().getItemInMainHand()));
@@ -490,8 +517,9 @@ public class RecordingSession implements Listener, PacketListener {
         timeline.add(event);
         return invSnapshot;
     }
+     */
 
-    private Map<String, Object> serializeItem(ItemStack item) {
+   /* private Map<String, Object> serializeItem(ItemStack item) {
         if (item == null) return null;
 
         Map<String, Object> map = new HashMap<>();
@@ -500,6 +528,7 @@ public class RecordingSession implements Listener, PacketListener {
         map.put("meta", item.hasItemMeta() ? item.getItemMeta().serialize() : null);
         return map;
     }
+    */
 
     private Map<String, Object> serializeLocation(org.bukkit.Location loc) {
         Map<String, Object> map = new HashMap<>();

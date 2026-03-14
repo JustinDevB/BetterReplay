@@ -39,8 +39,13 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.util.io.BukkitObjectInputStream;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.*;
+
+import static me.justindevb.replay.util.ItemStackSerializer.deserializeItem;
 
 public class ReplaySession implements Listener, PacketListener {
     private final Player viewer;
@@ -325,10 +330,11 @@ public class ReplaySession implements Listener, PacketListener {
                 }
             }
             case "item_drop" -> {
-                Map<String, Object> itemMap = (Map<String, Object>) event.get("item");
+              //  Map<String, Object> itemMap = (Map<String, Object>) event.get("item");
                 Map<String, Object> locMap = (Map<String, Object>) event.get("location");
 
-                ItemStack stack = deserializeItem(itemMap);
+               // ItemStack stack = deserializeItem(itemMap);
+                ItemStack stack = deserializeItem(event.get("item"));
                 Location loc = deserializeLocation(locMap);
 
                 if (stack != null && loc != null)
@@ -609,7 +615,8 @@ public class ReplaySession implements Listener, PacketListener {
         return ReplayRegistry.contains(this);
     }
 
-    private ItemStack deserializeItem(Map<String, Object> map) {
+
+   /* private ItemStack deserializeItem(Map<String, Object> map) {
         if (map == null) return null;
 
         Material type = Material.valueOf((String) map.get("type"));
@@ -627,6 +634,7 @@ public class ReplaySession implements Listener, PacketListener {
 
         return item;
     }
+    */
 
     private Location deserializeLocation(Map<String, Object> map) {
         if (map == null)

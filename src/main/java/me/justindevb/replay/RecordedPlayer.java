@@ -19,8 +19,9 @@ import org.bukkit.entity.Pose;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
-
 import java.util.*;
+
+import static me.justindevb.replay.util.ItemStackSerializer.deserializeItem;
 
 public class RecordedPlayer extends RecordedEntity {
     private final String name;
@@ -197,8 +198,79 @@ public class RecordedPlayer extends RecordedEntity {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, swing);
 
     }
-
     public void showInventorySnapshot(Map<String, Object> event) {
+        boolean changed = false;
+        List<Equipment> packets = new ArrayList<>();
+
+        ItemStack mainHand = deserializeItem(event.get("mainHand"));
+        if (!areItemsEqual(mainHand, lastMainHand)) {
+            lastMainHand = mainHand != null ? mainHand.clone() : new ItemStack(Material.AIR);
+            changed = true;
+        }
+
+        ItemStack offHand = deserializeItem(event.get("offHand"));
+        if (!areItemsEqual(offHand, lastOffHand)) {
+            lastOffHand = offHand != null ? offHand.clone() : new ItemStack(Material.AIR);
+            changed = true;
+        }
+
+        EquipmentSlot[] armorSlots = {
+                EquipmentSlot.BOOTS,
+                EquipmentSlot.LEGGINGS,
+                EquipmentSlot.CHEST_PLATE,
+                EquipmentSlot.HELMET
+        };
+
+        List<String> rawArmorList = (List<String>) event.get("armor");
+
+        if (rawArmorList != null) {
+            for (int i = 0; i < armorSlots.length; i++) {
+                ItemStack armorItem = extractArmor(rawArmorList, i);
+
+                if (!areItemsEqual(armorItem, lastArmor[i])) {
+                    lastArmor[i] = armorItem != null ? armorItem.clone() : new ItemStack(Material.AIR);
+                    changed = true;
+                }
+            }
+        }
+
+        if (!changed) return;
+
+        packets.add(new Equipment(
+                EquipmentSlot.MAIN_HAND,
+                SpigotConversionUtil.fromBukkitItemStack(lastMainHand)
+        ));
+
+        packets.add(new Equipment(
+                EquipmentSlot.OFF_HAND,
+                SpigotConversionUtil.fromBukkitItemStack(lastOffHand)
+        ));
+
+        for (int i = 0; i < armorSlots.length; i++) {
+            packets.add(new Equipment(
+                    armorSlots[i],
+                    SpigotConversionUtil.fromBukkitItemStack(lastArmor[i])
+            ));
+        }
+
+        WrapperPlayServerEntityEquipment packet =
+                new WrapperPlayServerEntityEquipment(fakeEntityId, packets);
+
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, packet);
+    }
+
+    private ItemStack extractArmor(List<String> rawArmorList, int index) {
+        if (rawArmorList == null || index >= rawArmorList.size()) {
+            return new ItemStack(Material.AIR);
+        }
+
+        ItemStack item = deserializeItem(rawArmorList.get(index));
+        return item != null ? item : new ItemStack(Material.AIR);
+    }
+
+
+
+    /*public void showInventorySnapshot(Map<String, Object> event) {
         boolean changed = false;
         List<Equipment> packets = new ArrayList<>();
 
@@ -248,8 +320,9 @@ public class RecordedPlayer extends RecordedEntity {
 
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, packet);
     }
+     */
 
-    private ItemStack extractArmor(List<Map<String, Object>> rawArmorList, int index) {
+   /* private ItemStack extractArmor(List<Map<String, Object>> rawArmorList, int index) {
         if (rawArmorList == null || index >= rawArmorList.size()) {
             return new ItemStack(Material.AIR);
         }
@@ -262,6 +335,7 @@ public class RecordedPlayer extends RecordedEntity {
         ItemStack item = deserializeItem((Map<String, Object>) armorMap);
         return item != null ? item : new ItemStack(Material.AIR);
     }
+    */
 
     private boolean areItemsEqual(ItemStack a, ItemStack b) {
         if (a == null && b == null) return true;
@@ -281,9 +355,7 @@ public class RecordedPlayer extends RecordedEntity {
         return true;
     }
 
-
-
-    private ItemStack deserializeItem(Map<String, Object> map) {
+  /*  private ItemStack deserializeItem(Map<String, Object> map) {
         if (map == null) return null;
 
         Material type = Material.valueOf((String) map.get("type"));
@@ -301,6 +373,7 @@ public class RecordedPlayer extends RecordedEntity {
 
         return item;
     }
+   */
 
     private Location deserializeLocation(Map<String, Object> map) {
         if (map == null)
@@ -318,7 +391,25 @@ public class RecordedPlayer extends RecordedEntity {
     public void openInventoryForViewer(Player viewer) {
         Inventory inv = Bukkit.createInventory(null, 45, name + "'s Inventory");
 
-        List<Map<String, Object>> contents = (List<Map<String, Object>>) currentInventory.get("contents");
+        List<String> contents = (List<String>) currentInventory.get("contents");
+        if (contents != null) {
+            for (int i = 0; i < contents.size() && i < 36; i++) {
+                inv.setItem(i, deserializeItem(contents.get(i)));
+            }
+        }
+
+        List<String> armor = (List<String>) currentInventory.get("armor");
+        if (armor != null && armor.size() == 4) {
+            inv.setItem(39, deserializeItem(armor.get(3))); // helmet
+            inv.setItem(38, deserializeItem(armor.get(2))); // chestplate
+            inv.setItem(37, deserializeItem(armor.get(1))); // leggings
+            inv.setItem(36, deserializeItem(armor.get(0))); // boots
+        }
+
+        inv.setItem(40, deserializeItem(currentInventory.get("offHand")));
+
+
+    /*    List<Map<String, Object>> contents = (List<Map<String, Object>>) currentInventory.get("contents");
         if (contents != null) {
             for (int i = 0; i < contents.size() && i < 36; i++) {
                 inv.setItem(i, deserializeItem(contents.get(i)));
@@ -332,6 +423,7 @@ public class RecordedPlayer extends RecordedEntity {
             inv.setItem(37, deserializeItem(armor.get(1)));
             inv.setItem(36, deserializeItem(armor.get(0)));
         }
+     */
 
         inv.setItem(40, deserializeItem(currentInventory.get("offHand")));
 
@@ -343,7 +435,7 @@ public class RecordedPlayer extends RecordedEntity {
 
 
 
-    private ItemStack deserializeItem(Object obj) {
+    /*private ItemStack deserializeItem(Object obj) {
         if (!(obj instanceof Map<?, ?> map)) return null;
         Material type = Material.getMaterial((String) map.get("type"));
         if (type == null) return null;
@@ -360,7 +452,7 @@ public class RecordedPlayer extends RecordedEntity {
 
         return item;
     }
-
+     */
 
 }
 

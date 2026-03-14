@@ -1,25 +1,44 @@
 package me.justindevb.replay.util;
 
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.util.io.BukkitObjectInputStream;
+import org.bukkit.util.io.BukkitObjectOutputStream;
 
-import java.util.Map;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.Base64;
 
 public final class ItemStackSerializer {
     private ItemStackSerializer() {}
 
-    public static Map<String, Object> serialize(ItemStack item) {
-        return item == null ? null : item.serialize();
+    public static String serializeItem(ItemStack item) {
+        if (item == null) return null;
+
+        try (
+                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                BukkitObjectOutputStream dataOutput = new BukkitObjectOutputStream(outputStream)
+        ) {
+            dataOutput.writeObject(item);
+            dataOutput.flush();
+            return Base64.getEncoder().encodeToString(outputStream.toByteArray());
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
-    @SuppressWarnings("unchecked")
-    public static ItemStack deserialize(Object raw) {
-        if (raw == null) return null;
-        if (!(raw instanceof Map)) return null;
-        Map<String, Object> map = (Map<String, Object>) raw;
-        try {
-            return ItemStack.deserialize(map);
-        } catch (Exception ex) {
-            ex.printStackTrace();
+    public static ItemStack deserializeItem(Object obj) {
+        if (!(obj instanceof String data) || data.isEmpty()) return null;
+
+        try (
+                ByteArrayInputStream inputStream = new ByteArrayInputStream(Base64.getDecoder().decode(data));
+                BukkitObjectInputStream dataInput = new BukkitObjectInputStream(inputStream)
+        ) {
+            Object read = dataInput.readObject();
+            return read instanceof ItemStack item ? item : null;
+        } catch (IOException | ClassNotFoundException e) {
+            e.printStackTrace();
             return null;
         }
     }
