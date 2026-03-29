@@ -3,7 +3,7 @@ main: ${mainClass}
 version: ${project.version}
 author: ${author}
 depend: [packetevents]
-softdepend: [floodgate]
+softdepend: [Floodgate]
 api-version: 1.13
 folia-supported: true
 commands:

@@ -8,6 +8,7 @@ import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder
 import me.justindevb.replay.api.ReplayAPI;
 import me.justindevb.replay.listeners.PacketEventsListener;
 import me.justindevb.replay.util.ReplayCache;
+import me.justindevb.replay.util.UpdateChecker;
 import me.justindevb.replay.util.storage.FileReplayStorage;
 import me.justindevb.replay.util.storage.MySQLConnectionManager;
 import me.justindevb.replay.util.storage.MySQLReplayStorage;
@@ -29,7 +30,6 @@ public class Replay extends JavaPlugin {
     private ReplayCache replayCache;
     private ReplayManagerImpl manager;
     private FoliaLib foliaLib;
-    private FloodgateApi api;
 
     @Override
     public void onLoad() {
@@ -63,16 +63,8 @@ public class Replay extends JavaPlugin {
 
         initBstats();
 
-        initFloodgate();
-    }
 
-    private void initFloodgate() {
-        Plugin plugin = Bukkit.getPluginManager().getPlugin("Floodgate");
-        if (plugin != null && plugin.isEnabled())
-            api = FloodgateApi.getInstance();
-        else
-            api = null;
-
+        checkForUpdate();
     }
 
     @Override
@@ -107,10 +99,6 @@ public class Replay extends JavaPlugin {
         return storage;
     }
 
-    public FloodgateApi getFloodgateApi() {
-        return api;
-    }
-
     private void initConfig() {
         initGeneralConfigSettings();
 
@@ -120,12 +108,24 @@ public class Replay extends JavaPlugin {
 
     private void initGeneralConfigSettings() {
         FileConfiguration config = getConfig();
+        config.addDefault("General.Check-Update", true);
         config.addDefault("General.Storage-Type", "file");  // Valid options: "file","mysql"
         config.addDefault("General.MySQL.host", "host");
         config.addDefault("General.MySQL.port", 3306);
         config.addDefault("General.MySQL.database", "database");
         config.addDefault("General.MySQL.user", "username");
         config.addDefault("General.MySQL.password", "password");
+    }
+
+    private void checkForUpdate() {
+        if (!getConfig().getBoolean("General.Check-Update"))
+            return;
+        new UpdateChecker(this, 133445).getVersion(version -> {
+            if (this.getPluginMeta().getVersion().equals(version))
+                getLogger().log(Level.INFO, "You are up to date!");
+            else
+                getLogger().log(Level.INFO, "There is an update available! Download at: https://www.spigotmc.org/resources/betterreplay.133445/");
+        });
     }
 
     private void initStorage() {

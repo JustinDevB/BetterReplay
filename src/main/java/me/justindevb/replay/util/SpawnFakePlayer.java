@@ -5,6 +5,7 @@ import com.github.retrooper.packetevents.protocol.entity.data.EntityData;
 import com.github.retrooper.packetevents.protocol.entity.data.EntityDataTypes;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.player.TextureProperty;
 import com.github.retrooper.packetevents.protocol.player.UserProfile;
 import com.github.retrooper.packetevents.util.MojangAPIUtil;
 import com.github.retrooper.packetevents.util.Vector3d;
@@ -15,9 +16,9 @@ import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import me.justindevb.replay.Replay;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
-import org.geysermc.floodgate.api.FloodgateApi;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -40,24 +41,58 @@ public class SpawnFakePlayer {
 
         this.fakeUuid = UUID.randomUUID();
 
+        spawn();
+
+    }
+
+    public void spawn() {
+
+        Replay.getInstance().getFoliaLib().getScheduler().runAsync(task -> {
+            UUID skinUuid = profileUuid;
+            List<TextureProperty> textures = Collections.emptyList();
+
+            if (profileUuid.version() == 4) {
+                try {
+                    textures = MojangAPIUtil.requestPlayerTextureProperties(skinUuid);
+                } catch (Exception ignored) {
+                }
+            } else {
+                skinUuid = FloodgateHook.getCorrectUUID(profileUuid);
+                if (skinUuid != profileUuid)
+                    textures = MojangAPIUtil.requestPlayerTextureProperties(skinUuid);
+            }
+
+            if (textures == null || textures.isEmpty()) {
+                try {
+                    textures = MojangAPIUtil.requestPlayerTextureProperties(
+                            UUID.fromString("069a79f444e94726a5befca90e38aaf5") // Notch
+                    );
+                } catch (Exception ignored) {
+                    textures = Collections.emptyList();
+                }
+            }
+
+            UserProfile profile = new UserProfile(fakeUuid, name, textures);
+
+            Replay.getInstance().getFoliaLib().getScheduler().runNextTick(syncTask -> {
+                spawnNow(profile);
+            });
+        });
+    }
+
+    private void spawnNow(UserProfile profile) {
         List<WrapperPlayServerPlayerInfoUpdate.PlayerInfo> playerInfoList = new ArrayList<>();
+        playerInfoList.add(new WrapperPlayServerPlayerInfoUpdate.PlayerInfo(profile));
 
-        FloodgateApi api = Replay.getInstance().getFloodgateApi();
-        UserProfile userProfile;
+        WrapperPlayServerPlayerInfoUpdate infoPacket =
+                new WrapperPlayServerPlayerInfoUpdate(
+                        WrapperPlayServerPlayerInfoUpdate.Action.ADD_PLAYER,
+                        playerInfoList
+                );
 
-        if (api != null && api.isFloodgatePlayer(profileUuid)) {
-            userProfile = new UserProfile(fakeUuid, name, MojangAPIUtil.requestPlayerTextureProperties(api.getPlayer(profileUuid).getCorrectUniqueId()));
-        } else {
-            userProfile = new UserProfile(fakeUuid, name, MojangAPIUtil.requestPlayerTextureProperties(profileUuid));
-        }
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, infoPacket);
 
-        playerInfoList.add(new WrapperPlayServerPlayerInfoUpdate.PlayerInfo(userProfile));
-
-        WrapperPlayServerPlayerInfoUpdate infoUpdatePacket = new WrapperPlayServerPlayerInfoUpdate(WrapperPlayServerPlayerInfoUpdate.Action.ADD_PLAYER, playerInfoList);
-
-        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, infoUpdatePacket);
-
-        WrapperPlayServerSpawnEntity spawnEntityPacket = new WrapperPlayServerSpawnEntity(
+        WrapperPlayServerSpawnEntity spawnPacket = new WrapperPlayServerSpawnEntity(
                 entityId,
                 fakeUuid,
                 EntityTypes.PLAYER,
@@ -67,8 +102,12 @@ public class SpawnFakePlayer {
                 new Vector3d(0, 0, 0)
         );
 
-        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, spawnEntityPacket);
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, spawnPacket);
 
+        sendSkinMetadata();
+    }
+
+    public void sendSkinMetadata() {
         List<EntityData<?>> skinMeta = new ArrayList<>();
         int SKIN_LAYER_INDEX = PacketEvents.getAPI().getPlayerManager().getClientVersion(viewer).isNewerThanOrEquals(ClientVersion.V_1_21_9) ? 16 : 17;
 
