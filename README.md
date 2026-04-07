@@ -85,6 +85,17 @@ Permissions:
 Default config keys are initialized in:
 - [src/main/java/me/justindevb/replay/Replay.java](src/main/java/me/justindevb/replay/Replay.java)
 
+### Storage-Type options
+
+Valid values for `General.Storage-Type` are:
+
+- `file`
+  - Stores replay data as JSON files under the plugin data folder.
+- `mysql`
+  - Stores replay data in a MySQL table (`replays`) using the configured `General.MySQL.*` values.
+
+These values should be lowercase as shown above.
+
 ### File storage example
 
 ```yaml
