@@ -2,7 +2,6 @@ package me.justindevb.replay;
 
 import me.justindevb.replay.api.ReplayManager;
 import me.justindevb.replay.util.ReplayObject;
-import me.justindevb.replay.util.storage.FileReplayStorage;
 import me.justindevb.replay.util.storage.ReplayStorage;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -18,12 +17,10 @@ public class ReplayManagerImpl implements ReplayManager {
 
     private final Replay replay;
     private final RecorderManager recorderManager;
-    private final ReplayStorage storage;
 
     public ReplayManagerImpl(Replay replay, RecorderManager recorderManager) {
         this.replay = replay;
         this.recorderManager = recorderManager;
-        this.storage = Replay.getInstance().getReplayStorage();
     }
 
     @Override
@@ -37,6 +34,12 @@ public class ReplayManagerImpl implements ReplayManager {
         boolean stopped = recorderManager.stopSession(name, save);
 
         if (stopped && save) {
+            ReplayStorage storage = replay.getReplayStorage();
+            if (storage == null) {
+                replay.getLogger().warning("Storage is not initialized yet; skipping replay list refresh.");
+                return stopped;
+            }
+
             storage.listReplays().thenAccept(names ->
                     Replay.getInstance().getReplayCache().setReplays(names)
             ).exceptionally(ex -> {
@@ -118,6 +121,10 @@ public class ReplayManagerImpl implements ReplayManager {
 
     @Override
     public CompletableFuture<List<String>> listSavedReplays() {
+        ReplayStorage storage = replay.getReplayStorage();
+        if (storage == null) {
+            return CompletableFuture.completedFuture(List.of());
+        }
         return storage.listReplays();
     }
 
