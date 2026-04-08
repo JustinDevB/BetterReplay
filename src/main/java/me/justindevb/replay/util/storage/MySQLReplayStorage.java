@@ -2,6 +2,7 @@ package me.justindevb.replay.util.storage;
 
 import com.google.gson.Gson;
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.util.ReplayCompressor;
 
 import javax.sql.DataSource;
 import java.io.*;
@@ -10,8 +11,6 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.zip.GZIPInputStream;
-import java.util.zip.GZIPOutputStream;
 
 public class MySQLReplayStorage implements ReplayStorage {
 
@@ -23,6 +22,11 @@ public class MySQLReplayStorage implements ReplayStorage {
         this.dataSource = dataSource;
         this.replay = replay;
         init();
+    }
+
+    /** Returns true when the plugin config has compression enabled (default: true). */
+    private boolean isCompressionEnabled() {
+        return replay.getConfig().getBoolean("General.Compress-Replays", true);
     }
 
     private void init() {
@@ -56,7 +60,10 @@ public class MySQLReplayStorage implements ReplayStorage {
                  ON DUPLICATE KEY UPDATE data = VALUES(data)
              """)) {
 
-                byte[] data = compress(gson.toJson(timeline));
+                String json = gson.toJson(timeline);
+                byte[] data = isCompressionEnabled()
+                        ? ReplayCompressor.compress(json)
+                        : json.getBytes(StandardCharsets.UTF_8);
 
                 ps.setString(1, name);
                 ps.setBytes(2, data);
@@ -81,7 +88,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next()) return null;
-                    return gson.fromJson(decompress(rs.getBytes("data")), List.class);
+                    // Auto-detect compression so legacy uncompressed rows still load
+                    String json = ReplayCompressor.decompressIfNeeded(rs.getBytes("data"));
+                    return gson.fromJson(json, List.class);
                 }
 
             } catch (Exception e) {
@@ -123,7 +132,7 @@ public class MySQLReplayStorage implements ReplayStorage {
 
                 ps.setString(1, name);
                 int affected = ps.executeUpdate();
-                return affected > 0; // true if a row was deleted
+                return affected > 0;
 
             } catch (Exception e) {
                 throw new RuntimeException("Failed to delete replay: " + name, e);
@@ -157,15 +166,16 @@ public class MySQLReplayStorage implements ReplayStorage {
     public CompletableFuture<File> getReplayFile(String name) {
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
-            PreparedStatement ps = conn.prepareStatement("SELECT data FROM replays WHERE name=?")) {
+                 PreparedStatement ps = conn.prepareStatement("SELECT data FROM replays WHERE name=?")) {
 
                 ps.setString(1, name);
                 try (ResultSet rs = ps.executeQuery()) {
                     if (!rs.next())
                         return null;
 
-                    byte[] compressedData = rs.getBytes("data");
-                    List<?> timeline = gson.fromJson(decompress(compressedData), List.class);
+                    // Auto-detect compression; works for both compressed and plain rows
+                    String json = ReplayCompressor.decompressIfNeeded(rs.getBytes("data"));
+                    List<?> timeline = gson.fromJson(json, List.class);
 
                     File tempFile = File.createTempFile("replay_" + name + "_", ".json");
                     tempFile.deleteOnExit();
@@ -179,20 +189,5 @@ public class MySQLReplayStorage implements ReplayStorage {
                 return null;
             }
         });
-    }
-
-
-    private byte[] compress(String s) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (GZIPOutputStream gzip = new GZIPOutputStream(out)) {
-            gzip.write(s.getBytes(StandardCharsets.UTF_8));
-        }
-        return out.toByteArray();
-    }
-
-    private String decompress(byte[] bytes) throws IOException {
-        try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(bytes))) {
-            return new String(gzip.readAllBytes(), StandardCharsets.UTF_8);
-        }
     }
 }

@@ -109,6 +109,7 @@ public class Replay extends JavaPlugin {
     private void initGeneralConfigSettings() {
         FileConfiguration config = getConfig();
         config.addDefault("General.Check-Update", true);
+        config.addDefault("General.Compress-Replays", true);  // GZIP compress replay data
         config.addDefault("General.Storage-Type", "file");  // Valid options: "file","mysql"
         config.addDefault("General.MySQL.host", "host");
         config.addDefault("General.MySQL.port", 3306);
