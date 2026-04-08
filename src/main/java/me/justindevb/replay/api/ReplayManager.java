@@ -62,6 +62,14 @@ public interface ReplayManager {
     CompletableFuture<List<String>> listSavedReplays();
 
     /**
+     * Delete a saved replay.
+     *
+     * @param name replay name
+     * @return true if deleted, false if replay did not exist or delete failed
+     */
+    CompletableFuture<Boolean> deleteSavedReplay(String name);
+
+    /**
      * Get a replay file
      * @param name
      * @return

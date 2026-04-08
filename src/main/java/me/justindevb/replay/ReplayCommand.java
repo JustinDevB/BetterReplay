@@ -1,6 +1,5 @@
 package me.justindevb.replay;
 
-import me.justindevb.replay.util.ReplayObject;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -205,13 +204,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 String name = joinArgs(args, 1);
-                ReplayObject replayObject = new ReplayObject(name, null, Replay.getInstance().getReplayStorage());
-                replayObject.delete()
-                        .thenCompose(success -> Replay.getInstance().getReplayStorage().listReplays()
-                                .thenApply(names -> {
-                                    Replay.getInstance().getReplayCache().setReplays(names);
-                                    return success;
-                                }))
+                Replay.getInstance().getReplayManagerImpl().deleteSavedReplay(name)
                         .thenAccept(success -> {
                             Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> {
                                 if (success) {
@@ -227,7 +220,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                                     p.sendMessage("§cFailed to delete replay: " + name));
                             return null;
                         });
-
+                        return true;
             }
             default -> sender.sendMessage("Unknown command");
         }

@@ -129,6 +129,29 @@ public class ReplayManagerImpl implements ReplayManager {
     }
 
     @Override
+    public CompletableFuture<Boolean> deleteSavedReplay(String name) {
+        if (name == null || name.isBlank()) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        ReplayStorage storage = replay.getReplayStorage();
+        if (storage == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+
+        return storage.deleteReplay(name)
+                .thenCompose(deleted -> storage.listReplays()
+                        .thenApply(names -> {
+                            Replay.getInstance().getReplayCache().setReplays(names);
+                            return deleted;
+                        }))
+                .exceptionally(ex -> {
+                    ex.printStackTrace();
+                    return false;
+                });
+    }
+
+    @Override
     public CompletableFuture<Optional<File>> getSavedReplayFile(String name) {
         return replay.getReplayStorage().getReplayFile(name)
                 .thenApply(file -> {
