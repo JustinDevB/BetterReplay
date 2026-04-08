@@ -9,11 +9,13 @@ import com.github.retrooper.packetevents.protocol.entity.type.EntityTypes;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientInteractEntity;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerDestroyEntities;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockBreakAnimation;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerEntityMetadata;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSpawnEntity;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
+import com.github.retrooper.packetevents.util.Vector3i;
 import me.justindevb.replay.api.events.ReplayStartEvent;
 import me.justindevb.replay.api.events.ReplayStopEvent;
 import net.kyori.adventure.text.Component;
@@ -49,11 +51,14 @@ public class ReplaySession implements Listener, PacketListener {
     private final Set<Integer> trackedEntityIds = new HashSet<>();
     private final Set<UUID> deadEntities = new HashSet<>();
     private final Map<UUID, RecordedEntity> recordedEntities = new HashMap<>();
+    private final Map<BlockKey, String> originalBlockStates = new HashMap<>();
     private int tick = 0;
     private boolean paused = false;
     private ItemStack[] viewerInventory;
     private ItemStack[] viewerArmor;
     private ItemStack viewerOffHand;
+
+    private record BlockKey(String world, int x, int y, int z) {}
 
     public ReplaySession(List<Map<String, Object>> timeline, Player viewer, Replay replay) {
         this.timeline = timeline;
@@ -69,6 +74,7 @@ public class ReplaySession implements Listener, PacketListener {
         }
 
         ReplayRegistry.add(this);
+        enrichBlockBreakStageTimeline();
         copyInventory();
 
         Map<String, Object> firstLocationEvent = timeline.stream()
@@ -91,6 +97,7 @@ public class ReplaySession implements Listener, PacketListener {
         }
 
         giveReplayControls(viewer);
+        primeInitialBrokenBlockStates();
 
         Bukkit.getPluginManager().callEvent(new ReplayStartEvent(viewer, this));
 
@@ -136,6 +143,12 @@ public class ReplaySession implements Listener, PacketListener {
 
                 String type = (String) event.get("type");
                 if (type == null) {
+                    tick++;
+                    continue;
+                }
+
+                if ("block_break_stage".equals(type)) {
+                    showGlobalBlockBreakStage(event);
                     tick++;
                     continue;
                 }
@@ -239,6 +252,7 @@ public class ReplaySession implements Listener, PacketListener {
         recordedEntities.clear();
 
         clearFakeItems();
+        restoreReplayBlockStates();
         restoreInventory();
         if (replayTask != null) {
             replay.getFoliaLib().getScheduler().cancelTask(replayTask);
@@ -308,6 +322,15 @@ public class ReplaySession implements Listener, PacketListener {
                         case "block_place" -> rp.showBlockPlace(event);
                         case "block_break" -> rp.showBlockBreak(event);
                     }
+                }
+
+                if ("block_place".equals(type) || "block_break".equals(type)) {
+                    applyReplayBlockChange(event, type);
+                }
+            }
+            case "block_break_stage" -> {
+                if (entity instanceof RecordedPlayer rp) {
+                    rp.showBlockBreak(event);
                 }
             }
             case "swing" -> {
@@ -390,12 +413,283 @@ public class ReplaySession implements Listener, PacketListener {
         return obj instanceof Number n ? n.doubleValue() : null;
     }
 
+    private Integer asInt(Object obj) {
+        return obj instanceof Number n ? n.intValue() : null;
+    }
+
     private Float asFloat(Object obj) {
         return obj instanceof Number n ? n.floatValue() : 0f;
     }
 
     private String asString(Object obj) {
         return obj instanceof String s ? String.valueOf(s) : null;
+    }
+
+    private void primeInitialBrokenBlockStates() {
+        Set<BlockKey> primed = new HashSet<>();
+
+        for (Map<String, Object> event : timeline) {
+            if (!"block_break".equals(event.get("type"))) {
+                continue;
+            }
+
+            String worldName = asString(event.get("world"));
+            Integer x = asInt(event.get("x"));
+            Integer y = asInt(event.get("y"));
+            Integer z = asInt(event.get("z"));
+            String blockData = asString(event.get("blockData"));
+
+            if (worldName == null || x == null || y == null || z == null || blockData == null) {
+                continue;
+            }
+
+            World world = Bukkit.getWorld(worldName);
+            if (world == null) {
+                continue;
+            }
+
+            BlockKey key = new BlockKey(worldName, x, y, z);
+            if (!primed.add(key)) {
+                continue;
+            }
+
+            cacheOriginalBlockState(world, key);
+            sendBlockStateToViewer(world, x, y, z, blockData);
+        }
+    }
+
+    private void enrichBlockBreakStageTimeline() {
+        if (timeline == null || timeline.isEmpty()) {
+            return;
+        }
+
+        Map<BlockKey, Integer> breakStartTicks = new HashMap<>();
+        Map<BlockKey, List<Integer>> nativeStageTicks = new HashMap<>();
+
+        for (Map<String, Object> event : timeline) {
+            if (!"block_break_stage".equals(event.get("type"))) {
+                continue;
+            }
+
+            BlockKey key = blockKeyFromEvent(event);
+            Integer tickValue = asInt(event.get("tick"));
+            if (key == null || tickValue == null) {
+                continue;
+            }
+
+            nativeStageTicks.computeIfAbsent(key, ignored -> new ArrayList<>()).add(tickValue);
+        }
+
+        List<Map<String, Object>> synthesizedStages = new ArrayList<>();
+
+        for (Map<String, Object> event : timeline) {
+            String type = asString(event.get("type"));
+            Integer tickValue = asInt(event.get("tick"));
+            if (type == null || tickValue == null) {
+                continue;
+            }
+
+            if ("block_break_complete".equals(type) || "block_break_start".equals(type)) {
+                BlockKey key = blockKeyFromEvent(event);
+                if (key != null) {
+                    breakStartTicks.put(key, tickValue);
+                }
+                continue;
+            }
+
+            if (!"block_break".equals(type)) {
+                continue;
+            }
+
+            BlockKey key = blockKeyFromEvent(event);
+            if (key == null) {
+                continue;
+            }
+
+            Integer startTick = breakStartTicks.remove(key);
+            if (startTick == null || tickValue - startTick < 4) {
+                continue;
+            }
+
+            if (hasNativeStagesBetween(nativeStageTicks.get(key), startTick, tickValue)) {
+                continue;
+            }
+
+            String uuid = asString(event.get("uuid"));
+            int duration = tickValue - startTick;
+            for (int stage = 1; stage <= 9; stage++) {
+                int stageTick = startTick + (int) Math.floor((stage / 10.0) * duration);
+                if (stageTick <= startTick) {
+                    continue;
+                }
+                if (stageTick >= tickValue) {
+                    stageTick = tickValue - 1;
+                }
+                if (stageTick <= startTick) {
+                    continue;
+                }
+
+                Map<String, Object> stageEvent = new HashMap<>();
+                stageEvent.put("tick", stageTick);
+                stageEvent.put("type", "block_break_stage");
+                stageEvent.put("world", key.world());
+                stageEvent.put("x", key.x());
+                stageEvent.put("y", key.y());
+                stageEvent.put("z", key.z());
+                stageEvent.put("stage", stage);
+                if (uuid != null) {
+                    stageEvent.put("uuid", uuid);
+                }
+                synthesizedStages.add(stageEvent);
+            }
+        }
+
+        if (synthesizedStages.isEmpty()) {
+            return;
+        }
+
+        timeline = new ArrayList<>(timeline);
+        timeline.addAll(synthesizedStages);
+        timeline.sort(Comparator.comparingInt(event -> {
+            Integer tickValue = asInt(event.get("tick"));
+            return tickValue != null ? tickValue : Integer.MAX_VALUE;
+        }));
+    }
+
+    private boolean hasNativeStagesBetween(List<Integer> stageTicks, int startTick, int endTick) {
+        if (stageTicks == null || stageTicks.isEmpty()) {
+            return false;
+        }
+        for (Integer stageTick : stageTicks) {
+            if (stageTick != null && stageTick > startTick && stageTick < endTick) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private BlockKey blockKeyFromEvent(Map<String, Object> event) {
+        String worldName = asString(event.get("world"));
+        Integer x = asInt(event.get("x"));
+        Integer y = asInt(event.get("y"));
+        Integer z = asInt(event.get("z"));
+
+        if (worldName == null || x == null || y == null || z == null) {
+            return null;
+        }
+
+        return new BlockKey(worldName, x, y, z);
+    }
+
+    private void applyReplayBlockChange(Map<String, Object> event, String type) {
+        String worldName = asString(event.get("world"));
+        Integer x = asInt(event.get("x"));
+        Integer y = asInt(event.get("y"));
+        Integer z = asInt(event.get("z"));
+
+        if (worldName == null || x == null || y == null || z == null) {
+            return;
+        }
+
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            return;
+        }
+
+        BlockKey key = new BlockKey(worldName, x, y, z);
+        cacheOriginalBlockState(world, key);
+
+        if ("block_place".equals(type)) {
+            String blockData = asString(event.get("blockData"));
+            if (blockData == null) {
+                blockData = asString(event.get("block"));
+            }
+
+            if (blockData != null) {
+                sendBlockStateToViewer(world, x, y, z, blockData);
+            }
+            return;
+        }
+
+        String brokenBlockData = asString(event.get("blockData"));
+        if (brokenBlockData == null) {
+            brokenBlockData = originalBlockStates.get(key);
+        }
+
+        if (brokenBlockData != null) {
+            sendBlockBreakParticles(world, x, y, z, brokenBlockData);
+        }
+
+        Location blockLoc = new Location(world, x, y, z);
+        replay.getFoliaLib().getScheduler().runLater(
+                () -> viewer.sendBlockChange(blockLoc, Material.AIR.createBlockData()),
+            3L
+        );
+    }
+
+    private void cacheOriginalBlockState(World world, BlockKey key) {
+        originalBlockStates.computeIfAbsent(
+                key,
+                ignored -> world.getBlockAt(key.x(), key.y(), key.z()).getBlockData().getAsString()
+        );
+    }
+
+    private void sendBlockStateToViewer(World world, int x, int y, int z, String blockData) {
+        try {
+            viewer.sendBlockChange(new Location(world, x, y, z), Bukkit.createBlockData(blockData));
+        } catch (IllegalArgumentException ignored) {
+        }
+    }
+
+    private void sendBlockBreakParticles(World world, int x, int y, int z, String blockData) {
+        try {
+            Location center = new Location(world, x + 0.5, y + 0.5, z + 0.5);
+            viewer.spawnParticle(
+                    Particle.BLOCK,
+                    center,
+                    24,
+                    0.25,
+                    0.25,
+                    0.25,
+                    0.02,
+                    Bukkit.createBlockData(blockData)
+            );
+        } catch (IllegalArgumentException ignored) {
+        }
+    }
+
+    private void showGlobalBlockBreakStage(Map<String, Object> event) {
+        String worldName = asString(event.get("world"));
+        if (worldName != null && !worldName.equals(viewer.getWorld().getName())) {
+            return;
+        }
+
+        Integer x = asInt(event.get("x"));
+        Integer y = asInt(event.get("y"));
+        Integer z = asInt(event.get("z"));
+        Integer stage = asInt(event.get("stage"));
+
+        if (x == null || y == null || z == null || stage == null) {
+            return;
+        }
+
+        int animationId = Objects.hash(worldName, x, y, z);
+        WrapperPlayServerBlockBreakAnimation breakAnim =
+            new WrapperPlayServerBlockBreakAnimation(animationId, new Vector3i(x, y, z), stage.byteValue());
+
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, breakAnim);
+    }
+
+    private void restoreReplayBlockStates() {
+        for (Map.Entry<BlockKey, String> entry : originalBlockStates.entrySet()) {
+            BlockKey key = entry.getKey();
+            World world = Bukkit.getWorld(key.world());
+            if (world == null) {
+                continue;
+            }
+            sendBlockStateToViewer(world, key.x(), key.y(), key.z(), entry.getValue());
+        }
+        originalBlockStates.clear();
     }
 
     private void giveReplayControls(Player viewer) {

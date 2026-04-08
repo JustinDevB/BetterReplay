@@ -1,6 +1,9 @@
 package me.justindevb.replay;
 
+import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListener;
+import com.github.retrooper.packetevents.event.PacketListenerCommon;
+import com.github.retrooper.packetevents.event.PacketListenerPriority;
 import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockBreakAnimation;
@@ -14,6 +17,7 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
@@ -38,6 +42,8 @@ public class RecordingSession implements Listener, PacketListener {
     private final Set<UUID> trackedPlayers;
     private final Map<UUID, EntityType> trackedEntities = new HashMap<>();
     private final List<Map<String, Object>> timeline = new ArrayList<>();
+    private PacketListenerCommon packetListenerHandle;
+    private final Map<String, Integer> breakStageDedup = new HashMap<>();
 
     private static final double NEARBY_RADIUS_SQUARED = 32.0 * 32.0;
     private int tick = 0;
@@ -61,6 +67,7 @@ public class RecordingSession implements Listener, PacketListener {
                 + " player(s), duration=" + (durationTicks == -1 ? "∞" : durationTicks / 20 + "s"));
 
         Bukkit.getPluginManager().registerEvents(this, replay);
+        packetListenerHandle = PacketEvents.getAPI().getEventManager().registerListener(this, PacketListenerPriority.NORMAL);
 
         captureInitialInventory();
     }
@@ -119,7 +126,7 @@ public class RecordingSession implements Listener, PacketListener {
         tick++;
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockBreak(BlockBreakEvent e) {
         if (!trackedPlayers.contains(e.getPlayer().getUniqueId())) return;
 
@@ -131,6 +138,7 @@ public class RecordingSession implements Listener, PacketListener {
         event.put("x", e.getBlock().getX());
         event.put("y", e.getBlock().getY());
         event.put("z", e.getBlock().getZ());
+        event.put("blockData", e.getBlock().getBlockData().getAsString());
         timeline.add(event);
     }
 
@@ -179,6 +187,7 @@ public class RecordingSession implements Listener, PacketListener {
         event.put("x", e.getBlock().getX());
         event.put("y", e.getBlock().getY());
         event.put("z", e.getBlock().getZ());
+        event.put("blockData", e.getBlock().getBlockData().getAsString());
         timeline.add(event);
     }
 
@@ -395,6 +404,11 @@ public class RecordingSession implements Listener, PacketListener {
     public void stop(boolean save) {
         if (stopped) return;
         stopped = true;
+        HandlerList.unregisterAll(this);
+        if (packetListenerHandle != null) {
+            PacketEvents.getAPI().getEventManager().unregisterListener(packetListenerHandle);
+            packetListenerHandle = null;
+        }
 
         trackedPlayers.clear();
 
@@ -457,22 +471,41 @@ public class RecordingSession implements Listener, PacketListener {
         if (e.getPacketType() == PacketType.Play.Server.BLOCK_BREAK_ANIMATION) {
             WrapperPlayServerBlockBreakAnimation packet = new WrapperPlayServerBlockBreakAnimation(e);
             Player p = e.getPlayer();
-            Entity entity = SpigotConversionUtil.getEntityById(p.getWorld(), packet.getEntityId());
 
-            if (!(entity instanceof Player breaker))
-                return;
-
-            if (!isTrackedPlayer(breaker.getUniqueId())) return;
+            String world = p.getWorld().getName();
 
             int stage = packet.getDestroyStage();
             int x = packet.getBlockPosition().getX();
             int y = packet.getBlockPosition().getY();
             int z = packet.getBlockPosition().getZ();
 
+            String dedupKey = world + ":" + x + ":" + y + ":" + z + ":" + stage;
+            Integer lastTick = breakStageDedup.get(dedupKey);
+            if (lastTick != null && lastTick == tick) {
+                return;
+            }
+            breakStageDedup.put(dedupKey, tick);
+            if (breakStageDedup.size() > 4000) {
+                breakStageDedup.entrySet().removeIf(entry -> entry.getValue() < tick - 40);
+            }
+
+            String breakerUuid = null;
+            Entity entity = SpigotConversionUtil.getEntityById(p.getWorld(), packet.getEntityId());
+            if (entity instanceof Player breaker && isTrackedPlayer(breaker.getUniqueId())) {
+                breakerUuid = breaker.getUniqueId().toString();
+            }
+
+            if (breakerUuid == null && !isTrackedPlayer(p.getUniqueId())) {
+                return;
+            }
+
             Map<String, Object> event = new HashMap<>();
             event.put("tick", tick);
             event.put("type", "block_break_stage");
-            event.put("uuid", breaker.getUniqueId().toString());
+            if (breakerUuid != null) {
+                event.put("uuid", breakerUuid);
+            }
+            event.put("world", world);
             event.put("x", x);
             event.put("y", y);
             event.put("z", z);
