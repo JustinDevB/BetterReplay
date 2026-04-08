@@ -52,7 +52,6 @@ public class ReplaySession implements Listener, PacketListener {
     private final Set<UUID> deadEntities = new HashSet<>();
     private final Map<UUID, RecordedEntity> recordedEntities = new HashMap<>();
     private final Map<BlockKey, String> originalBlockStates = new HashMap<>();
-    private final Map<BlockKey, Integer> lastStageTickByBlock = new HashMap<>();
     private int tick = 0;
     private boolean paused = false;
     private ItemStack[] viewerInventory;
@@ -587,7 +586,6 @@ public class ReplaySession implements Listener, PacketListener {
         Integer x = asInt(event.get("x"));
         Integer y = asInt(event.get("y"));
         Integer z = asInt(event.get("z"));
-        Integer eventTick = asInt(event.get("tick"));
 
         if (worldName == null || x == null || y == null || z == null) {
             return;
@@ -623,11 +621,6 @@ public class ReplaySession implements Listener, PacketListener {
         }
 
         Location blockLoc = new Location(world, x, y, z);
-        Integer lastStageTick = lastStageTickByBlock.get(key);
-        boolean hasRecentStage = eventTick != null && lastStageTick != null && lastStageTick >= eventTick - 4;
-        if (!hasRecentStage) {
-            playFallbackBlockCrackAnimation(blockLoc);
-        }
         replay.getFoliaLib().getScheduler().runLater(
                 () -> viewer.sendBlockChange(blockLoc, Material.AIR.createBlockData()),
             3L
@@ -684,33 +677,8 @@ public class ReplaySession implements Listener, PacketListener {
         WrapperPlayServerBlockBreakAnimation breakAnim =
             new WrapperPlayServerBlockBreakAnimation(animationId, new Vector3i(x, y, z), stage.byteValue());
 
-        BlockKey key = new BlockKey(worldName != null ? worldName : viewer.getWorld().getName(), x, y, z);
-        Integer eventTick = asInt(event.get("tick"));
-        if (eventTick != null) {
-            lastStageTickByBlock.put(key, eventTick);
-        }
-
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, breakAnim);
     }
-
-        private void playFallbackBlockCrackAnimation(Location blockLoc) {
-        viewer.sendBlockDamage(blockLoc, 0.35f);
-
-        replay.getFoliaLib().getScheduler().runLater(
-            () -> viewer.sendBlockDamage(blockLoc, 0.7f),
-            1L
-        );
-
-        replay.getFoliaLib().getScheduler().runLater(
-            () -> viewer.sendBlockDamage(blockLoc, 1.0f),
-            2L
-        );
-
-        replay.getFoliaLib().getScheduler().runLater(
-            () -> viewer.sendBlockDamage(blockLoc, 0.0f),
-            4L
-        );
-        }
 
     private void restoreReplayBlockStates() {
         for (Map.Entry<BlockKey, String> entry : originalBlockStates.entrySet()) {
