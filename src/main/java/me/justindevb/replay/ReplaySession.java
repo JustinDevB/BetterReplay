@@ -256,7 +256,7 @@ public class ReplaySession implements Listener, PacketListener {
         clearFakeItems();
         blockBreakMutationEpoch++;
         clearAllVisibleBreakStages();
-        restoreReplayBlockStates();
+        restoreReplayBlockStates(true);
         restoreInventory();
         if (replayTask != null) {
             replay.getFoliaLib().getScheduler().cancelTask(replayTask);
@@ -784,7 +784,7 @@ public class ReplaySession implements Listener, PacketListener {
         }
     }
 
-    private void restoreReplayBlockStates() {
+    private void restoreReplayBlockStates(boolean clearAfterRestore) {
         for (Map.Entry<BlockKey, String> entry : originalBlockStates.entrySet()) {
             BlockKey key = entry.getKey();
             World world = Bukkit.getWorld(key.world());
@@ -793,7 +793,9 @@ public class ReplaySession implements Listener, PacketListener {
             }
             sendBlockStateToViewer(world, key.x(), key.y(), key.z(), entry.getValue());
         }
-        originalBlockStates.clear();
+        if (clearAfterRestore) {
+            originalBlockStates.clear();
+        }
     }
 
     private void giveReplayControls(Player viewer) {
@@ -956,7 +958,7 @@ public class ReplaySession implements Listener, PacketListener {
     }
 
     private void rebuildReplayBlockStateUntil(int targetIndexExclusive) {
-        restoreReplayBlockStates();
+        restoreReplayBlockStates(false);
         clearAllVisibleBreakStages();
         applyReplayBlockChangesInRange(0, targetIndexExclusive);
     }
