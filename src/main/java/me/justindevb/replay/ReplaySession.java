@@ -774,14 +774,81 @@ public class ReplaySession implements Listener, PacketListener {
     }
 
     private void skipSeconds(int seconds) {
-        tick += seconds * 20; // Assuming 20 ticks/sec
-        if (tick <= 0) tick = 1;
-        if (tick >= timeline.size()) tick = timeline.size() - 1;
-
-        Map<String, Object> event = timeline.get(tick);
-        for (RecordedEntity entity : recordedEntities.values()) {
-            handleEvent(entity, event);
+        if (timeline == null || timeline.isEmpty()) {
+            return;
         }
+
+        int currentIndex = Math.max(0, Math.min(tick, timeline.size() - 1));
+        int currentRecordedTick = getRecordedTickAtIndex(currentIndex);
+        int maxRecordedTick = getRecordedTickAtIndex(timeline.size() - 1);
+
+        int targetRecordedTick = currentRecordedTick + (seconds * 20);
+        if (targetRecordedTick < 0) {
+            targetRecordedTick = 0;
+        }
+        if (targetRecordedTick > maxRecordedTick) {
+            targetRecordedTick = maxRecordedTick;
+        }
+
+        int targetIndex = findTimelineIndexAtOrAfterRecordedTick(targetRecordedTick);
+
+        if (targetIndex > currentIndex) {
+            applyReplayBlockChangesInRange(currentIndex, targetIndex);
+        } else if (targetIndex < currentIndex) {
+            rebuildReplayBlockStateUntil(targetIndex);
+        }
+
+        tick = targetIndex;
+        sendActionBar();
+    }
+
+    private int getRecordedTickAtIndex(int index) {
+        if (timeline == null || timeline.isEmpty()) {
+            return 0;
+        }
+
+        int safeIndex = Math.max(0, Math.min(index, timeline.size() - 1));
+        Integer eventTick = asInt(timeline.get(safeIndex).get("tick"));
+        return eventTick != null ? eventTick : safeIndex;
+    }
+
+    private int findTimelineIndexAtOrAfterRecordedTick(int targetRecordedTick) {
+        int low = 0;
+        int high = timeline.size() - 1;
+        int result = timeline.size() - 1;
+
+        while (low <= high) {
+            int mid = (low + high) >>> 1;
+            int midTick = getRecordedTickAtIndex(mid);
+
+            if (midTick >= targetRecordedTick) {
+                result = mid;
+                high = mid - 1;
+            } else {
+                low = mid + 1;
+            }
+        }
+
+        return Math.max(0, Math.min(result, timeline.size() - 1));
+    }
+
+    private void applyReplayBlockChangesInRange(int fromIndex, int toIndexExclusive) {
+        int start = Math.max(0, Math.min(fromIndex, timeline.size()));
+        int end = Math.max(start, Math.min(toIndexExclusive, timeline.size()));
+
+        for (int i = start; i < end; i++) {
+            Map<String, Object> event = timeline.get(i);
+            String type = asString(event.get("type"));
+            if ("block_place".equals(type) || "block_break".equals(type)) {
+                applyReplayBlockChange(event, type);
+            }
+        }
+    }
+
+    private void rebuildReplayBlockStateUntil(int targetIndexExclusive) {
+        restoreReplayBlockStates();
+        primeInitialBrokenBlockStates();
+        applyReplayBlockChangesInRange(0, targetIndexExclusive);
     }
 
     @EventHandler(priority = EventPriority.HIGH)
