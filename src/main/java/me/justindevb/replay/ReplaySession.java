@@ -311,7 +311,8 @@ public class ReplaySession implements Listener, PacketListener {
                         case "sneak_start", "sneak_stop" -> rp.updateSneak(type.equals("sneak_start"));
                         case "attack" -> rp.playAttackAnimation();
                         case "block_place" -> rp.showBlockPlace(event);
-                        case "block_break" -> rp.showBlockBreak(event);
+                        case "block_break" -> {
+                        }
                     }
                 }
 

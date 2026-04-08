@@ -1,6 +1,9 @@
 package me.justindevb.replay;
 
+import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListener;
+import com.github.retrooper.packetevents.event.PacketListenerCommon;
+import com.github.retrooper.packetevents.event.PacketListenerPriority;
 import com.github.retrooper.packetevents.event.PacketSendEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockBreakAnimation;
@@ -14,6 +17,7 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
+import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockDamageEvent;
@@ -38,6 +42,7 @@ public class RecordingSession implements Listener, PacketListener {
     private final Set<UUID> trackedPlayers;
     private final Map<UUID, EntityType> trackedEntities = new HashMap<>();
     private final List<Map<String, Object>> timeline = new ArrayList<>();
+    private PacketListenerCommon packetListenerHandle;
 
     private static final double NEARBY_RADIUS_SQUARED = 32.0 * 32.0;
     private int tick = 0;
@@ -61,6 +66,7 @@ public class RecordingSession implements Listener, PacketListener {
                 + " player(s), duration=" + (durationTicks == -1 ? "∞" : durationTicks / 20 + "s"));
 
         Bukkit.getPluginManager().registerEvents(this, replay);
+        packetListenerHandle = PacketEvents.getAPI().getEventManager().registerListener(this, PacketListenerPriority.NORMAL);
 
         captureInitialInventory();
     }
@@ -397,6 +403,11 @@ public class RecordingSession implements Listener, PacketListener {
     public void stop(boolean save) {
         if (stopped) return;
         stopped = true;
+        HandlerList.unregisterAll(this);
+        if (packetListenerHandle != null) {
+            PacketEvents.getAPI().getEventManager().unregisterListener(packetListenerHandle);
+            packetListenerHandle = null;
+        }
 
         trackedPlayers.clear();
 
