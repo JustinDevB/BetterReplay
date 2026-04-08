@@ -134,4 +134,8 @@ public class SpawnFakePlayer {
     public int getEntityId() {
         return entityId;
     }
+
+    public UUID getFakeUuid() {
+        return fakeUuid;
+    }
 }

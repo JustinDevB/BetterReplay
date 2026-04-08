@@ -48,9 +48,10 @@ public abstract class RecordedEntity {
         }
 
         if (this instanceof RecordedPlayer rp) {
-            if (!viewer.getUniqueId().equals(rp.getUuid())) {
+            UUID fakeProfileUuid = rp.getFakeProfileUuid();
+            if (fakeProfileUuid != null) {
                 WrapperPlayServerPlayerInfoRemove remove =
-                        new WrapperPlayServerPlayerInfoRemove(Collections.singletonList(rp.getUuid()));
+                        new WrapperPlayServerPlayerInfoRemove(Collections.singletonList(fakeProfileUuid));
                 PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, remove);
             }
         }

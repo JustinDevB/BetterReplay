@@ -32,6 +32,7 @@ public class RecordedPlayer extends RecordedEntity {
 
     private boolean spawned = false;
     private final UUID uuid;
+    private UUID fakeProfileUuid;
 
     private ItemStack lastMainHand = null;
     private ItemStack lastOffHand = null;
@@ -56,6 +57,7 @@ public class RecordedPlayer extends RecordedEntity {
     @Override
     public void spawn(Location location) {
         SpawnFakePlayer fakePlayer = new SpawnFakePlayer(uuid, name, location, viewer, super.fakeEntityId);
+        this.fakeProfileUuid = fakePlayer.getFakeUuid();
         this.spawned = true;
 
         Replay.getInstance().getFoliaLib().getScheduler().runLater(this::sendMetadata, 1L);
@@ -102,6 +104,10 @@ public class RecordedPlayer extends RecordedEntity {
 
     public UUID getUuid() {
         return uuid;
+    }
+
+    public UUID getFakeProfileUuid() {
+        return fakeProfileUuid;
     }
 
     public String getName() {
