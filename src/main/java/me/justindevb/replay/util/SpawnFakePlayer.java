@@ -14,6 +14,7 @@ import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPl
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerSpawnEntity;
 import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import me.justindevb.replay.Replay;
+import net.kyori.adventure.text.Component;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 public class SpawnFakePlayer {
@@ -130,7 +132,27 @@ public class SpawnFakePlayer {
 
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, spawnPacket);
 
+        sendDisplayNameMetadata();
         sendSkinMetadata();
+    }
+
+    private void sendDisplayNameMetadata() {
+        List<EntityData<?>> displayMeta = new ArrayList<>();
+
+        displayMeta.add(new EntityData<>(
+                2,
+                EntityDataTypes.OPTIONAL_ADV_COMPONENT,
+                Optional.of(Component.text(name))
+        ));
+
+        displayMeta.add(new EntityData<>(
+                3,
+                EntityDataTypes.BOOLEAN,
+                true
+        ));
+
+        WrapperPlayServerEntityMetadata metadataPacket = new WrapperPlayServerEntityMetadata(entityId, displayMeta);
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, metadataPacket);
     }
 
     public void sendSkinMetadata() {
