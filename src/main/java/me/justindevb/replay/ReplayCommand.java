@@ -272,9 +272,13 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
             String prefix = joinArgs(args, 1).toLowerCase();
 
-            return cachedReplays.stream()
+            List<String> matches = cachedReplays.stream()
                     .filter(name -> name.toLowerCase().startsWith(prefix))
                     .toList();
+            if (matches.isEmpty() && args.length == 2) {
+                return List.of("<name>");
+            }
+            return matches;
         }
 
         if (args.length >= 2 && args[0].equalsIgnoreCase("stop")) {
@@ -283,18 +287,24 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
             String prefix = joinArgs(args, 1).toLowerCase();
 
-            return Replay.getInstance()
+            List<String> matches = Replay.getInstance()
                     .getRecorderManager()
                     .getActiveSessions()
                     .keySet()
                     .stream()
                     .filter(name -> name.toLowerCase().startsWith(prefix))
                     .toList();
+            if (matches.isEmpty() && args.length == 2) {
+                return List.of("<name>");
+            }
+            return matches;
         }
 
 
         if (args.length == 2 && args[0].equalsIgnoreCase("start")) {
-            return Collections.emptyList();
+            if (!sender.hasPermission("replay.start"))
+                return Collections.emptyList();
+            return List.of("<name>");
         }
 
         if (args.length >= 3 && args[0].equalsIgnoreCase("start")) {
@@ -302,7 +312,6 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                 return Collections.emptyList();
 
             // Collect already-selected player names so we don't suggest them again
-            // args[2..length-2] are already-selected players; current partial is args[length-1]
             java.util.Set<String> alreadySelected = new java.util.HashSet<>();
             for (int i = 2; i < args.length - 1; i++) {
                 alreadySelected.add(args[i].toLowerCase());
@@ -310,11 +319,18 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
             String currentArg = args[args.length - 1].toLowerCase();
 
-            return Bukkit.getOnlinePlayers().stream()
+            List<String> players = Bukkit.getOnlinePlayers().stream()
                     .map(Player::getName)
                     .filter(name -> !alreadySelected.contains(name.toLowerCase()))
                     .filter(name -> name.toLowerCase().startsWith(currentArg))
-                    .toList();
+                    .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+
+            // Always show duration hint alongside player suggestions
+            if (currentArg.isEmpty() || "[seconds]".startsWith(currentArg)) {
+                players.add("[seconds]");
+            }
+
+            return players;
         }
 
         return Collections.emptyList();
