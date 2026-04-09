@@ -26,7 +26,6 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
-import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
 import java.io.File;
@@ -46,6 +45,8 @@ public class RecordingSession implements Listener, PacketListener {
     private final Map<String, Integer> breakStageDedup = new HashMap<>();
 
     private static final double NEARBY_RADIUS_SQUARED = 32.0 * 32.0;
+    private static final int INVENTORY_CHECK_INTERVAL = 5;
+    private final Map<UUID, List<String>> lastInventorySnapshot = new HashMap<>();
     private int tick = 0;
     private int durationTicks = -1;
     private boolean stopped = false;
@@ -123,7 +124,40 @@ public class RecordingSession implements Listener, PacketListener {
             timeline.add(moveEvent);
         }
 
+        if (tick % INVENTORY_CHECK_INTERVAL == 0) {
+            tickInventoryCheck();
+        }
+
         tick++;
+    }
+
+    private void tickInventoryCheck() {
+        for (UUID uuid : trackedPlayers) {
+            Player p = Bukkit.getPlayer(uuid);
+            if (p == null || !p.isOnline()) continue;
+
+            List<String> currentSerialized = new ArrayList<>();
+            for (ItemStack item : p.getInventory().getContents()) {
+                currentSerialized.add(serializeItem(item));
+            }
+            // Include armor and offhand in the comparison key
+            currentSerialized.add(serializeItem(p.getInventory().getItemInOffHand()));
+            for (ItemStack armor : p.getInventory().getArmorContents()) {
+                currentSerialized.add(serializeItem(armor));
+            }
+
+            List<String> previous = lastInventorySnapshot.get(uuid);
+            if (currentSerialized.equals(previous)) continue;
+
+            lastInventorySnapshot.put(uuid, currentSerialized);
+
+            Map<String, Object> event = new HashMap<>();
+            event.put("tick", tick);
+            event.put("type", "inventory_update");
+            event.put("uuid", uuid.toString());
+            event.putAll(captureInventory(p));
+            timeline.add(event);
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -339,35 +373,6 @@ public class RecordingSession implements Listener, PacketListener {
         timeline.add(event);
     }
 
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onInventoryChange(InventoryClickEvent e) {
-        Player p = (Player) e.getWhoClicked();
-        if (!trackedPlayers.contains(p.getUniqueId())) return;
-
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tick);
-        event.put("type", "inventory_update");
-        event.put("uuid", p.getUniqueId().toString());
-        event.putAll(captureInventory(p));
-
-        timeline.add(event);
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void onHeldItemSwap(PlayerItemHeldEvent e) {
-        Player p = e.getPlayer();
-        if (!trackedPlayers.contains(p.getUniqueId())) return;
-
-        UUID uuid = p.getUniqueId();
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tick);
-        event.put("type", "inventory_update");
-        event.put("uuid", uuid.toString());
-        event.putAll(captureInventory(p));
-
-        timeline.add(event);
-    }
-
     @EventHandler
     public void onQuit(PlayerQuitEvent e) {
         Player p = e.getPlayer();
@@ -381,20 +386,6 @@ public class RecordingSession implements Listener, PacketListener {
             timeline.add(event);
             trackedPlayers.remove(p.getUniqueId());
         }
-    }
-
-    @EventHandler(priority = EventPriority.MONITOR)
-    public void swapItem(PlayerSwapHandItemsEvent e) {
-        Player p = (Player) e.getPlayer();
-        if (!trackedPlayers.contains(p.getUniqueId())) return;
-
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tick);
-        event.put("type", "inventory_update");
-        event.put("uuid", p.getUniqueId().toString());
-        event.putAll(captureInventory(p));
-
-        timeline.add(event);
     }
 
     public void stop(boolean save) {
