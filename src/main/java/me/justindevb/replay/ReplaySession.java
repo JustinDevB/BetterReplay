@@ -56,7 +56,6 @@ public class ReplaySession implements Listener, PacketListener {
     private int blockBreakMutationEpoch = 0;
     private int tick = 0;
     private boolean paused = false;
-    private volatile long lastEntityInteractNanos = 0;
     private ItemStack[] viewerInventory;
     private ItemStack[] viewerArmor;
     private ItemStack viewerOffHand;
@@ -879,8 +878,9 @@ public class ReplaySession implements Listener, PacketListener {
 
         String name = handItem.getItemMeta().getDisplayName();
 
-        // If the player is clicking on a recorded entity, skip the control action
-        if (System.nanoTime() - lastEntityInteractNanos < 100_000_000L) {
+        // If the player is looking at a recorded entity, skip the control action
+        // so that clicking on a player opens their inventory instead of toggling pause, etc.
+        if (isLookingAtRecordedEntity(player)) {
             e.setCancelled(true);
             return;
         }
@@ -1173,30 +1173,16 @@ public class ReplaySession implements Listener, PacketListener {
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (!event.getPlayer().equals(viewer))
-            return;
-
-        // Suppress USE_ITEM / BLOCK_PLACEMENT packets that follow an entity click
-        // so that playback controls don't activate when clicking on a recorded entity.
-        // Both packets arrive on the same netty thread as INTERACT_ENTITY, so the
-        // timestamp set below is guaranteed to be visible here (no cross-thread race).
-        if (event.getPacketType().equals(PacketType.Play.Client.PLAYER_BLOCK_PLACEMENT)
-                || event.getPacketType().equals(PacketType.Play.Client.USE_ITEM)) {
-            if (System.nanoTime() - lastEntityInteractNanos < 100_000_000L) {
-                event.setCancelled(true);
-            }
-            return;
-        }
-
         if (!event.getPacketType().equals(PacketType.Play.Client.INTERACT_ENTITY))
+            return;
+
+        if (!event.getPlayer().equals(viewer))
             return;
 
         WrapperPlayClientInteractEntity wrapper = new WrapperPlayClientInteractEntity(event);
 
-        if (trackedEntityIds.contains(wrapper.getEntityId())) {
-            lastEntityInteractNanos = System.nanoTime();
+        if (trackedEntityIds.contains(wrapper.getEntityId()))
             event.setCancelled(true);
-        }
 
         int entityId = wrapper.getEntityId();
         RecordedEntity recordedEntity = recordedEntities.values()
@@ -1205,14 +1191,40 @@ public class ReplaySession implements Listener, PacketListener {
                 .findFirst()
                 .orElse(null);
 
-        if (recordedEntity != null) {
-            lastEntityInteractNanos = System.nanoTime();
-        }
-
         if (recordedEntity instanceof RecordedPlayer rp) {
             rp.openInventoryForViewer(viewer);
             event.setCancelled(true);
         }
+    }
+
+    /**
+     * Check if the viewer is looking at any recorded entity within interaction range.
+     */
+    private boolean isLookingAtRecordedEntity(Player player) {
+        Location eye = player.getEyeLocation();
+        org.bukkit.util.Vector dir = eye.getDirection().normalize();
+
+        for (RecordedEntity re : recordedEntities.values()) {
+            Location loc = re.getCurrentLocation();
+            if (loc == null || !eye.getWorld().equals(loc.getWorld()))
+                continue;
+
+            // Aim at entity center (approx 0.9 blocks above feet)
+            org.bukkit.util.Vector toEntity = loc.toVector()
+                    .add(new org.bukkit.util.Vector(0, 0.9, 0))
+                    .subtract(eye.toVector());
+
+            double distance = toEntity.length();
+            if (distance > 6.0) continue;
+
+            double dot = toEntity.dot(dir);
+            if (dot < 0) continue;
+
+            // Perpendicular distance squared from the look ray
+            double perpDistSq = toEntity.crossProduct(dir).lengthSquared();
+            if (perpDistSq < 2.25) return true; // within ~1.5 block radius
+        }
+        return false;
     }
 
     public RecordedEntity getRecordedEntity(int entityId) {
