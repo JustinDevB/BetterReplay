@@ -878,9 +878,11 @@ public class ReplaySession implements Listener, PacketListener {
 
         String name = handItem.getItemMeta().getDisplayName();
 
-        // If the player is looking at a recorded entity, skip the control action
-        // so that clicking on a player opens their inventory instead of toggling pause, etc.
-        if (isLookingAtRecordedEntity(player)) {
+        // If the player is looking at a recorded player, open their inventory
+        // instead of activating the hotbar control. Works at extended range (20 blocks).
+        RecordedPlayer targetPlayer = getTargetedRecordedPlayer(player);
+        if (targetPlayer != null) {
+            targetPlayer.openInventoryForViewer(player);
             e.setCancelled(true);
             return;
         }
@@ -1198,13 +1200,19 @@ public class ReplaySession implements Listener, PacketListener {
     }
 
     /**
-     * Check if the viewer is looking at any recorded entity within interaction range.
+     * Return the RecordedPlayer the viewer is aiming at, or null if none.
+     * Works up to 20 blocks away — much farther than Minecraft's native interaction range.
      */
-    private boolean isLookingAtRecordedEntity(Player player) {
+    private RecordedPlayer getTargetedRecordedPlayer(Player player) {
         Location eye = player.getEyeLocation();
         org.bukkit.util.Vector dir = eye.getDirection().normalize();
 
+        RecordedPlayer closest = null;
+        double closestDist = Double.MAX_VALUE;
+
         for (RecordedEntity re : recordedEntities.values()) {
+            if (!(re instanceof RecordedPlayer rp)) continue;
+
             Location loc = re.getCurrentLocation();
             if (loc == null || !eye.getWorld().equals(loc.getWorld()))
                 continue;
@@ -1215,16 +1223,19 @@ public class ReplaySession implements Listener, PacketListener {
                     .subtract(eye.toVector());
 
             double distance = toEntity.length();
-            if (distance > 6.0) continue;
+            if (distance > 20.0) continue;
 
             double dot = toEntity.dot(dir);
             if (dot < 0) continue;
 
             // Perpendicular distance squared from the look ray
             double perpDistSq = toEntity.crossProduct(dir).lengthSquared();
-            if (perpDistSq < 2.25) return true; // within ~1.5 block radius
+            if (perpDistSq < 2.25 && distance < closestDist) {
+                closest = rp;
+                closestDist = distance;
+            }
         }
-        return false;
+        return closest;
     }
 
     public RecordedEntity getRecordedEntity(int entityId) {
