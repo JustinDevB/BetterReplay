@@ -1292,8 +1292,7 @@ public class ReplaySession implements Listener, PacketListener {
         null
         );
 
-        @SuppressWarnings("unchecked")
-        EntityData itemData = new EntityData(8, EntityDataTypes.ITEMSTACK, nmsStack);
+        EntityData<com.github.retrooper.packetevents.protocol.item.ItemStack> itemData = new EntityData<>(8, EntityDataTypes.ITEMSTACK, nmsStack);
         WrapperPlayServerEntityMetadata meta = new WrapperPlayServerEntityMetadata(
                 entityId,
                 Collections.singletonList(itemData)

@@ -66,8 +66,7 @@ public class RecordedPlayer extends RecordedEntity {
 
     private void sendMetadata() {
         if (!spawned) return;
-        @SuppressWarnings("unchecked")
-        EntityData flagsData = new EntityData(0, EntityDataTypes.BYTE, metadataFlags);
+        EntityData<Byte> flagsData = new EntityData<>(0, EntityDataTypes.BYTE, metadataFlags);
         WrapperPlayServerEntityMetadata metadata = new WrapperPlayServerEntityMetadata(fakeEntityId, Collections.singletonList(flagsData));
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, metadata);
 
@@ -82,8 +81,7 @@ public class RecordedPlayer extends RecordedEntity {
     }
 
     public void setPose(Pose pose) {
-        @SuppressWarnings("unchecked")
-        EntityData poseData = new EntityData(6, EntityDataTypes.ENTITY_POSE, EntityPose.valueOf(pose.name()));
+        EntityData<EntityPose> poseData = new EntityData<>(6, EntityDataTypes.ENTITY_POSE, EntityPose.valueOf(pose.name()));
         WrapperPlayServerEntityMetadata metadata = new WrapperPlayServerEntityMetadata(
                 fakeEntityId,
                 Collections.singletonList(poseData)
@@ -151,10 +149,8 @@ public class RecordedPlayer extends RecordedEntity {
             metadataFlags &= ~0x02;
         }
 
-        @SuppressWarnings("unchecked")
-        EntityData flagsData = new EntityData(0, EntityDataTypes.BYTE, metadataFlags);
-        @SuppressWarnings("unchecked")
-        EntityData poseData = new EntityData(6, EntityDataTypes.ENTITY_POSE, sneaking ? EntityPose.CROUCHING : EntityPose.STANDING);
+        EntityData<Byte> flagsData = new EntityData<>(0, EntityDataTypes.BYTE, metadataFlags);
+        EntityData<EntityPose> poseData = new EntityData<>(6, EntityDataTypes.ENTITY_POSE, sneaking ? EntityPose.CROUCHING : EntityPose.STANDING);
 
         WrapperPlayServerEntityMetadata metadata = new WrapperPlayServerEntityMetadata(
                 fakeEntityId,
@@ -174,8 +170,7 @@ public class RecordedPlayer extends RecordedEntity {
             metadataFlags &= ~0x08;
         }
 
-        @SuppressWarnings("unchecked")
-        EntityData flagsData = new EntityData(0, EntityDataTypes.BYTE, metadataFlags);
+        EntityData<Byte> flagsData = new EntityData<>(0, EntityDataTypes.BYTE, metadataFlags);
         WrapperPlayServerEntityMetadata metadata =
                 new WrapperPlayServerEntityMetadata(fakeEntityId, Collections.singletonList(flagsData));
 
