@@ -1282,11 +1282,12 @@ public class ReplaySession implements Listener, PacketListener {
     }
 
     private void sendActionBar() {
-        int totalTicks = timeline.size();
+        int currentRecordedTick = tick > 0 ? getRecordedTickAtIndex(tick - 1) : 0;
+        int totalRecordedTicks = getRecordedTickAtIndex(timeline.size() - 1);
 
-        String current = formatTime(tick);
-        String total = formatTime(totalTicks);
-        int percent = totalTicks > 0 ? (tick * 100 / totalTicks) : 0;
+        String current = formatTime(currentRecordedTick);
+        String total = formatTime(totalRecordedTicks);
+        int percent = totalRecordedTicks > 0 ? (currentRecordedTick * 100 / totalRecordedTicks) : 0;
 
         Component bar;
 
