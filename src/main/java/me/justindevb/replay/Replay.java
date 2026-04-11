@@ -122,7 +122,8 @@ public class Replay extends JavaPlugin {
         if (!getConfig().getBoolean("General.Check-Update"))
             return;
         new UpdateChecker(this, 133445).getVersion(version -> {
-            if (this.getPluginMeta().getVersion().equals(version))
+            String localVersion = this.getPluginMeta().getVersion().replace("-SNAPSHOT", "");
+            if (localVersion.equals(version))
                 getLogger().log(Level.INFO, "You are up to date!");
             else
                 getLogger().log(Level.INFO, "There is an update available! Download at: https://www.spigotmc.org/resources/betterreplay.133445/");
