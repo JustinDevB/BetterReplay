@@ -1243,7 +1243,7 @@ public class ReplaySession implements Listener, PacketListener {
 
             // Perpendicular distance squared from the look ray
             double perpDistSq = toEntity.crossProduct(dir).lengthSquared();
-            if (perpDistSq < 2.25 && distance < closestDist) {
+            if (perpDistSq < 1.0 && distance < closestDist) {
                 closest = rp;
                 closestDist = distance;
             }
