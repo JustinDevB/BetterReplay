@@ -143,32 +143,20 @@ mvn -DskipTests package
 Output jar:
 - target/BetterReplay-<version>.jar
 
-## API usage example
+## API
+
+BetterReplay provides a public API for other plugins to start/stop recordings, manage replays, and listen for lifecycle events.
+
+Quick example:
 
 ```java
-import me.justindevb.replay.api.ReplayAPI;
-import me.justindevb.replay.api.ReplayManager;
-import org.bukkit.entity.Player;
-
-import java.util.List;
-
-public final class ExampleUse {
-    public void startAndStop(List<Player> players) {
-        ReplayManager replayManager = ReplayAPI.get();
-
-        replayManager.startRecording("demo-session", players, 120);
-
-        // Later...
-        replayManager.stopRecording("demo-session", true);
-    }
-}
+ReplayManager manager = ReplayAPI.get();
+manager.startRecording("demo-session", List.of(player), 120);
+manager.stopRecording("demo-session", true);
+manager.startReplay("demo-session", viewerPlayer);
 ```
 
-Playback example:
-
-```java
-ReplayAPI.get().startReplay("demo-session", viewerPlayer);
-```
+For full documentation of every method, all events, and a complete example plugin, see the **[API Documentation](docs/API.md)**.
 
 ## Development workflow
 
