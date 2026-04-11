@@ -2,6 +2,9 @@ package me.justindevb.replay.util;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.reflect.TypeToken;
 import java.io.*;
 import java.nio.file.Files;
@@ -46,7 +49,16 @@ public class ReplayExporter {
      */
     public static void export(File recordingJson, File out, boolean gzipOutput) throws IOException {
         String raw = new String(Files.readAllBytes(recordingJson.toPath()));
-        List<Map<String, Object>> timeline = GSON.fromJson(raw, new TypeToken<List<Map<String, Object>>>(){}.getType());
+
+        // Handle both legacy (raw array) and new envelope formats
+        JsonElement el = JsonParser.parseString(raw);
+        List<Map<String, Object>> timeline;
+        if (el.isJsonArray()) {
+            timeline = GSON.fromJson(el, new TypeToken<List<Map<String, Object>>>(){}.getType());
+        } else {
+            JsonObject obj = el.getAsJsonObject();
+            timeline = GSON.fromJson(obj.get("timeline"), new TypeToken<List<Map<String, Object>>>(){}.getType());
+        }
 
         ExportReplay export = new ExportReplay();
 

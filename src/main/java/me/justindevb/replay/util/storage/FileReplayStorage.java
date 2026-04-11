@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.util.ReplayCompressor;
+import me.justindevb.replay.util.VersionUtil;
 
 import java.io.*;
 import java.nio.file.Files;
@@ -49,7 +50,7 @@ public class FileReplayStorage implements ReplayStorage {
     public CompletableFuture<Void> saveReplay(String name, List<?> timeline) {
         return CompletableFuture.runAsync(() -> {
             try {
-                String json = gson.toJson(timeline);
+                String json = VersionUtil.wrapTimeline(gson, timeline, replay.getDescription().getVersion());
                 if (isCompressionEnabled()) {
                     File file = new File(replayFolder, name + EXT_COMPRESSED);
                     Files.write(file.toPath(), ReplayCompressor.compress(json));
@@ -81,7 +82,7 @@ public class FileReplayStorage implements ReplayStorage {
                 byte[] bytes = Files.readAllBytes(file.toPath());
                 // Auto-detect: works for both compressed and plain-text files
                 String json = ReplayCompressor.decompressIfNeeded(bytes);
-                return gson.fromJson(json, List.class);
+                return VersionUtil.parseReplayJson(gson, json, replay.getDescription().getVersion());
             } catch (IOException e) {
                 throw new RuntimeException("Failed to load replay " + name, e);
             }

@@ -1,6 +1,7 @@
 package me.justindevb.replay;
 
 import me.justindevb.replay.api.ReplayManager;
+import me.justindevb.replay.util.VersionUtil;
 import me.justindevb.replay.util.storage.ReplayStorage;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -85,8 +86,18 @@ public class ReplayManagerImpl implements ReplayManager {
                             });
                 })
                 .exceptionally(ex -> {
-                    ex.printStackTrace();
-                    runSync(() -> viewer.sendMessage("§cFailed to start replay: " + replayName));
+                    Throwable cause = ex;
+                    while (cause instanceof java.util.concurrent.CompletionException && cause.getCause() != null) {
+                        cause = cause.getCause();
+                    }
+                    if (cause instanceof VersionUtil.ReplayVersionMismatchException mismatch) {
+                        runSync(() -> viewer.sendMessage("§cThis recording requires BetterReplay v"
+                                + mismatch.getRequiredVersion() + "+. You are running v"
+                                + mismatch.getRunningVersion() + "."));
+                    } else {
+                        ex.printStackTrace();
+                        runSync(() -> viewer.sendMessage("§cFailed to start replay: " + replayName));
+                    }
                     return Optional.empty();
                 });
     }

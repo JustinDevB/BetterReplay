@@ -3,6 +3,7 @@ package me.justindevb.replay.util.storage;
 import com.google.gson.Gson;
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.util.ReplayCompressor;
+import me.justindevb.replay.util.VersionUtil;
 
 import javax.sql.DataSource;
 import java.io.*;
@@ -60,7 +61,7 @@ public class MySQLReplayStorage implements ReplayStorage {
                  ON DUPLICATE KEY UPDATE data = VALUES(data)
              """)) {
 
-                String json = gson.toJson(timeline);
+                String json = VersionUtil.wrapTimeline(gson, timeline, replay.getDescription().getVersion());
                 byte[] data = isCompressionEnabled()
                         ? ReplayCompressor.compress(json)
                         : json.getBytes(StandardCharsets.UTF_8);
@@ -90,7 +91,7 @@ public class MySQLReplayStorage implements ReplayStorage {
                     if (!rs.next()) return null;
                     // Auto-detect compression so legacy uncompressed rows still load
                     String json = ReplayCompressor.decompressIfNeeded(rs.getBytes("data"));
-                    return gson.fromJson(json, List.class);
+                    return VersionUtil.parseReplayJson(gson, json, replay.getDescription().getVersion());
                 }
 
             } catch (Exception e) {
@@ -175,7 +176,7 @@ public class MySQLReplayStorage implements ReplayStorage {
 
                     // Auto-detect compression; works for both compressed and plain rows
                     String json = ReplayCompressor.decompressIfNeeded(rs.getBytes("data"));
-                    List<?> timeline = gson.fromJson(json, List.class);
+                    List<?> timeline = VersionUtil.parseReplayJson(gson, json, replay.getDescription().getVersion());
 
                     File tempFile = File.createTempFile("replay_" + name + "_", ".json");
                     tempFile.deleteOnExit();
