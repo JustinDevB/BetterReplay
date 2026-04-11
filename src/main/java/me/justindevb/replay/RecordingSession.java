@@ -91,7 +91,7 @@ public class RecordingSession implements Listener, PacketListener {
             moveEvent.put("tick", tick);
             moveEvent.put("type", "player_move");
             moveEvent.put("name", p.getName());
-            moveEvent.put("etype", EntityType.PLAYER);
+            moveEvent.put("etype", EntityType.PLAYER.name());
             moveEvent.put("uuid", uuid.toString());
             moveEvent.put("world", p.getWorld().getName());
             moveEvent.put("x", loc.getX());

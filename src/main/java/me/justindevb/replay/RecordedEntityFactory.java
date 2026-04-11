@@ -5,19 +5,22 @@ import org.bukkit.entity.Player;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 public class RecordedEntityFactory {
+    private static final Logger LOGGER = Replay.getInstance().getLogger();
+
     public static RecordedEntity create(Map<String, Object> frame, Player viewer) {
         Object uuidObj = frame.get("uuid");
         if (!(uuidObj instanceof String uuidStr)) {
-            System.out.println("Malformed event: missing or invalid UUID");
+            LOGGER.warning("Malformed event: missing or invalid UUID");
             return null;
         }
         UUID uuid = UUID.fromString(uuidStr);
 
         Object typeObj = frame.get("etype");
         if (!(typeObj instanceof String typeStr)) {
-            System.out.println("Malformed event: missing or invalid entity type for UUID " + uuid);
+            LOGGER.warning("Malformed event: missing or invalid entity type for UUID " + uuid);
             return null;
         }
 
@@ -25,7 +28,7 @@ public class RecordedEntityFactory {
         try {
             type = EntityType.valueOf(typeStr);
         } catch (IllegalArgumentException e) {
-            System.out.println("Unknown entity type '" + typeStr + "' for UUID " + uuid);
+            LOGGER.warning("Unknown entity type '" + typeStr + "' for UUID " + uuid);
             return null;
         }
 

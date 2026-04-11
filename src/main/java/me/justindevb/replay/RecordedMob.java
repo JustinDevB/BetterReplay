@@ -24,7 +24,7 @@ public class RecordedMob extends RecordedEntity {
         com.github.retrooper.packetevents.protocol.entity.type.EntityType peType = EntityTypeMapper.get(type);
 
         if (peType == null) {
-            System.out.println("Unsupported mob type for replay: " + type);
+            Replay.getInstance().getLogger().warning("Unsupported mob type for replay: " + type);
             return;
         }
 
