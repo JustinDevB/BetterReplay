@@ -244,6 +244,34 @@ me.justindevb.replay
 
 ---
 
+## Testing Strategy
+
+There are currently no tests in this project. The refactor should happen **before** investing in a test suite — not after. Here's why:
+
+### Why tests before the refactor would be wasteful
+
+The two largest classes (`RecordingSession`, `ReplaySession`) are tightly coupled to Bukkit events, PacketEvents packet listeners, and live server state. Writing unit tests against them today would require heavy mocking of `Player`, `World`, `PacketSendEvent`, and other framework types. The resulting tests would mostly verify mock wiring rather than real logic, and they would need to be largely rewritten once the refactor changes every class boundary. The effort-to-value ratio is poor.
+
+### Why tests after the refactor will be far more useful
+
+Once the megaclasses are split, the extracted components become naturally testable:
+
+- A `TimelineBuilder` that accepts structured input and produces a timeline can be tested with plain data — no server mocking needed.
+- An `EntityTracker` that manages a collection has a focused contract with clear inputs and outputs.
+- A `ReplayBlockManager` with well-defined boundaries can be verified with simple unit tests and minimal mocking.
+
+These smaller classes have **focused contracts** that make tests concise, meaningful, and durable. Tests written at this level catch real bugs instead of asserting that mocks were called in the right order.
+
+### Recommended approach
+
+1. **Before refactoring** — write a small number of high-level smoke tests through the public API (`ReplayManager` interface). Even basic "does it initialize, can I start/stop a recording" tests through `ReplayManagerImpl` will catch catastrophic breakage during the refactor without being throwaway work.
+2. **Refactor (Tier 1)** — split the megaclasses.
+3. **After refactoring** — write thorough unit tests against the new smaller classes, where each test targets a single responsibility and requires minimal setup.
+
+The package moves in Tier 2 are mechanical and low-risk. The megaclass splits in Tier 1 are where the smoke tests provide the most safety for the least throwaway effort.
+
+---
+
 ## Implementation Notes
 
 - Each tier can be done independently. Tier 1 delivers the most value.
