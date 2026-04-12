@@ -1,5 +1,7 @@
 package me.justindevb.replay;
 
+import me.justindevb.replay.entity.RecordedEntity;
+
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 

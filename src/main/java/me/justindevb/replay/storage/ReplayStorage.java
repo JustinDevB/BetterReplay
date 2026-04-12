@@ -1,4 +1,4 @@
-package me.justindevb.replay.util.storage;
+package me.justindevb.replay.storage;
 
 import java.io.File;
 import java.util.List;

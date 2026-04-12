@@ -1,4 +1,4 @@
-package me.justindevb.replay.util;
+package me.justindevb.replay.util.spawning;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.protocol.entity.type.EntityType;

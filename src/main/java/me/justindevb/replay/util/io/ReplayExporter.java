@@ -1,4 +1,4 @@
-package me.justindevb.replay.util;
+package me.justindevb.replay.util.io;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;

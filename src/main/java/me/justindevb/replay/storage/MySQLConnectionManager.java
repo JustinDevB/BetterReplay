@@ -1,4 +1,4 @@
-package me.justindevb.replay.util.storage;
+package me.justindevb.replay.storage;
 
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;

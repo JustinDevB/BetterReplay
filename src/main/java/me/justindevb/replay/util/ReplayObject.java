@@ -1,7 +1,7 @@
 package me.justindevb.replay.util;
 
 
-import me.justindevb.replay.util.storage.ReplayStorage;
+import me.justindevb.replay.storage.ReplayStorage;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

@@ -1,5 +1,6 @@
-package me.justindevb.replay;
+package me.justindevb.replay.entity;
 
+import me.justindevb.replay.Replay;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 

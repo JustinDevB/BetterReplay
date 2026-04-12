@@ -5,6 +5,8 @@ import com.github.retrooper.packetevents.event.PacketReceiveEvent;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.wrapper.play.client.WrapperPlayClientInteractEntity;
 import me.justindevb.replay.*;
+import me.justindevb.replay.entity.RecordedEntity;
+import me.justindevb.replay.entity.RecordedPlayer;
 import org.bukkit.entity.Player;
 
 public class PacketEventsListener implements PacketListener {

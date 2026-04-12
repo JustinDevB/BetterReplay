@@ -1,4 +1,6 @@
-package me.justindevb.replay;
+package me.justindevb.replay.entity;
+
+import me.justindevb.replay.Replay;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerDestroyEntities;
@@ -77,6 +79,10 @@ public abstract class RecordedEntity {
 
     public boolean isDestroyed() {
         return destroyed;
+    }
+
+    public UUID getUuid() {
+        return uuid;
     }
 
     public Location getCurrentLocation() {

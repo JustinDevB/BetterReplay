@@ -1,4 +1,4 @@
-package me.justindevb.replay;
+package me.justindevb.replay.entity;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.protocol.entity.data.EntityData;
@@ -9,7 +9,8 @@ import com.github.retrooper.packetevents.protocol.player.EquipmentSlot;
 import com.github.retrooper.packetevents.wrapper.play.server.*;
 import com.github.retrooper.packetevents.util.Vector3i;
 import io.github.retrooper.packetevents.util.SpigotConversionUtil;
-import me.justindevb.replay.util.SpawnFakePlayer;
+import me.justindevb.replay.Replay;
+import me.justindevb.replay.util.spawning.SpawnFakePlayer;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -22,7 +23,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import java.util.*;
 
-import static me.justindevb.replay.util.ItemStackSerializer.deserializeItem;
+import static me.justindevb.replay.util.io.ItemStackSerializer.deserializeItem;
 
 public class RecordedPlayer extends RecordedEntity {
     private final String name;
