@@ -28,7 +28,6 @@ import static me.justindevb.replay.util.io.ItemStackSerializer.deserializeItem;
 public class PlaybackEngine {
 
     private final Player viewer;
-    private final Replay replay;
     private final Set<Integer> trackedEntityIds;
     private final Set<UUID> deadEntities;
     private final Map<UUID, RecordedEntity> recordedEntities;
@@ -40,7 +39,6 @@ public class PlaybackEngine {
                           Map<UUID, RecordedEntity> recordedEntities,
                           ReplayBlockManager blockManager) {
         this.viewer = viewer;
-        this.replay = replay;
         this.trackedEntityIds = trackedEntityIds;
         this.deadEntities = deadEntities;
         this.recordedEntities = recordedEntities;
