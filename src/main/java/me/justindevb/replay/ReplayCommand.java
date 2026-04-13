@@ -1,5 +1,6 @@
 package me.justindevb.replay;
 
+import me.justindevb.replay.api.ReplayManager;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -17,13 +18,12 @@ import java.util.List;
 import java.util.logging.Level;
 
 public class ReplayCommand implements CommandExecutor, TabCompleter {
-    private final RecorderManager manager;
+    private final ReplayManager replayManager;
 
-    public ReplayCommand(RecorderManager manager) {
-        this.manager = manager;
+    public ReplayCommand(ReplayManager replayManager) {
+        this.replayManager = replayManager;
     }
 
-    //TODO: Refactor this mess to strictly utilize the API instead of plugin internals
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player p)) {
@@ -74,7 +74,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
 
-                if (manager.startSession(sessionName, targets, duration)) {
+                if (replayManager.startRecording(sessionName, targets, duration)) {
                     p.sendMessage("§aStarted recording session: " + sessionName + " (" +
                             (duration == -1 ? "∞" : duration + "s") + ")");
                 } else {
@@ -91,7 +91,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 String sessionName = joinArgs(args, 1);
-                if (manager.stopSession(sessionName, true)) {
+                if (replayManager.stopRecording(sessionName, true)) {
                     p.sendMessage("§aStopped recording session: " + sessionName);
                 } else {
                     p.sendMessage("§cNo active session with that name!");
@@ -107,9 +107,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 String replayName = joinArgs(args, 1);
-                Replay.getInstance()
-                        .getReplayManagerImpl()
-                    .startReplay(replayName, p);
+                replayManager.startReplay(replayName, p);
 
                 return true;
             }
@@ -132,7 +130,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
                 final int page = parsedPage;
 
-                Replay.getInstance().getReplayStorage().listReplays()
+                replayManager.listSavedReplays()
                         .thenAccept(replays -> Bukkit.getScheduler().runTask(Replay.getInstance(), () -> {
                             if (replays.isEmpty()) {
                                 p.sendMessage("§cNo replays found.");
@@ -200,7 +198,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 String name = joinArgs(args, 1);
-                Replay.getInstance().getReplayManagerImpl().deleteSavedReplay(name)
+                replayManager.deleteSavedReplay(name)
                         .thenAccept(success -> {
                             Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> {
                                 if (success) {
@@ -232,9 +230,9 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             p.sendMessage("§e/replay start <name> <player1 player2 ...> [seconds] §7- Start recording");
         if (p.hasPermission("replay.stop")) {
             p.sendMessage("§e/replay stop <name> §7- Stop an active recording");
-            var sessions = manager.getActiveSessions();
+            var sessions = replayManager.getActiveRecordings();
             if (!sessions.isEmpty()) {
-                p.sendMessage("§7  Active: §f" + String.join("§7, §f", sessions.keySet()));
+                p.sendMessage("§7  Active: §f" + String.join("§7, §f", sessions));
             }
         }
         if (p.hasPermission("replay.play"))
@@ -266,9 +264,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             if (!sender.hasPermission("replay." + args[0].toLowerCase()))
                 return Collections.emptyList();
 
-            List<String> cachedReplays = Replay.getInstance()
-                    .getReplayCache()
-                    .getReplays();
+            List<String> cachedReplays = replayManager.getCachedReplayNames();
 
             String prefix = joinArgs(args, 1).toLowerCase();
 
@@ -287,10 +283,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
             String prefix = joinArgs(args, 1).toLowerCase();
 
-            List<String> matches = Replay.getInstance()
-                    .getRecorderManager()
-                    .getActiveSessions()
-                    .keySet()
+            List<String> matches = replayManager.getActiveRecordings()
                     .stream()
                     .filter(name -> name.toLowerCase().startsWith(prefix))
                     .toList();

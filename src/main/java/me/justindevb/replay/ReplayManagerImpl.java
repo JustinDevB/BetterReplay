@@ -23,8 +23,8 @@ public class ReplayManagerImpl implements ReplayManager {
     }
 
     @Override
-    public void startRecording(String name, Collection<Player> players, int durationSeconds) {
-        recorderManager.startSession(name, players, durationSeconds);
+    public boolean startRecording(String name, Collection<Player> players, int durationSeconds) {
+        return recorderManager.startSession(name, players, durationSeconds);
     }
 
     @Override
@@ -52,7 +52,7 @@ public class ReplayManagerImpl implements ReplayManager {
 
 
     @Override
-    public Collection<?> getActiveRecordings() {
+    public Collection<String> getActiveRecordings() {
         return recorderManager.getActiveSessions().keySet();
     }
 
@@ -148,6 +148,11 @@ public class ReplayManagerImpl implements ReplayManager {
                     ex.printStackTrace();
                     return false;
                 });
+    }
+
+    @Override
+    public List<String> getCachedReplayNames() {
+        return replay.getReplayCache().getReplays();
     }
 
     @Override

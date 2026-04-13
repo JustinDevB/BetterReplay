@@ -44,7 +44,8 @@ public class Replay extends JavaPlugin {
         foliaLib = new FoliaLib(this);
 
         recorderManager = new RecorderManager(this);
-        ReplayCommand replayCommand = new ReplayCommand(recorderManager);
+        manager = new ReplayManagerImpl(this, recorderManager);
+        ReplayCommand replayCommand = new ReplayCommand(manager);
         initConfig();
 
         PluginCommand cmd = getCommand("replay");
@@ -54,7 +55,7 @@ public class Replay extends JavaPlugin {
         }
 
         //Initialize API
-        ReplayAPI.init(manager = new ReplayManagerImpl(this, recorderManager));
+        ReplayAPI.init(manager);
 
         initStorage();
 

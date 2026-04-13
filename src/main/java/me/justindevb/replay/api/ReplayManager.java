@@ -17,9 +17,9 @@ public interface ReplayManager {
      * @param name The session name
      * @param players The players to record
      * @param durationSeconds Duration in seconds (-1 for infinite)
-     * @return The active ReplaySession
+     * @return true if the session was started, false if a session with that name already exists
      */
-    void startRecording(String name, Collection<Player> players, int durationSeconds);
+    boolean startRecording(String name, Collection<Player> players, int durationSeconds);
 
     /**
      * Stops a running recording
@@ -31,9 +31,9 @@ public interface ReplayManager {
     boolean stopRecording(String name, boolean save);
 
     /**
-     * Get all currently running recording sessions.
+     * Get the names of all currently running recording sessions.
      */
-    Collection<?> getActiveRecordings();
+    Collection<String> getActiveRecordings();
 
     /**
      * Start a replay
@@ -68,6 +68,13 @@ public interface ReplayManager {
      * @return true if deleted, false if replay did not exist or delete failed
      */
     CompletableFuture<Boolean> deleteSavedReplay(String name);
+
+    /**
+     * Get a cached snapshot of saved replay names for synchronous access
+     * (e.g. tab completion). The cache is refreshed automatically after
+     * saves and deletes.
+     */
+    List<String> getCachedReplayNames();
 
     /**
      * Get a replay file
