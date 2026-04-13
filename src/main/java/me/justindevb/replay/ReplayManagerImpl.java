@@ -8,7 +8,6 @@ import org.bukkit.entity.Player;
 import java.io.File;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -70,13 +69,12 @@ public class ReplayManagerImpl implements ReplayManager {
                     }
 
                     return replay.getReplayStorage().loadReplay(replayName)
-                            .thenApply(rawTimeline -> {
-                                if (rawTimeline == null || rawTimeline.isEmpty()) {
+                            .thenApply(timeline -> {
+                                if (timeline == null || timeline.isEmpty()) {
                                     runSync(() -> viewer.sendMessage("§cReplay is empty or corrupted: " + replayName));
                                     return Optional.<ReplaySession>empty();
                                 }
 
-                                List<Map<String, Object>> timeline = castTimeline(rawTimeline);
                                 ReplaySession session = new ReplaySession(timeline, viewer, replay);
 
                                 runSync(session::start);
@@ -89,11 +87,6 @@ public class ReplayManagerImpl implements ReplayManager {
                     runSync(() -> viewer.sendMessage("§cFailed to start replay: " + replayName));
                     return Optional.empty();
                 });
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<Map<String, Object>> castTimeline(List<?> raw) {
-        return (List<Map<String, Object>>) (List<?>) raw;
     }
 
     private void runSync(Runnable task) {

@@ -1,6 +1,7 @@
 package me.justindevb.replay.util;
 
 
+import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayStorage;
 
 import java.util.List;
@@ -10,9 +11,9 @@ public class ReplayObject {
 
     private final String name;
     private final ReplayStorage storage;
-    private List<?> timeline;
+    private List<TimelineEvent> timeline;
 
-    public ReplayObject(String name, List<?> timeline, ReplayStorage storage) {
+    public ReplayObject(String name, List<TimelineEvent> timeline, ReplayStorage storage) {
         this.name = name;
         this.timeline = timeline;
         this.storage = storage;
@@ -22,11 +23,11 @@ public class ReplayObject {
         return name;
     }
 
-    public List<?> getTimeline() {
+    public List<TimelineEvent> getTimeline() {
         return timeline;
     }
 
-    public void setTimeline(List<?> timeline) {
+    public void setTimeline(List<TimelineEvent> timeline) {
         this.timeline = timeline;
     }
 
@@ -36,6 +37,7 @@ public class ReplayObject {
     }
 
     /** Loads the timeline from storage and updates this object */
+    @SuppressWarnings("unchecked")
     public CompletableFuture<Void> load() {
         return storage.loadReplay(name)
                 .thenAccept(loaded -> {

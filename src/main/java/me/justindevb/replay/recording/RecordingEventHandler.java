@@ -14,9 +14,8 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.Location;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 import static me.justindevb.replay.util.io.ItemStackSerializer.serializeItem;
@@ -47,31 +46,25 @@ public class RecordingEventHandler implements Listener {
     public void onBlockBreak(BlockBreakEvent e) {
         if (!tracker.isTrackedPlayer(e.getPlayer().getUniqueId())) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "block_break");
-        event.put("uuid", e.getPlayer().getUniqueId().toString());
-        event.put("world", e.getBlock().getWorld().getName());
-        event.put("x", e.getBlock().getX());
-        event.put("y", e.getBlock().getY());
-        event.put("z", e.getBlock().getZ());
-        event.put("blockData", e.getBlock().getBlockData().getAsString());
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.BlockBreak(
+                tickProvider.getTick(),
+                e.getPlayer().getUniqueId().toString(),
+                e.getBlock().getWorld().getName(),
+                e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ(),
+                e.getBlock().getBlockData().getAsString()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onBlockDamage(BlockDamageEvent e) {
         if (!tracker.isTrackedPlayer(e.getPlayer().getUniqueId())) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "block_break_complete");
-        event.put("uuid", e.getPlayer().getUniqueId().toString());
-        event.put("world", e.getBlock().getWorld().getName());
-        event.put("x", e.getBlock().getX());
-        event.put("y", e.getBlock().getY());
-        event.put("z", e.getBlock().getZ());
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.BlockBreakComplete(
+                tickProvider.getTick(),
+                e.getPlayer().getUniqueId().toString(),
+                e.getBlock().getWorld().getName(),
+                e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -80,31 +73,30 @@ public class RecordingEventHandler implements Listener {
         if (!tracker.isTrackedPlayer(p.getUniqueId())) return;
 
         ItemStack dropped = e.getItemDrop().getItemStack();
+        Location loc = p.getLocation();
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "item_drop");
-        event.put("uuid", p.getUniqueId().toString());
-        event.put("item", serializeItem(dropped));
-        event.put("loc", builder.serializeLocation(p.getLocation()));
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.ItemDrop(
+                tickProvider.getTick(),
+                p.getUniqueId().toString(),
+                serializeItem(dropped),
+                loc.getWorld().getName(),
+                loc.getX(), loc.getY(), loc.getZ(),
+                loc.getYaw(), loc.getPitch()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onBlockPlace(BlockPlaceEvent e) {
         if (!tracker.isTrackedPlayer(e.getPlayer().getUniqueId())) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "block_place");
-        event.put("uuid", e.getPlayer().getUniqueId().toString());
-        event.put("world", e.getBlock().getWorld().getName());
-        event.put("x", e.getBlock().getX());
-        event.put("y", e.getBlock().getY());
-        event.put("z", e.getBlock().getZ());
-        event.put("blockData", e.getBlock().getBlockData().getAsString());
-        event.put("replacedBlockData", e.getBlockReplacedState().getBlockData().getAsString());
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.BlockPlace(
+                tickProvider.getTick(),
+                e.getPlayer().getUniqueId().toString(),
+                e.getBlock().getWorld().getName(),
+                e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ(),
+                e.getBlock().getBlockData().getAsString(),
+                e.getBlockReplacedState().getBlockData().getAsString()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -114,31 +106,28 @@ public class RecordingEventHandler implements Listener {
 
         Entity entity = e.getEntity();
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "attack");
-        event.put("uuid", p.getUniqueId().toString());
-        if (e.getEntity() instanceof Player target) {
-            event.put("targetUuid", target.getUniqueId().toString());
-        }
+        String targetUuid = (entity instanceof Player target) ? target.getUniqueId().toString() : null;
 
-        event.put("entityUuid", entity.getUniqueId().toString());
-        event.put("entityType", entity.getType().name());
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.Attack(
+                tickProvider.getTick(),
+                p.getUniqueId().toString(),
+                targetUuid,
+                entity.getUniqueId().toString(),
+                entity.getType().name()
+        ));
 
         if (!(entity instanceof Player) && !tracker.isEntityTracked(entity.getUniqueId())) {
             tracker.trackEntity(entity.getUniqueId(), entity.getType());
 
-            Map<String, Object> spawnEvent = new HashMap<>();
-            spawnEvent.put("tick", tickProvider.getTick());
-            spawnEvent.put("type", "entity_spawn");
-            spawnEvent.put("uuid", entity.getUniqueId().toString());
-            spawnEvent.put("etype", entity.getType().name());
-            spawnEvent.put("world", entity.getWorld().getName());
-            spawnEvent.put("x", entity.getLocation().getX());
-            spawnEvent.put("y", entity.getLocation().getY());
-            spawnEvent.put("z", entity.getLocation().getZ());
-            builder.addEvent(spawnEvent);
+            builder.addEvent(new TimelineEvent.EntitySpawn(
+                    tickProvider.getTick(),
+                    entity.getUniqueId().toString(),
+                    entity.getType().name(),
+                    entity.getWorld().getName(),
+                    entity.getLocation().getX(),
+                    entity.getLocation().getY(),
+                    entity.getLocation().getZ()
+            ));
         }
     }
 
@@ -146,47 +135,46 @@ public class RecordingEventHandler implements Listener {
     public void onPlayerAnimation(PlayerAnimationEvent e) {
         if (!tracker.isTrackedPlayer(e.getPlayer().getUniqueId())) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "swing");
-        event.put("uuid", e.getPlayer().getUniqueId().toString());
-        event.put("hand", e.getAnimationType().name());
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.Swing(
+                tickProvider.getTick(),
+                e.getPlayer().getUniqueId().toString(),
+                e.getAnimationType().name()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onSprintToggle(PlayerToggleSprintEvent e) {
         if (!tracker.isTrackedPlayer(e.getPlayer().getUniqueId())) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", e.isSprinting() ? "sprint_start" : "sprint_stop");
-        event.put("uuid", e.getPlayer().getUniqueId().toString());
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.SprintToggle(
+                tickProvider.getTick(),
+                e.getPlayer().getUniqueId().toString(),
+                e.isSprinting()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onSneak(PlayerToggleSneakEvent e) {
         if (!tracker.isTrackedPlayer(e.getPlayer().getUniqueId())) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", e.isSneaking() ? "sneak_start" : "sneak_stop");
-        event.put("uuid", e.getPlayer().getUniqueId().toString());
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.SneakToggle(
+                tickProvider.getTick(),
+                e.getPlayer().getUniqueId().toString(),
+                e.isSneaking()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDamaged(EntityDamageEvent e) {
         if (!tracker.isTrackedPlayer(e.getEntity().getUniqueId())) return;
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "damaged");
-        event.put("uuid", e.getEntity().getUniqueId().toString());
-        event.put("entityType", e.getEntity().getType().name());
-        event.put("cause", e.getCause().name());
-        event.put("finalDamage", e.getFinalDamage());
-        builder.addEvent(event);
+
+        builder.addEvent(new TimelineEvent.Damaged(
+                tickProvider.getTick(),
+                e.getEntity().getUniqueId().toString(),
+                e.getEntity().getType().name(),
+                e.getCause().name(),
+                e.getFinalDamage()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -198,16 +186,15 @@ public class RecordingEventHandler implements Listener {
 
         tracker.trackEntity(uuid, e.getEntityType());
 
-        Map<String, Object> spawnEvent = new HashMap<>();
-        spawnEvent.put("tick", tickProvider.getTick());
-        spawnEvent.put("type", "entity_spawn");
-        spawnEvent.put("uuid", uuid.toString());
-        spawnEvent.put("etype", e.getEntityType().name());
-        spawnEvent.put("world", e.getLocation().getWorld().getName());
-        spawnEvent.put("x", e.getEntity().getLocation().getX());
-        spawnEvent.put("y", e.getEntity().getLocation().getY());
-        spawnEvent.put("z", e.getEntity().getLocation().getZ());
-        builder.addEvent(spawnEvent);
+        builder.addEvent(new TimelineEvent.EntitySpawn(
+                tickProvider.getTick(),
+                uuid.toString(),
+                e.getEntityType().name(),
+                e.getLocation().getWorld().getName(),
+                e.getEntity().getLocation().getX(),
+                e.getEntity().getLocation().getY(),
+                e.getEntity().getLocation().getZ()
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -217,17 +204,15 @@ public class RecordingEventHandler implements Listener {
         UUID uuid = entity.getUniqueId();
         if (!tracker.isEntityTracked(uuid)) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "entity_death");
-        event.put("uuid", uuid.toString());
-        event.put("etype", e.getEntityType().name());
-        event.put("world", entity.getLocation().getWorld().getName());
-        event.put("x", entity.getLocation().getX());
-        event.put("y", entity.getLocation().getY());
-        event.put("z", entity.getLocation().getZ());
-
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.EntityDeath(
+                tickProvider.getTick(),
+                uuid.toString(),
+                e.getEntityType().name(),
+                entity.getLocation().getWorld().getName(),
+                entity.getLocation().getX(),
+                entity.getLocation().getY(),
+                entity.getLocation().getZ()
+        ));
 
         if (!(entity instanceof Player))
             tracker.removeEntity(uuid);
@@ -241,17 +226,15 @@ public class RecordingEventHandler implements Listener {
 
         if (!tracker.isTrackedPlayer(uuid)) return;
 
-        Map<String, Object> event = new HashMap<>();
-        event.put("tick", tickProvider.getTick());
-        event.put("type", "entity_death");
-        event.put("uuid", uuid.toString());
-        event.put("etype", e.getEntityType().name());
-        event.put("world", p.getWorld().getName());
-        event.put("x", p.getLocation().getX());
-        event.put("y", p.getLocation().getY());
-        event.put("z", p.getLocation().getZ());
-
-        builder.addEvent(event);
+        builder.addEvent(new TimelineEvent.EntityDeath(
+                tickProvider.getTick(),
+                uuid.toString(),
+                e.getEntityType().name(),
+                p.getWorld().getName(),
+                p.getLocation().getX(),
+                p.getLocation().getY(),
+                p.getLocation().getZ()
+        ));
     }
 
     @EventHandler
@@ -259,12 +242,10 @@ public class RecordingEventHandler implements Listener {
         Player p = e.getPlayer();
 
         if (tracker.isTrackedPlayer(p.getUniqueId())) {
-            Map<String, Object> event = new HashMap<>();
-            event.put("tick", tickProvider.getTick());
-            event.put("type", "player_quit");
-            event.put("uuid", p.getUniqueId().toString());
-
-            builder.addEvent(event);
+            builder.addEvent(new TimelineEvent.PlayerQuit(
+                    tickProvider.getTick(),
+                    p.getUniqueId().toString()
+            ));
             tracker.removePlayer(p.getUniqueId());
         }
     }

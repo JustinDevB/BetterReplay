@@ -10,6 +10,7 @@ import com.github.retrooper.packetevents.wrapper.play.server.*;
 import com.github.retrooper.packetevents.util.Vector3i;
 import io.github.retrooper.packetevents.util.SpigotConversionUtil;
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.util.spawning.SpawnFakePlayer;
 import net.kyori.adventure.text.Component;
 import org.bukkit.Bukkit;
@@ -46,14 +47,13 @@ public class RecordedPlayer extends RecordedEntity {
     };
 
 
-    private Map<String, Object> currentInventory;
+    private TimelineEvent.InventoryUpdate currentInventory;
 
 
     protected RecordedPlayer(UUID uuid, String name, EntityType type, Player viewer) {
         super(uuid, type, viewer);
         this.name = name;
         this.uuid = uuid;
-        this.currentInventory = new HashMap<>();
     }
 
     @Override
@@ -71,7 +71,7 @@ public class RecordedPlayer extends RecordedEntity {
         WrapperPlayServerEntityMetadata metadata = new WrapperPlayServerEntityMetadata(fakeEntityId, Collections.singletonList(flagsData));
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, metadata);
 
-        if (currentInventory != null && !currentInventory.isEmpty()) {
+        if (currentInventory != null) {
             // Reset last-known state so equipment packets are re-sent now that
             // the client has had time to process the entity spawn.
             lastMainHand = null;
@@ -118,15 +118,8 @@ public class RecordedPlayer extends RecordedEntity {
         return name;
     }
 
-    public void updateInventory(Map<String, Object> snapshot) {
-        if (snapshot.containsKey("mainHand"))
-            currentInventory.put("mainHand", snapshot.get("mainHand"));
-        if (snapshot.containsKey("offHand"))
-            currentInventory.put("offHand", snapshot.get("offHand"));
-        if (snapshot.containsKey("armor"))
-            currentInventory.put("armor", snapshot.get("armor"));
-        if (snapshot.containsKey("contents"))
-            currentInventory.put("contents", snapshot.get("contents"));
+    public void updateInventory(TimelineEvent.InventoryUpdate snapshot) {
+        currentInventory = snapshot;
 
         if (!spawned)
             return;
@@ -183,18 +176,12 @@ public class RecordedPlayer extends RecordedEntity {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, anim);
     }
 
-    public void showBlockPlace(Map<String, Object> event) {
+    public void showBlockPlace() {
         WrapperPlayServerEntityAnimation anim = new WrapperPlayServerEntityAnimation(fakeEntityId, WrapperPlayServerEntityAnimation.EntityAnimationType.SWING_MAIN_ARM);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, anim);
     }
 
-    public void showBlockBreak(Map<String, Object> event) {
-        int x = ((Number) event.get("x")).intValue();
-        int y = ((Number) event.get("y")).intValue();
-        int z = ((Number) event.get("z")).intValue();
-
-        int stage = ((Number) event.getOrDefault("stage", 9)).intValue();
-
+    public void showBlockBreak(int x, int y, int z, int stage) {
         WrapperPlayServerBlockBreakAnimation breakAnim =
                 new WrapperPlayServerBlockBreakAnimation(fakeEntityId, new Vector3i(x, y, z), (byte) stage);
 
@@ -214,17 +201,17 @@ public class RecordedPlayer extends RecordedEntity {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, swing);
 
     }
-    public void showInventorySnapshot(Map<String, Object> event) {
+    public void showInventorySnapshot(TimelineEvent.InventoryUpdate inv) {
         boolean changed = false;
         List<Equipment> packets = new ArrayList<>();
 
-        ItemStack mainHand = deserializeItem(event.get("mainHand"));
+        ItemStack mainHand = deserializeItem(inv.mainHand());
         if (!areItemsEqual(mainHand, lastMainHand)) {
             lastMainHand = mainHand != null ? mainHand.clone() : new ItemStack(Material.AIR);
             changed = true;
         }
 
-        ItemStack offHand = deserializeItem(event.get("offHand"));
+        ItemStack offHand = deserializeItem(inv.offHand());
         if (!areItemsEqual(offHand, lastOffHand)) {
             lastOffHand = offHand != null ? offHand.clone() : new ItemStack(Material.AIR);
             changed = true;
@@ -237,8 +224,7 @@ public class RecordedPlayer extends RecordedEntity {
                 EquipmentSlot.HELMET
         };
 
-        @SuppressWarnings("unchecked")
-        List<String> rawArmorList = (List<String>) event.get("armor");
+        List<String> rawArmorList = inv.armor();
 
         if (rawArmorList != null) {
             for (int i = 0; i < armorSlots.length; i++) {
@@ -306,24 +292,24 @@ public class RecordedPlayer extends RecordedEntity {
     public void openInventoryForViewer(Player viewer) {
         Inventory inv = Bukkit.createInventory(null, 45, Component.text(name + "'s Inventory"));
 
-        @SuppressWarnings("unchecked")
-        List<String> contents = (List<String>) currentInventory.get("contents");
-        if (contents != null) {
-            for (int i = 0; i < contents.size() && i < 36; i++) {
-                inv.setItem(i, deserializeItem(contents.get(i)));
+        if (currentInventory != null) {
+            List<String> contents = currentInventory.contents();
+            if (contents != null) {
+                for (int i = 0; i < contents.size() && i < 36; i++) {
+                    inv.setItem(i, deserializeItem(contents.get(i)));
+                }
             }
-        }
 
-        @SuppressWarnings("unchecked")
-        List<String> armor = (List<String>) currentInventory.get("armor");
-        if (armor != null && armor.size() == 4) {
-            inv.setItem(39, deserializeItem(armor.get(3))); // helmet
-            inv.setItem(38, deserializeItem(armor.get(2))); // chestplate
-            inv.setItem(37, deserializeItem(armor.get(1))); // leggings
-            inv.setItem(36, deserializeItem(armor.get(0))); // boots
-        }
+            List<String> armor = currentInventory.armor();
+            if (armor != null && armor.size() == 4) {
+                inv.setItem(39, deserializeItem(armor.get(3))); // helmet
+                inv.setItem(38, deserializeItem(armor.get(2))); // chestplate
+                inv.setItem(37, deserializeItem(armor.get(1))); // leggings
+                inv.setItem(36, deserializeItem(armor.get(0))); // boots
+            }
 
-        inv.setItem(40, deserializeItem(currentInventory.get("offHand")));
+            inv.setItem(40, deserializeItem(currentInventory.offHand()));
+        }
 
         Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> {
            viewer.openInventory(inv);

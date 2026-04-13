@@ -1,11 +1,16 @@
 package me.justindevb.replay.storage;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.recording.TimelineEventAdapter;
 import me.justindevb.replay.util.io.ReplayCompressor;
 
 import javax.sql.DataSource;
 import java.io.*;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
 import java.sql.*;
 import java.util.ArrayList;
@@ -15,7 +20,10 @@ import java.util.concurrent.CompletableFuture;
 public class MySQLReplayStorage implements ReplayStorage {
 
     private final DataSource dataSource;
-    private final Gson gson = new Gson();
+    private static final Type TIMELINE_LIST_TYPE = new TypeToken<List<TimelineEvent>>() {}.getType();
+    private final Gson gson = new GsonBuilder()
+            .registerTypeHierarchyAdapter(TimelineEvent.class, new TimelineEventAdapter())
+            .create();
     private final Replay replay;
 
     public MySQLReplayStorage(DataSource dataSource, Replay replay) {
@@ -51,7 +59,7 @@ public class MySQLReplayStorage implements ReplayStorage {
 
 
     @Override
-    public CompletableFuture<Void> saveReplay(String name, List<?> timeline) {
+    public CompletableFuture<Void> saveReplay(String name, List<TimelineEvent> timeline) {
         return CompletableFuture.runAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement("""
@@ -77,7 +85,7 @@ public class MySQLReplayStorage implements ReplayStorage {
 
 
     @Override
-    public CompletableFuture<List<?>> loadReplay(String name) {
+    public CompletableFuture<List<TimelineEvent>> loadReplay(String name) {
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
@@ -90,7 +98,7 @@ public class MySQLReplayStorage implements ReplayStorage {
                     if (!rs.next()) return null;
                     // Auto-detect compression so legacy uncompressed rows still load
                     String json = ReplayCompressor.decompressIfNeeded(rs.getBytes("data"));
-                    return gson.fromJson(json, List.class);
+                    return gson.fromJson(json, TIMELINE_LIST_TYPE);
                 }
 
             } catch (Exception e) {
@@ -175,7 +183,7 @@ public class MySQLReplayStorage implements ReplayStorage {
 
                     // Auto-detect compression; works for both compressed and plain rows
                     String json = ReplayCompressor.decompressIfNeeded(rs.getBytes("data"));
-                    List<?> timeline = gson.fromJson(json, List.class);
+                    List<TimelineEvent> timeline = gson.fromJson(json, TIMELINE_LIST_TYPE);
 
                     File tempFile = File.createTempFile("replay_" + name + "_", ".json");
                     tempFile.deleteOnExit();

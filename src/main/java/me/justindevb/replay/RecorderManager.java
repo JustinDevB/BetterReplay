@@ -75,10 +75,7 @@ public class RecorderManager {
     @Deprecated
     public void replaySession(String name, Player viewer) {
         replay.getReplayStorage().loadReplay(name)
-                .thenAccept(rawTimeline -> {
-                    @SuppressWarnings("unchecked")
-                    List<Map<String, Object>> timeline = (List<Map<String, Object>>) rawTimeline;
-
+                .thenAccept(timeline -> {
                    // Bukkit.getScheduler().runTask(replay, () -> {
                     replay.getFoliaLib().getScheduler().runNextTick(task -> {
                         new ReplaySession(timeline, viewer, replay).start();

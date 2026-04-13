@@ -15,6 +15,7 @@ import me.justindevb.replay.api.events.ReplayStopEvent;
 import me.justindevb.replay.playback.PlaybackEngine;
 import me.justindevb.replay.playback.ReplayBlockManager;
 import me.justindevb.replay.playback.ReplayInventoryUI;
+import me.justindevb.replay.recording.TimelineEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
@@ -28,8 +29,6 @@ import org.bukkit.event.player.PlayerQuitEvent;
 
 import java.util.*;
 
-import static me.justindevb.replay.playback.ReplayBlockManager.*;
-
 /**
  * Coordinator for a single replay viewing session.
  * Delegates block state management to {@link ReplayBlockManager},
@@ -41,7 +40,7 @@ public class ReplaySession implements Listener, PacketListener {
     private final Replay replay;
 
     private WrappedTask replayTask = null;
-    private List<Map<String, Object>> timeline;
+    private List<TimelineEvent> timeline;
     private final Set<Integer> trackedEntityIds = new HashSet<>();
     private final Set<UUID> deadEntities = new HashSet<>();
     private final Map<UUID, RecordedEntity> recordedEntities = new HashMap<>();
@@ -53,7 +52,7 @@ public class ReplaySession implements Listener, PacketListener {
     private final PlaybackEngine playbackEngine;
     private final ReplayInventoryUI inventoryUI;
 
-    public ReplaySession(List<Map<String, Object>> timeline, Player viewer, Replay replay) {
+    public ReplaySession(List<TimelineEvent> timeline, Player viewer, Replay replay) {
         this.timeline = timeline;
         this.viewer = viewer;
         this.replay = replay;
@@ -81,22 +80,21 @@ public class ReplaySession implements Listener, PacketListener {
         timeline = blockManager.enrichBlockBreakStageTimeline(timeline);
         inventoryUI.copyInventory();
 
-        Map<String, Object> firstLocationEvent = timeline.stream()
-                .filter(e -> e.containsKey("world") && e.containsKey("x") && e.containsKey("y") && e.containsKey("z"))
+        TimelineEvent firstLocationEvent = timeline.stream()
+                .filter(e -> e instanceof TimelineEvent.PlayerMove || e instanceof TimelineEvent.EntityMove
+                        || e instanceof TimelineEvent.EntitySpawn)
                 .findFirst()
                 .orElse(null);
 
         if (firstLocationEvent != null) {
-            String sWorld = asString(firstLocationEvent.get("world"));
-            World world = Bukkit.getWorld(sWorld);
-            Double x = asDouble(firstLocationEvent.get("x"));
-            Double y = asDouble(firstLocationEvent.get("y"));
-            Double z = asDouble(firstLocationEvent.get("z"));
-            Float yaw = asFloat(firstLocationEvent.get("yaw"));
-            Float pitch = asFloat(firstLocationEvent.get("pitch"));
-
-            if (x != null && y != null && z != null) {
-                replay.getFoliaLib().getScheduler().teleportAsync(viewer, new Location(world, x, y, z, yaw, pitch));
+            Location teleportLoc = switch (firstLocationEvent) {
+                case TimelineEvent.PlayerMove e -> new Location(Bukkit.getWorld(e.world()), e.x(), e.y(), e.z(), e.yaw(), e.pitch());
+                case TimelineEvent.EntityMove e -> new Location(Bukkit.getWorld(e.world()), e.x(), e.y(), e.z(), e.yaw(), e.pitch());
+                case TimelineEvent.EntitySpawn e -> new Location(Bukkit.getWorld(e.world()), e.x(), e.y(), e.z(), 0f, 0f);
+                default -> null;
+            };
+            if (teleportLoc != null && teleportLoc.getWorld() != null) {
+                replay.getFoliaLib().getScheduler().teleportAsync(viewer, teleportLoc);
             }
         }
 
@@ -125,39 +123,22 @@ public class ReplaySession implements Listener, PacketListener {
                 return;
             }
 
-            Map<String, Object> firstEvent = timeline.get(tick);
-            Object tickObj = firstEvent.get("tick");
-
-            if (!(tickObj instanceof Number)) {
-                tick++;
-                return;
-            }
-
-            int recordedTick = ((Number) tickObj).intValue();
+            TimelineEvent firstEvent = timeline.get(tick);
+            int recordedTick = firstEvent.tick();
 
             while (tick < timeline.size()) {
-                Map<String, Object> event = timeline.get(tick);
-
-                Object eventTickObj = event.get("tick");
-                if (!(eventTickObj instanceof Number)) break;
-
-                int eventTick = ((Number) eventTickObj).intValue();
+                TimelineEvent event = timeline.get(tick);
+                int eventTick = event.tick();
                 if (eventTick != recordedTick) break;
 
-                String type = (String) event.get("type");
-                if (type == null) {
+                if (event instanceof TimelineEvent.BlockBreakStage bbs) {
+                    blockManager.showGlobalBlockBreakStage(bbs);
                     tick++;
                     continue;
                 }
 
-                if ("block_break_stage".equals(type)) {
-                    blockManager.showGlobalBlockBreakStage(event);
-                    tick++;
-                    continue;
-                }
-
-                Object uuidObj = event.get("uuid");
-                if (!(uuidObj instanceof String uuidStr)) {
+                String uuidStr = event.uuid();
+                if (uuidStr == null) {
                     tick++;
                     continue;
                 }
@@ -170,7 +151,7 @@ public class ReplaySession implements Listener, PacketListener {
                     continue;
                 }
 
-                if ("player_quit".equals(type)) {
+                if (event instanceof TimelineEvent.PlayerQuit) {
                     if (recordedEntities.get(uuid) instanceof RecordedPlayer rp) {
                         viewer.sendMessage("[BetterReplay] " + rp.getName() + " disconnected");
                     }
@@ -183,7 +164,8 @@ public class ReplaySession implements Listener, PacketListener {
                     continue;
                 }
 
-                if (deadEntities.contains(uuid) && ("player_move".equals(type) || "entity_move".equals(type))) {
+                if (deadEntities.contains(uuid)
+                        && (event instanceof TimelineEvent.PlayerMove || event instanceof TimelineEvent.EntityMove)) {
                     tick++;
                     continue;
                 }
@@ -197,30 +179,11 @@ public class ReplaySession implements Listener, PacketListener {
                 }
 
                 if (recorded == null) {
-                    Double x = asDouble(event.get("x"));
-                    Double y = asDouble(event.get("y"));
-                    Double z = asDouble(event.get("z"));
-
-                    String worldName = asString(event.get("world"));
-                    if (x == null || y == null || z == null || worldName == null) {
+                    Location initialLoc = locationFromEvent(event);
+                    if (initialLoc == null) {
                         tick++;
                         continue;
                     }
-
-                    World world = Bukkit.getWorld(worldName);
-                    if (world == null) {
-                        tick++;
-                        continue;
-                    }
-
-                    Location initialLoc = new Location(
-                            world,
-                            x,
-                            y,
-                            z,
-                            asFloat(event.get("yaw")),
-                            asFloat(event.get("pitch"))
-                    );
 
                     recorded = RecordedEntityFactory.create(event, viewer);
                     if (recorded == null) {
@@ -232,7 +195,7 @@ public class ReplaySession implements Listener, PacketListener {
                     recordedEntities.put(uuid, recorded);
 
                     if (recorded instanceof RecordedPlayer rp) {
-                        Map<String, Object> inv = getInventorySnapshotForPlayer(uuid);
+                        TimelineEvent.InventoryUpdate inv = getInventorySnapshotForPlayer(uuid);
                         if (inv != null) rp.updateInventory(inv);
                     }
                 }
@@ -298,17 +261,17 @@ public class ReplaySession implements Listener, PacketListener {
     }
 
     private void syncEntityStatesAtIndex(int targetIndex) {
-        Map<UUID, Map<String, Object>> firstEventByUUID = new LinkedHashMap<>();
-        Map<UUID, Map<String, Object>> lastLocationByUUID = new LinkedHashMap<>();
-        Map<UUID, Map<String, Object>> lastInventoryByUUID = new LinkedHashMap<>();
+        Map<UUID, TimelineEvent> firstEventByUUID = new LinkedHashMap<>();
+        Map<UUID, TimelineEvent> lastLocationByUUID = new LinkedHashMap<>();
+        Map<UUID, TimelineEvent.InventoryUpdate> lastInventoryByUUID = new LinkedHashMap<>();
         Set<UUID> shouldHaveQuitAtTarget = new HashSet<>();
         Set<UUID> shouldBeDeadAtTarget = new HashSet<>();
 
         int end = Math.min(targetIndex, timeline.size());
         for (int i = 0; i < end; i++) {
-            Map<String, Object> event = timeline.get(i);
-            Object uuidObj = event.get("uuid");
-            if (!(uuidObj instanceof String uuidStr)) continue;
+            TimelineEvent event = timeline.get(i);
+            String uuidStr = event.uuid();
+            if (uuidStr == null) continue;
             UUID uuid;
             try {
                 uuid = UUID.fromString(uuidStr);
@@ -316,14 +279,15 @@ public class ReplaySession implements Listener, PacketListener {
                 continue;
             }
 
-            String type = asString(event.get("type"));
             firstEventByUUID.putIfAbsent(uuid, event);
 
-            switch (type != null ? type : "") {
-                case "player_move", "entity_move" -> lastLocationByUUID.put(uuid, event);
-                case "inventory_update" -> lastInventoryByUUID.put(uuid, event);
-                case "player_quit" -> shouldHaveQuitAtTarget.add(uuid);
-                case "entity_death" -> shouldBeDeadAtTarget.add(uuid);
+            switch (event) {
+                case TimelineEvent.PlayerMove ignored2 -> lastLocationByUUID.put(uuid, event);
+                case TimelineEvent.EntityMove ignored2 -> lastLocationByUUID.put(uuid, event);
+                case TimelineEvent.InventoryUpdate inv -> lastInventoryByUUID.put(uuid, inv);
+                case TimelineEvent.PlayerQuit ignored2 -> shouldHaveQuitAtTarget.add(uuid);
+                case TimelineEvent.EntityDeath ignored2 -> shouldBeDeadAtTarget.add(uuid);
+                default -> {}
             }
         }
 
@@ -348,40 +312,29 @@ public class ReplaySession implements Listener, PacketListener {
             if (recordedEntities.containsKey(uuid)) continue;
             if (!lastLocationByUUID.containsKey(uuid)) continue;
 
-            Map<String, Object> firstEvent = firstEventByUUID.get(uuid);
-            Map<String, Object> locEvent = lastLocationByUUID.get(uuid);
+            TimelineEvent firstEvent = firstEventByUUID.get(uuid);
+            TimelineEvent locEvent = lastLocationByUUID.get(uuid);
 
-            Double x = asDouble(locEvent.get("x"));
-            Double y = asDouble(locEvent.get("y"));
-            Double z = asDouble(locEvent.get("z"));
-            String worldName = asString(locEvent.get("world"));
-            if (x == null || y == null || z == null || worldName == null) continue;
-            World world = Bukkit.getWorld(worldName);
-            if (world == null) continue;
+            Location loc = locationFromEvent(locEvent);
+            if (loc == null) continue;
 
             RecordedEntity entity = RecordedEntityFactory.create(firstEvent, viewer);
             if (entity == null) continue;
 
-            entity.spawn(new Location(world, x, y, z,
-                    asFloat(locEvent.get("yaw")), asFloat(locEvent.get("pitch"))));
+            entity.spawn(loc);
             recordedEntities.put(uuid, entity);
             trackedEntityIds.add(entity.getFakeEntityId());
         }
 
-        for (Map.Entry<UUID, Map<String, Object>> entry : lastLocationByUUID.entrySet()) {
+        for (Map.Entry<UUID, TimelineEvent> entry : lastLocationByUUID.entrySet()) {
             RecordedEntity entity = recordedEntities.get(entry.getKey());
             if (entity == null) continue;
-            Map<String, Object> event = entry.getValue();
-            World world = Bukkit.getWorld(asString(event.get("world")));
-            Double x = asDouble(event.get("x"));
-            Double y = asDouble(event.get("y"));
-            Double z = asDouble(event.get("z"));
-            if (world == null || x == null || y == null || z == null) continue;
-            entity.moveTo(new Location(world, x, y, z,
-                    asFloat(event.get("yaw")), asFloat(event.get("pitch"))));
+            Location loc = locationFromEvent(entry.getValue());
+            if (loc == null) continue;
+            entity.moveTo(loc);
         }
 
-        for (Map.Entry<UUID, Map<String, Object>> entry : lastInventoryByUUID.entrySet()) {
+        for (Map.Entry<UUID, TimelineEvent.InventoryUpdate> entry : lastInventoryByUUID.entrySet()) {
             RecordedEntity entity = recordedEntities.get(entry.getKey());
             if (entity instanceof RecordedPlayer rp) {
                 rp.updateInventory(entry.getValue());
@@ -399,13 +352,12 @@ public class ReplaySession implements Listener, PacketListener {
         trackedEntityIds.clear();
     }
 
-    private Map<String, Object> getInventorySnapshotForPlayer(UUID uuid) {
+    private TimelineEvent.InventoryUpdate getInventorySnapshotForPlayer(UUID uuid) {
         String uuidStr = uuid.toString();
-        for (Map<String, Object> event : timeline) {
-            if (!"inventory_update".equals(event.get("type"))) continue;
-            if (!uuidStr.equals(event.get("uuid"))) continue;
-            if (event.containsKey("mainHand") || event.containsKey("contents")) {
-                return event;
+        for (TimelineEvent event : timeline) {
+            if (event instanceof TimelineEvent.InventoryUpdate inv
+                    && uuidStr.equals(inv.uuid())) {
+                return inv;
             }
         }
         return null;
@@ -414,8 +366,25 @@ public class ReplaySession implements Listener, PacketListener {
     private int getRecordedTickAtIndex(int index) {
         if (timeline == null || timeline.isEmpty()) return 0;
         int safeIndex = Math.max(0, Math.min(index, timeline.size() - 1));
-        Integer eventTick = asInt(timeline.get(safeIndex).get("tick"));
-        return eventTick != null ? eventTick : safeIndex;
+        return timeline.get(safeIndex).tick();
+    }
+
+    private Location locationFromEvent(TimelineEvent event) {
+        return switch (event) {
+            case TimelineEvent.PlayerMove e -> {
+                World w = Bukkit.getWorld(e.world());
+                yield w != null ? new Location(w, e.x(), e.y(), e.z(), e.yaw(), e.pitch()) : null;
+            }
+            case TimelineEvent.EntityMove e -> {
+                World w = Bukkit.getWorld(e.world());
+                yield w != null ? new Location(w, e.x(), e.y(), e.z(), e.yaw(), e.pitch()) : null;
+            }
+            case TimelineEvent.EntitySpawn e -> {
+                World w = Bukkit.getWorld(e.world());
+                yield w != null ? new Location(w, e.x(), e.y(), e.z(), 0f, 0f) : null;
+            }
+            default -> null;
+        };
     }
 
     private int findTimelineIndexAfterRecordedTick(int targetRecordedTick) {

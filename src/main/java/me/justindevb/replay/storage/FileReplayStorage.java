@@ -2,10 +2,14 @@ package me.justindevb.replay.storage;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.reflect.TypeToken;
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.recording.TimelineEventAdapter;
 import me.justindevb.replay.util.io.ReplayCompressor;
 
 import java.io.*;
+import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +22,11 @@ public class FileReplayStorage implements ReplayStorage {
 
     private final File replayFolder;
     private final Replay replay;
-    private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
+    private static final Type TIMELINE_LIST_TYPE = new TypeToken<List<TimelineEvent>>() {}.getType();
+    private final Gson gson = new GsonBuilder()
+            .setPrettyPrinting()
+            .registerTypeHierarchyAdapter(TimelineEvent.class, new TimelineEventAdapter())
+            .create();
 
     public FileReplayStorage(Replay replay) {
         this.replay = replay;
@@ -46,7 +54,7 @@ public class FileReplayStorage implements ReplayStorage {
     }
 
     @Override
-    public CompletableFuture<Void> saveReplay(String name, List<?> timeline) {
+    public CompletableFuture<Void> saveReplay(String name, List<TimelineEvent> timeline) {
         return CompletableFuture.runAsync(() -> {
             try {
                 String json = gson.toJson(timeline);
@@ -72,7 +80,7 @@ public class FileReplayStorage implements ReplayStorage {
     }
 
     @Override
-    public CompletableFuture<List<?>> loadReplay(String name) {
+    public CompletableFuture<List<TimelineEvent>> loadReplay(String name) {
         return CompletableFuture.supplyAsync(() -> {
             File file = resolveExisting(name);
             if (file == null) return null;
@@ -81,7 +89,7 @@ public class FileReplayStorage implements ReplayStorage {
                 byte[] bytes = Files.readAllBytes(file.toPath());
                 // Auto-detect: works for both compressed and plain-text files
                 String json = ReplayCompressor.decompressIfNeeded(bytes);
-                return gson.fromJson(json, List.class);
+                return gson.fromJson(json, TIMELINE_LIST_TYPE);
             } catch (IOException e) {
                 throw new RuntimeException("Failed to load replay " + name, e);
             }

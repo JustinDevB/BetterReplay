@@ -11,6 +11,7 @@ import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.entity.RecordedEntity;
 import me.justindevb.replay.entity.RecordedPlayer;
+import me.justindevb.replay.recording.TimelineEvent;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Pose;
@@ -18,7 +19,6 @@ import org.bukkit.inventory.ItemStack;
 
 import java.util.*;
 
-import static me.justindevb.replay.playback.ReplayBlockManager.*;
 import static me.justindevb.replay.util.io.ItemStackSerializer.deserializeItem;
 
 /**
@@ -45,111 +45,80 @@ public class PlaybackEngine {
         this.blockManager = blockManager;
     }
 
-    public void handleEvent(RecordedEntity entity, Map<String, Object> event) {
-        String type = (String) event.get("type");
-        if (type == null) return;
-
-        switch (type) {
-            case "player_move", "entity_move" -> {
-                World world = Bukkit.getWorld(asString(event.get("world")));
-                Double x = asDouble(event.get("x"));
-                Double y = asDouble(event.get("y"));
-                Double z = asDouble(event.get("z"));
-                if (x == null || y == null || z == null) return;
-
-                Location loc = new Location(world, x, y, z,
-                        asFloat(event.get("yaw")), asFloat(event.get("pitch")));
+    public void handleEvent(RecordedEntity entity, TimelineEvent event) {
+        switch (event) {
+            case TimelineEvent.PlayerMove e -> {
+                World world = Bukkit.getWorld(e.world());
+                if (world == null) return;
+                Location loc = new Location(world, e.x(), e.y(), e.z(), e.yaw(), e.pitch());
                 entity.moveTo(loc);
-
-                if (event.containsKey("pose") && entity instanceof RecordedPlayer rp) {
-                    String poseName = (String) event.get("pose");
-                    if (poseName != null) {
-                        try {
-                            Pose pose = Pose.valueOf(poseName);
-                            rp.setPose(pose);
-                        } catch (IllegalArgumentException ignored) {
-                        }
-                    }
+                if (e.pose() != null && entity instanceof RecordedPlayer rp) {
+                    try {
+                        rp.setPose(Pose.valueOf(e.pose()));
+                    } catch (IllegalArgumentException ignored) {}
                 }
             }
-            case "sneak_start", "sneak_stop", "attack", "block_place", "block_break" -> {
-                if (entity instanceof RecordedPlayer rp) {
-                    switch (type) {
-                        case "sneak_start", "sneak_stop" -> rp.updateSneak(type.equals("sneak_start"));
-                        case "attack" -> rp.playAttackAnimation();
-                        case "block_place" -> rp.showBlockPlace(event);
-                        case "block_break" -> rp.showBlockBreak(event);
-                    }
-                }
-
-                if ("block_place".equals(type) || "block_break".equals(type)) {
-                    blockManager.applyReplayBlockChange(event, type, false);
-                }
+            case TimelineEvent.EntityMove e -> {
+                World world = Bukkit.getWorld(e.world());
+                if (world == null) return;
+                Location loc = new Location(world, e.x(), e.y(), e.z(), e.yaw(), e.pitch());
+                entity.moveTo(loc);
             }
-            case "block_break_stage" -> {
-                if (entity instanceof RecordedPlayer rp) {
-                    rp.showBlockBreak(event);
-                }
+            case TimelineEvent.SneakToggle e -> {
+                if (entity instanceof RecordedPlayer rp) rp.updateSneak(e.sneaking());
             }
-            case "swing" -> {
-                if (entity instanceof RecordedPlayer rp) {
-                    String hand = (String) event.get("hand");
-                    rp.playSwing(hand);
-                }
+            case TimelineEvent.Attack e -> {
+                if (entity instanceof RecordedPlayer rp) rp.playAttackAnimation();
             }
-            case "damaged" -> {
-                entity.showDamage(event);
+            case TimelineEvent.BlockPlace e -> {
+                if (entity instanceof RecordedPlayer rp) rp.showBlockPlace();
+                blockManager.applyReplayBlockChange(e, false);
             }
-            case "sprint_start", "sprint_stop" -> {
-                if (entity instanceof RecordedPlayer rp) {
-                    rp.updateSprint(type.equals("sprint_start"));
-                }
+            case TimelineEvent.BlockBreak e -> {
+                if (entity instanceof RecordedPlayer rp) rp.showBlockBreak(e.x(), e.y(), e.z(), 9);
+                blockManager.applyReplayBlockChange(e, false);
             }
-            case "entity_death" -> {
-                entity.showDeath(event);
+            case TimelineEvent.BlockBreakStage e -> {
+                if (entity instanceof RecordedPlayer rp) rp.showBlockBreak(e.x(), e.y(), e.z(), e.stage());
+            }
+            case TimelineEvent.Swing e -> {
+                if (entity instanceof RecordedPlayer rp) rp.playSwing(e.hand());
+            }
+            case TimelineEvent.Damaged e -> entity.showDamage();
+            case TimelineEvent.SprintToggle e -> {
+                if (entity instanceof RecordedPlayer rp) rp.updateSprint(e.sprinting());
+            }
+            case TimelineEvent.EntityDeath e -> {
+                entity.showDeath();
                 deadEntities.add(entity.getUuid());
                 entity.destroy();
                 recordedEntities.remove(entity.getUuid());
             }
-            case "inventory_update" -> {
-                if (entity instanceof RecordedPlayer rp) {
-                    rp.updateInventory(event);
-                }
+            case TimelineEvent.InventoryUpdate e -> {
+                if (entity instanceof RecordedPlayer rp) rp.updateInventory(e);
             }
-            case "item_drop" -> {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> locMap = (Map<String, Object>) event.get("location");
-
-                ItemStack stack = deserializeItem(event.get("item"));
-                Location loc = deserializeLocation(locMap);
-
-                if (stack != null && loc != null)
-                    spawnFakeDroppedItem(stack, loc);
+            case TimelineEvent.ItemDrop e -> {
+                ItemStack stack = deserializeItem(e.item());
+                Location loc = (e.locWorld() != null)
+                        ? new Location(Bukkit.getWorld(e.locWorld()), e.locX(), e.locY(), e.locZ(), e.locYaw(), e.locPitch())
+                        : null;
+                if (stack != null && loc != null) spawnFakeDroppedItem(stack, loc);
             }
-            case "mob_spawn" -> {
-                spawnFakeMob(entity, event);
-            }
-            case "player_quit" -> {
-                UUID uuid = UUID.fromString((String) event.get("uuid"));
-
+            case TimelineEvent.EntitySpawn e -> spawnFakeMob(entity, e);
+            case TimelineEvent.PlayerQuit e -> {
+                UUID uuid = UUID.fromString(e.uuid());
                 recordedEntities.remove(uuid);
-                if (entity == null) {
-                    return;
-                }
-
+                if (entity == null) return;
                 entity.destroy();
                 trackedEntityIds.remove(entity.getFakeEntityId());
             }
+            default -> {} // BlockBreakComplete, etc. — no playback action needed
         }
     }
 
-    public void spawnFakeMob(RecordedEntity entity, Map<String, Object> event) {
-        Location loc = new Location(Bukkit.getWorld(asString(event.get("world"))),
-                asDouble(event.get("x")),
-                asDouble(event.get("y")),
-                asDouble(event.get("z")),
-                asFloat(event.get("yaw")),
-                asFloat(event.get("pitch")));
+    public void spawnFakeMob(RecordedEntity entity, TimelineEvent.EntitySpawn event) {
+        Location loc = new Location(Bukkit.getWorld(event.world()),
+                event.x(), event.y(), event.z(), 0f, 0f);
 
         entity.spawn(loc);
 
@@ -187,18 +156,5 @@ public class PlaybackEngine {
 
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, spawn);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, meta);
-    }
-
-    public Location deserializeLocation(Map<String, Object> map) {
-        if (map == null)
-            return null;
-        double x = ((Number) map.get("x")).doubleValue();
-        double y = ((Number) map.get("y")).doubleValue();
-        double z = ((Number) map.get("z")).doubleValue();
-        float yaw = map.get("yaw") instanceof Number n ? n.floatValue() : 0f;
-        float pitch = map.get("pitch") instanceof Number n ? n.floatValue() : 0f;
-        String world = map.get("world").toString();
-
-        return new Location(Bukkit.getWorld(world), x, y, z, yaw, pitch);
     }
 }

@@ -63,18 +63,9 @@ public class RecordingPacketHandler implements PacketListener {
                 return;
             }
 
-            Map<String, Object> event = new HashMap<>();
-            event.put("tick", tick);
-            event.put("type", "block_break_stage");
-            if (breakerUuid != null) {
-                event.put("uuid", breakerUuid);
-            }
-            event.put("world", world);
-            event.put("x", x);
-            event.put("y", y);
-            event.put("z", z);
-            event.put("stage", stage);
-            builder.addEvent(event);
+            builder.addEvent(new TimelineEvent.BlockBreakStage(
+                    tick, breakerUuid, world, x, y, z, stage
+            ));
         }
     }
 }

@@ -12,7 +12,6 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
 import java.util.Collections;
-import java.util.Map;
 import java.util.UUID;
 
 public abstract class RecordedEntity {
@@ -58,14 +57,14 @@ public abstract class RecordedEntity {
         }
     }
 
-    public void showDamage(Map<String, Object> event) {
+    public void showDamage() {
         if (fakeEntityId == 0) return;
 
         WrapperPlayServerEntityStatus packet = new WrapperPlayServerEntityStatus(fakeEntityId, (byte) 2);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, packet);
     }
 
-    public void showDeath(Map<String, Object> event) {
+    public void showDeath() {
         if (fakeEntityId == 0) return;
 
         if (this instanceof RecordedPlayer rp) {

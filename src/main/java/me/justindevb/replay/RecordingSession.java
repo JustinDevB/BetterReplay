@@ -7,6 +7,7 @@ import me.justindevb.replay.recording.EntityTracker;
 import me.justindevb.replay.recording.RecordingEventHandler;
 import me.justindevb.replay.recording.RecordingPacketHandler;
 import me.justindevb.replay.recording.TimelineBuilder;
+import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.util.ReplayObject;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -81,22 +82,16 @@ public class RecordingSession {
             if (p == null || !p.isOnline()) continue;
 
             Location loc = p.getLocation();
-            Map<String, Object> moveEvent = new HashMap<>();
-            moveEvent.put("tick", tick);
-            moveEvent.put("type", "player_move");
-            moveEvent.put("name", p.getName());
-            moveEvent.put("etype", EntityType.PLAYER);
-            moveEvent.put("uuid", uuid.toString());
-            moveEvent.put("world", p.getWorld().getName());
-            moveEvent.put("x", loc.getX());
-            moveEvent.put("y", loc.getY());
-            moveEvent.put("z", loc.getZ());
-            moveEvent.put("yaw", loc.getYaw());
-            moveEvent.put("pitch", loc.getPitch());
 
-            moveEvent.put("pose", p.getPose().name());
-
-            builder.addEvent(moveEvent);
+            builder.addEvent(new TimelineEvent.PlayerMove(
+                    tick,
+                    uuid.toString(),
+                    p.getName(),
+                    p.getWorld().getName(),
+                    loc.getX(), loc.getY(), loc.getZ(),
+                    loc.getYaw(), loc.getPitch(),
+                    p.getPose().name()
+            ));
         }
 
         for (Map.Entry<UUID, EntityType> entry : tracker.getTrackedEntities().entrySet()) {
@@ -104,18 +99,14 @@ public class RecordingSession {
             Entity e = Bukkit.getEntity(uuid);
             if (e == null || e.isDead()) continue;
 
-            Map<String, Object> moveEvent = new HashMap<>();
-            moveEvent.put("tick", tick);
-            moveEvent.put("type", "entity_move");
-            moveEvent.put("uuid", uuid.toString());
-            moveEvent.put("etype", e.getType().name());
-            moveEvent.put("world", e.getWorld().getName());
-            moveEvent.put("x", e.getLocation().getX());
-            moveEvent.put("y", e.getLocation().getY());
-            moveEvent.put("z", e.getLocation().getZ());
-            moveEvent.put("yaw", e.getLocation().getYaw());
-            moveEvent.put("pitch", e.getLocation().getPitch());
-            builder.addEvent(moveEvent);
+            builder.addEvent(new TimelineEvent.EntityMove(
+                    tick,
+                    uuid.toString(),
+                    e.getType().name(),
+                    e.getWorld().getName(),
+                    e.getLocation().getX(), e.getLocation().getY(), e.getLocation().getZ(),
+                    e.getLocation().getYaw(), e.getLocation().getPitch()
+            ));
         }
 
         if (tick % INVENTORY_CHECK_INTERVAL == 0) {
@@ -145,12 +136,7 @@ public class RecordingSession {
 
             lastInventorySnapshot.put(uuid, currentSerialized);
 
-            Map<String, Object> event = new HashMap<>();
-            event.put("tick", tick);
-            event.put("type", "inventory_update");
-            event.put("uuid", uuid.toString());
-            event.putAll(builder.captureInventory(p));
-            builder.addEvent(event);
+            builder.addEvent(builder.captureInventory(tick, uuid.toString(), p));
         }
     }
 
@@ -195,7 +181,7 @@ public class RecordingSession {
         return tick;
     }
 
-    public List<Map<String, Object>> getTimeline() {
+    public List<TimelineEvent> getTimeline() {
         return builder.getTimeline();
     }
 
@@ -212,13 +198,7 @@ public class RecordingSession {
             Player p = Bukkit.getPlayer(uuid);
             if (p == null || !p.isOnline()) continue;
 
-            Map<String, Object> inventoryEvent = new HashMap<>();
-            inventoryEvent.put("tick", tick);
-            inventoryEvent.put("type", "inventory_update");
-            inventoryEvent.put("uuid", uuid.toString());
-            inventoryEvent.putAll(builder.captureInventory(p));
-
-            builder.addEvent(inventoryEvent);
+            builder.addEvent(builder.captureInventory(tick, uuid.toString(), p));
         }
     }
 }
