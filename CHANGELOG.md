@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replay protection metadata and admin commands for protecting and unprotecting saved replays from manual deletion and retention cleanup
 - Config-driven replay retention cleanup with duration parsing, scheduled scans, and protection-aware deletion skipping
 - Configurable protected replay highlighting in `/replay list`
+- Chunk data recording design document with config, storage container, compression, playback, and teardown plan (`docs/planning/CHUNK_DATA_RECORDING.md`)
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
