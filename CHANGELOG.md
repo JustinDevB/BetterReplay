@@ -15,23 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Source organization plan executed (Tier 1 + Tier 2 package restructure)
 - Enum-based config settings model with centralized, typed config keys (pending merge in #36)
 - Versioned config migration with one-time comment backfill for legacy config files (pending merge in #36)
-- Phase 1 binary replay format contracts for `.br` archives, manifest defaults, event tags, varint framing, and tick-index layout
-- Phase 2 storage abstractions: `ReplayStorageCodec`, `ReplayFormatDetector`, append/finalizer/archive reader interfaces, and JSON codec seam coverage
-- Phase 3 append-log recording path with CRC32C-framed temp files, incremental string definitions, and streaming recording-session persistence
-- Phase 4 binary replay finalization with append-log recovery scanning, LZ4-compressed `replay.bin` archives, manifest CRC32C checksums, and rebuilt 50-tick seek indexes
-- Phase 5 binary replay loading with `.br` archive detection, manifest version gates, heap decompression, lazy indexed event decode, and seek support from finalized checkpoints
-- Phase 6 backend integration with `.br` saves for file and MySQL storage, MySQL `LONGBLOB` migration, and mixed JSON/binary backend compatibility coverage
-- Phase 7 filtered replay export with `ReplayExportQuery`, player and tick-range filters, `player=all` defaults, and binary archive exports built from lazy indexed scans
-- Phase 8 legacy-compatibility prep keeps JSON replay loading during the transition, prefers `.br` when mixed file payloads coexist, and documents JSON support as temporary compatibility slated for later removal
-- Hidden admin replay export command via `/replay export` with optional named player and tick-range filters
-- Hidden admin benchmark diagnostics via `/replay benchmark` with small/medium/large synthetic workloads and Markdown/JSON report output
-- Hidden admin replay debug dump command via `/replay debug dump` with optional tick-range filters and human-readable text output
-- Hidden admin replay debug info command via `/replay debug info` with metadata output for timestamp, counts, duration, sizes, and archive details
-- Binary replay manifests now store `recordingStartedAtEpochMillis`, and append-log temp files now persist a fixed metadata header so crash-safe recovery preserves the original recording start time
+- Binary replay storage now uses finalized `.br` archives with crash-safe append-log recording, lazy indexed loading, file/MySQL backend support, filtered export tooling, hidden benchmark/debug diagnostics, preserved recording start timestamps, startup recovery of orphaned temp logs, and temporary legacy JSON compatibility during migration
 
 ### Fixed
-- Replay exports created via `/replay export` now write to the plugin `exports/` folder instead of the system temp directory
-- Pending `.appendlog` temp files left behind after a server crash are now recovered automatically on startup, including files with a truncated tail that still contain a valid replay prefix
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
 - Nested replay inventory loss when starting a replay during an active replay (#31)
 - Replay controls getting stuck after replay ends (#27)
@@ -50,9 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config settings ownership moved out of `Replay` into a dedicated comment-preserving config manager (pending merge in #36)
 - Replay sessions now always start at `1.0x` speed; `Playback.Max-Speed` is enforced to a minimum of `1.0`
 - Generated config output now inserts blank lines between root-level keys/sections for readability
-- Benchmark reports now expose `Decode` as the load-path metric and no longer duplicate the same cost under a separate `Open` column
-- Replay storage no longer exposes `General.Compress-Replays`; codecs that support legacy JSON compression now apply it automatically, and migrated configs drop the obsolete key
-- The hidden `/replay benchmark` command is now always available to senders with `replay.benchmark`, and `General.Enable-Benchmark-Command` has been removed from config
 
 ## [1.4.0] - 2026-04-10
 
