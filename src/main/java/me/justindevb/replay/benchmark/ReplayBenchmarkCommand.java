@@ -26,10 +26,6 @@ public final class ReplayBenchmarkCommand {
             sender.sendMessage("You do not have permission");
             return true;
         }
-        if (!benchmarkService.isEnabled()) {
-            sender.sendMessage("§cReplay benchmark command is disabled in config.");
-            return true;
-        }
         if (args.length < 2) {
             sender.sendMessage("§cUsage: /replay benchmark <run|last> [small|medium|large|all]");
             return true;
@@ -53,7 +49,7 @@ public final class ReplayBenchmarkCommand {
     }
 
     public List<String> tabComplete(CommandSender sender, String[] args) {
-        if (!sender.hasPermission("replay.benchmark") || !benchmarkService.isEnabled()) {
+        if (!sender.hasPermission("replay.benchmark")) {
             return Collections.emptyList();
         }
         if (args.length == 2) {

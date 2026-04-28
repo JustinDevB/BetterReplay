@@ -50,16 +50,6 @@ class ReplayBenchmarkCommandTest {
     }
 
     @Test
-    void disabledInConfig_rejected() {
-        when(sender.hasPermission("replay.benchmark")).thenReturn(true);
-        when(benchmarkService.isEnabled()).thenReturn(false);
-
-        command.handle(sender, new String[]{"benchmark", "run", "small"});
-
-        verify(sender).sendMessage("§cReplay benchmark command is disabled in config.");
-    }
-
-    @Test
     void runAll_startsAsyncAndReportsPaths() {
         lenient().when(foliaLib.getScheduler()).thenReturn(scheduler);
         lenient().doAnswer(invocation -> {
@@ -68,7 +58,6 @@ class ReplayBenchmarkCommandTest {
             return null;
         }).when(scheduler).runNextTick(any());
         when(sender.hasPermission("replay.benchmark")).thenReturn(true);
-        when(benchmarkService.isEnabled()).thenReturn(true);
         when(benchmarkService.isRunning()).thenReturn(false);
         ReplayBenchmarkArtifacts artifacts = new ReplayBenchmarkArtifacts(
                 new ReplayBenchmarkReport(null, List.of()),
@@ -87,7 +76,6 @@ class ReplayBenchmarkCommandTest {
     @Test
     void tabCompleteExposesKnownSubcommandsOnlyWhenBenchmarkPrefixUsed() {
         when(sender.hasPermission("replay.benchmark")).thenReturn(true);
-        when(benchmarkService.isEnabled()).thenReturn(true);
 
         List<String> completions = command.tabComplete(sender, new String[]{"benchmark", "r"});
 

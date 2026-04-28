@@ -5,11 +5,9 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ReplayBenchmarkServiceTest {
@@ -20,7 +18,6 @@ class ReplayBenchmarkServiceTest {
     @Test
     void startPresetWritesMarkdownAndJsonReports() throws Exception {
         ReplayBenchmarkService service = new ReplayBenchmarkService(
-                () -> true,
                 new ReplayBenchmarkHarness("1.4.0"),
                 new ReplayBenchmarkReportWriter(tempDir),
                 Runnable::run);
@@ -34,20 +31,5 @@ class ReplayBenchmarkServiceTest {
         assertTrue(Files.readString(artifacts.jsonPath()).contains("\"preset\": \"small\""));
         assertTrue(service.lastArtifacts().isPresent());
         assertFalse(service.isRunning());
-    }
-
-    @Test
-    void disabledServiceRejectsRunRequests() {
-        ReplayBenchmarkService service = new ReplayBenchmarkService(
-                () -> false,
-                new ReplayBenchmarkHarness("1.4.0"),
-                new ReplayBenchmarkReportWriter(tempDir),
-                Runnable::run);
-
-        CompletionException ex = assertThrows(CompletionException.class,
-                () -> service.startPreset(ReplayBenchmarkPreset.SMALL).join());
-
-        assertTrue(ex.getCause() instanceof IllegalStateException);
-        assertTrue(ex.getCause().getMessage().contains("disabled"));
     }
 }

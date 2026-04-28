@@ -7,8 +7,6 @@ public enum ReplayConfigSetting {
             "Internal config migration version. Do not edit unless instructed."),
     CHECK_UPDATE("General.Check-Update", true,
             "Check for plugin updates on startup."),
-    ENABLE_BENCHMARK_COMMAND("General.Enable-Benchmark-Command", false,
-            "Enable the hidden admin-only /replay benchmark command."),
     STORAGE_TYPE("General.Storage-Type", "file",
             "Storage backend to use: file or mysql."),
     MYSQL_HOST("General.MySQL.host", "host",

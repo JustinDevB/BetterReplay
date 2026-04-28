@@ -52,6 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Generated config output now inserts blank lines between root-level keys/sections for readability
 - Benchmark reports now expose `Decode` as the load-path metric and no longer duplicate the same cost under a separate `Open` column
 - Replay storage no longer exposes `General.Compress-Replays`; codecs that support legacy JSON compression now apply it automatically, and migrated configs drop the obsolete key
+- The hidden `/replay benchmark` command is now always available to senders with `replay.benchmark`, and `General.Enable-Benchmark-Command` has been removed from config
 
 ## [1.4.0] - 2026-04-10
 

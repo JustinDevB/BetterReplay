@@ -180,7 +180,6 @@ public class Replay extends JavaPlugin {
     private ReplayBenchmarkService createReplayBenchmarkService() {
         Executor asyncExecutor = runnable -> foliaLib.getScheduler().runAsync(task -> runnable.run());
         return new ReplayBenchmarkService(
-                () -> ReplayConfigSetting.ENABLE_BENCHMARK_COMMAND.getBoolean(getConfig()),
                 new ReplayBenchmarkHarness(getPluginMeta().getVersion()),
                 new ReplayBenchmarkReportWriter(Path.of(getDataFolder().getPath(), "benchmarks")),
                 asyncExecutor);

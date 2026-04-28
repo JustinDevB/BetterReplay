@@ -54,12 +54,10 @@ class ReplayConfigManagerTest {
         assertTrue(migrated.contains("Config-Version: 2"));
         assertFalse(migrated.contains("Compress-Replays:"));
         assertTrue(migrated.contains("# Check for plugin updates on startup."));
-        assertTrue(migrated.contains("# Enable the hidden admin-only /replay benchmark command."));
+        assertFalse(migrated.contains("Enable-Benchmark-Command:"));
         assertTrue(migrated.contains("# Number of replay names shown per /replay list page."));
         assertTrue(migrated.indexOf("# MySQL host name or IP address.") < migrated.indexOf("host:"));
         assertTrue(migrated.indexOf("# Check for plugin updates on startup.") < migrated.indexOf("Check-Update:"));
-        assertTrue(migrated.indexOf("# Enable the hidden admin-only /replay benchmark command.")
-            < migrated.indexOf("Enable-Benchmark-Command:"));
         assertTrue(migrated.indexOf("Config-Version: 2") < migrated.indexOf("General:"));
         assertTrue(migrated.contains("Config-Version: 2" + nl + nl + "General:"));
         assertTrue(migrated.indexOf("password: password") < migrated.indexOf("# Number of replay names shown per /replay list page."));

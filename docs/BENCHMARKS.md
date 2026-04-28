@@ -2,16 +2,7 @@
 
 BetterReplay includes a hidden admin diagnostic benchmark command that generates synthetic replay workloads and writes report output as both Markdown and JSON.
 
-## Enabling the command
-
-Enable the command in config:
-
-```yaml
-General:
-  Enable-Benchmark-Command: true
-```
-
-The sender also needs the `replay.benchmark` permission.
+The sender needs the `replay.benchmark` permission.
 
 ## Commands
 

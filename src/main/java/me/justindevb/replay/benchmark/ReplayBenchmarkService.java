@@ -7,29 +7,22 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.function.BooleanSupplier;
 
 public final class ReplayBenchmarkService {
 
-    private final BooleanSupplier enabledSupplier;
     private final ReplayBenchmarkHarness harness;
     private final ReplayBenchmarkReportWriter writer;
     private final Executor executor;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private volatile ReplayBenchmarkArtifacts lastArtifacts;
 
-    public ReplayBenchmarkService(BooleanSupplier enabledSupplier,
+    public ReplayBenchmarkService(
                                   ReplayBenchmarkHarness harness,
                                   ReplayBenchmarkReportWriter writer,
                                   Executor executor) {
-        this.enabledSupplier = Objects.requireNonNull(enabledSupplier, "enabledSupplier");
         this.harness = Objects.requireNonNull(harness, "harness");
         this.writer = Objects.requireNonNull(writer, "writer");
         this.executor = Objects.requireNonNull(executor, "executor");
-    }
-
-    public boolean isEnabled() {
-        return enabledSupplier.getAsBoolean();
     }
 
     public boolean isRunning() {
@@ -49,9 +42,6 @@ public final class ReplayBenchmarkService {
     }
 
     private CompletableFuture<ReplayBenchmarkArtifacts> start(String label, List<ReplayBenchmarkPreset> presets) {
-        if (!isEnabled()) {
-            return CompletableFuture.failedFuture(new IllegalStateException("Replay benchmark command is disabled"));
-        }
         if (!running.compareAndSet(false, true)) {
             return CompletableFuture.failedFuture(new IllegalStateException("A replay benchmark is already running"));
         }
