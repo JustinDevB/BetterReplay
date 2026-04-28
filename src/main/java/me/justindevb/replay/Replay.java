@@ -6,8 +6,14 @@ import com.tcoded.folialib.FoliaLib;
 import org.bstats.bukkit.Metrics;
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 import me.justindevb.replay.api.ReplayAPI;
+import me.justindevb.replay.benchmark.ReplayBenchmarkCommand;
+import me.justindevb.replay.benchmark.ReplayBenchmarkHarness;
+import me.justindevb.replay.benchmark.ReplayBenchmarkReportWriter;
+import me.justindevb.replay.benchmark.ReplayBenchmarkService;
 import me.justindevb.replay.config.ReplayConfigManager;
 import me.justindevb.replay.config.ReplayConfigSetting;
+import me.justindevb.replay.debug.ReplayDebugCommand;
+import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.listeners.PacketEventsListener;
 import me.justindevb.replay.util.ReplayCache;
 import me.justindevb.replay.util.UpdateChecker;
@@ -19,7 +25,9 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.nio.file.Path;
 import java.util.Locale;
+import java.util.concurrent.Executor;
 import java.util.logging.Level;
 
 public class Replay extends JavaPlugin {
@@ -30,6 +38,7 @@ public class Replay extends JavaPlugin {
     private ReplayCache replayCache;
     private ReplayManagerImpl manager;
     private FoliaLib foliaLib;
+    private ReplayBenchmarkService replayBenchmarkService;
 
     @Override
     public void onLoad() {
@@ -48,8 +57,12 @@ public class Replay extends JavaPlugin {
 
         recorderManager = new RecorderManager(this);
         manager = new ReplayManagerImpl(this, recorderManager);
-        ReplayCommand replayCommand = new ReplayCommand(manager);
         initConfig();
+        replayBenchmarkService = createReplayBenchmarkService();
+        ReplayCommand replayCommand = new ReplayCommand(manager,
+            new ReplayBenchmarkCommand(replayBenchmarkService, foliaLib, getLogger()),
+            new ReplayExportCommand(manager, foliaLib, getLogger()),
+            new ReplayDebugCommand(this, manager, foliaLib, getLogger()));
 
         PluginCommand cmd = getCommand("replay");
         if (cmd != null) {
@@ -61,6 +74,7 @@ public class Replay extends JavaPlugin {
         ReplayAPI.init(manager);
 
         initStorage();
+        recorderManager.recoverPendingAppendLogs();
 
         initBstats();
 
@@ -161,5 +175,13 @@ public class Replay extends JavaPlugin {
 
     public FoliaLib getFoliaLib() {
         return foliaLib;
+    }
+
+    private ReplayBenchmarkService createReplayBenchmarkService() {
+        Executor asyncExecutor = runnable -> foliaLib.getScheduler().runAsync(task -> runnable.run());
+        return new ReplayBenchmarkService(
+                new ReplayBenchmarkHarness(getPluginMeta().getVersion()),
+                new ReplayBenchmarkReportWriter(Path.of(getDataFolder().getPath(), "benchmarks")),
+                asyncExecutor);
     }
 }

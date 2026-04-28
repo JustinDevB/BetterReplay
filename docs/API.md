@@ -11,6 +11,7 @@ BetterReplay exposes a public API that other plugins can use to start/stop recor
   - [Maven](#maven)
   - [Gradle (Groovy DSL)](#gradle-groovy-dsl)
   - [Gradle (Kotlin DSL)](#gradle-kotlin-dsl)
+- [Replay Export Queries](#replay-export-queries)
 - [ReplayManager Methods](#replaymanager-methods)
   - [startRecording](#startrecording)
   - [stopRecording](#stoprecording)
@@ -125,6 +126,24 @@ dependencies {
     compileOnly("me.justindevb:BetterReplay:1.4.0")
 }
 ```
+
+---
+
+## Replay Export Queries
+
+Filtered replay export uses `ReplayExportQuery`.
+
+```java
+ReplayExportQuery query = new ReplayExportQuery("Steve", 200, 400);
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `player` | `String` | Player name or UUID to keep. Use `null`, blank, or `all` for all players |
+| `startTick` | `Integer` | Inclusive export start tick, or `null` for the beginning |
+| `endTick` | `Integer` | Inclusive export end tick, or `null` for the end |
+
+`ReplayExportQuery.all()` exports the full replay without filters.
 
 ---
 
@@ -356,17 +375,19 @@ manager.deleteSavedReplay("pvp-match-42").thenAccept(deleted -> {
 
 ### getSavedReplayFile
 
-Gets the replay data file on disk. Only applicable when using file-based storage.
+Gets the replay data file on disk, or exports a filtered binary archive when a query is supplied.
 
 ```java
 CompletableFuture<Optional<File>> getSavedReplayFile(String name)
+CompletableFuture<Optional<File>> getSavedReplayFile(String name, ReplayExportQuery query)
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
 | `name` | `String` | The name of the replay |
+| `query` | `ReplayExportQuery` | Optional export filters for player and tick range |
 
-**Returns:** A `CompletableFuture` containing an `Optional<File>`. Empty if the file doesn't exist.
+**Returns:** A `CompletableFuture` containing an `Optional<File>`. Empty if the file doesn't exist. Filtered exports are written as temporary `.br` archives.
 
 **Example:**
 
@@ -378,6 +399,11 @@ manager.getSavedReplayFile("pvp-match-42").thenAccept(optFile -> {
         player.sendMessage("Replay file: " + file.getAbsolutePath());
         player.sendMessage("Size: " + (file.length() / 1024) + " KB");
     });
+});
+
+ReplayExportQuery query = new ReplayExportQuery("Steve", 200, 400);
+manager.getSavedReplayFile("pvp-match-42", query).thenAccept(optFile -> {
+    optFile.ifPresent(file -> player.sendMessage("Filtered replay file: " + file.getAbsolutePath()));
 });
 ```
 

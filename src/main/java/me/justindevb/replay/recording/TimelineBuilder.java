@@ -1,7 +1,10 @@
 package me.justindevb.replay.recording;
 
+import me.justindevb.replay.storage.ReplayAppendLogWriter;
 import org.bukkit.inventory.ItemStack;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -12,14 +15,33 @@ import static me.justindevb.replay.util.io.ItemStackSerializer.serializeItem;
  */
 public class TimelineBuilder {
 
-    private final List<TimelineEvent> timeline = new ArrayList<>();
+    private final List<TimelineEvent> timeline;
+    private final ReplayAppendLogWriter appendLogWriter;
+
+    public TimelineBuilder() {
+        this(null, true);
+    }
+
+    public TimelineBuilder(ReplayAppendLogWriter appendLogWriter, boolean retainTimeline) {
+        this.timeline = retainTimeline ? new ArrayList<>() : null;
+        this.appendLogWriter = appendLogWriter;
+    }
 
     public void addEvent(TimelineEvent event) {
-        timeline.add(event);
+        if (timeline != null) {
+            timeline.add(event);
+        }
+        if (appendLogWriter != null) {
+            try {
+                appendLogWriter.append(event);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Failed to append timeline event to recording temp log", e);
+            }
+        }
     }
 
     public List<TimelineEvent> getTimeline() {
-        return timeline;
+        return timeline != null ? timeline : List.of();
     }
 
     /**

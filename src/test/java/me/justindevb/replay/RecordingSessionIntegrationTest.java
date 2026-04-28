@@ -245,7 +245,8 @@ class RecordingSessionIntegrationTest {
             pe.when(PacketEvents::getAPI).thenReturn(api);
             when(api.getEventManager()).thenReturn(eventManager);
 
-            when(storage.saveReplay(anyString(), anyList())).thenReturn(CompletableFuture.completedFuture(null));
+                when(storage.saveReplay(anyString(), org.mockito.ArgumentMatchers.any(me.justindevb.replay.storage.ReplaySaveRequest.class)))
+                    .thenReturn(CompletableFuture.completedFuture(null));
             when(storage.listReplays()).thenReturn(CompletableFuture.completedFuture(List.of()));
 
             bukkit.when(() -> Bukkit.getPlayer(playerUuid)).thenReturn(player);

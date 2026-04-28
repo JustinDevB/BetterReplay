@@ -33,10 +33,6 @@ class FileReplayStorageEdgeCaseTest {
         replay = mock(Replay.class);
         when(replay.getDataFolder()).thenReturn(tempDir);
 
-        FileConfiguration config = mock(FileConfiguration.class);
-        when(config.getBoolean("General.Compress-Replays", true)).thenReturn(true);
-        when(replay.getConfig()).thenReturn(config);
-
         PluginMeta meta = mock(PluginMeta.class);
         when(meta.getVersion()).thenReturn("1.4.0");
         when(replay.getPluginMeta()).thenReturn(meta);
@@ -171,52 +167,36 @@ class FileReplayStorageEdgeCaseTest {
         }
     }
 
-    // ── Compression toggle ────────────────────────────────────
+    // ── Stable binary save format ─────────────────────────────
 
     @Nested
-    class CompressionToggle {
+    class StableBinaryFormat {
 
         @Test
-        void switchFromCompressedToUncompressed_removesGzFile() throws Exception {
-            // Save as compressed
+        void repeatedSave_keepsBinaryArchivePathStable() throws Exception {
             storage.saveReplay("toggle-test", List.of(new TimelineEvent.PlayerQuit(0, "u"))).get();
-            File gzFile = new File(new File(tempDir, "replays"), "toggle-test.json.gz");
-            assertTrue(gzFile.exists());
-
-            // Toggle compression off
-            when(replay.getConfig().getBoolean("General.Compress-Replays", true)).thenReturn(false);
+            File archiveFile = new File(new File(tempDir, "replays"), "toggle-test.br");
+            assertTrue(archiveFile.exists());
 
             storage.saveReplay("toggle-test", List.of(new TimelineEvent.PlayerQuit(1, "u"))).get();
 
-            File jsonFile = new File(new File(tempDir, "replays"), "toggle-test.json");
-            assertTrue(jsonFile.exists(), "Uncompressed file should exist");
-            assertFalse(gzFile.exists(), "Old compressed file should be removed");
+            assertTrue(archiveFile.exists(), "Binary archive path should remain stable across saves");
+            assertFalse(new File(new File(tempDir, "replays"), "toggle-test.json").exists());
+            assertFalse(new File(new File(tempDir, "replays"), "toggle-test.json.gz").exists());
         }
 
         @Test
-        void switchFromUncompressedToCompressed_removesJsonFile() throws Exception {
-            when(replay.getConfig().getBoolean("General.Compress-Replays", true)).thenReturn(false);
+        void saveReplay_neverCreatesLegacyJsonVariants() throws Exception {
             storage.saveReplay("toggle2", List.of(new TimelineEvent.PlayerQuit(0, "u"))).get();
 
-            File jsonFile = new File(new File(tempDir, "replays"), "toggle2.json");
-            assertTrue(jsonFile.exists());
-
-            // Toggle compression on
-            when(replay.getConfig().getBoolean("General.Compress-Replays", true)).thenReturn(true);
-            storage.saveReplay("toggle2", List.of(new TimelineEvent.PlayerQuit(1, "u"))).get();
-
-            File gzFile = new File(new File(tempDir, "replays"), "toggle2.json.gz");
-            assertTrue(gzFile.exists(), "Compressed file should exist");
-            assertFalse(jsonFile.exists(), "Old uncompressed file should be removed");
+            assertTrue(new File(new File(tempDir, "replays"), "toggle2.br").exists());
+            assertFalse(new File(new File(tempDir, "replays"), "toggle2.json").exists());
+            assertFalse(new File(new File(tempDir, "replays"), "toggle2.json.gz").exists());
         }
 
         @Test
-        void loadReplay_autoDetects_regardlessOfCurrentSetting() throws Exception {
-            // Save compressed
+        void loadReplay_autoDetectsWithoutConfigToggle() throws Exception {
             storage.saveReplay("autodetect", List.of(new TimelineEvent.PlayerQuit(0, "u"))).get();
-
-            // Switch to uncompressed mode, but load should still work via auto-detect
-            when(replay.getConfig().getBoolean("General.Compress-Replays", true)).thenReturn(false);
 
             List<TimelineEvent> loaded = storage.loadReplay("autodetect").get();
             assertNotNull(loaded);

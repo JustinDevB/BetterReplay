@@ -1,5 +1,6 @@
 package me.justindevb.replay;
 
+import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.util.ReplayCache;
 import org.bukkit.entity.Player;
@@ -10,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collection;
+import java.io.File;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -159,5 +161,18 @@ class ReplayManagerImplTest {
         Player viewer = mock(Player.class);
         Optional<ReplaySession> result = manager.startReplay("", viewer).join();
         assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getSavedReplayFile_withQuery_delegatesToStorage() {
+        File file = mock(File.class);
+        ReplayExportQuery query = new ReplayExportQuery("Steve", 10, 40);
+        when(file.exists()).thenReturn(true);
+        when(storage.getReplayFile("test", query)).thenReturn(CompletableFuture.completedFuture(file));
+
+        Optional<File> result = manager.getSavedReplayFile("test", query).join();
+
+        assertTrue(result.isPresent());
+        assertSame(file, result.get());
     }
 }

@@ -7,8 +7,6 @@ public enum ReplayConfigSetting {
             "Internal config migration version. Do not edit unless instructed."),
     CHECK_UPDATE("General.Check-Update", true,
             "Check for plugin updates on startup."),
-    COMPRESS_REPLAYS("General.Compress-Replays", true,
-            "GZIP compress replay data to save disk space."),
     STORAGE_TYPE("General.Storage-Type", "file",
             "Storage backend to use: file or mysql."),
     MYSQL_HOST("General.MySQL.host", "host",

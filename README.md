@@ -44,9 +44,11 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 - Replay playback lifecycle
   - [src/main/java/me/justindevb/replay/ReplaySession.java](src/main/java/me/justindevb/replay/ReplaySession.java)
 - Storage abstraction and implementations
-  - [src/main/java/me/justindevb/replay/util/storage/ReplayStorage.java](src/main/java/me/justindevb/replay/util/storage/ReplayStorage.java)
-  - [src/main/java/me/justindevb/replay/util/storage/FileReplayStorage.java](src/main/java/me/justindevb/replay/util/storage/FileReplayStorage.java)
-  - [src/main/java/me/justindevb/replay/util/storage/MySQLReplayStorage.java](src/main/java/me/justindevb/replay/util/storage/MySQLReplayStorage.java)
+  - [src/main/java/me/justindevb/replay/storage/ReplayStorage.java](src/main/java/me/justindevb/replay/storage/ReplayStorage.java)
+  - [src/main/java/me/justindevb/replay/storage/FileReplayStorage.java](src/main/java/me/justindevb/replay/storage/FileReplayStorage.java)
+  - [src/main/java/me/justindevb/replay/storage/MySQLReplayStorage.java](src/main/java/me/justindevb/replay/storage/MySQLReplayStorage.java)
+  - [src/main/java/me/justindevb/replay/storage/ReplayStorageCodec.java](src/main/java/me/justindevb/replay/storage/ReplayStorageCodec.java)
+  - [src/main/java/me/justindevb/replay/storage/ReplayFormatDetector.java](src/main/java/me/justindevb/replay/storage/ReplayFormatDetector.java)
 
 ## Features
 
@@ -71,6 +73,10 @@ Subcommands:
 - play
 - list
 - delete
+- export (hidden admin utility command)
+- benchmark (hidden admin diagnostic command)
+- debug dump (hidden admin dump command)
+- debug info (hidden admin metadata command)
 
 Permissions:
 - replay.start
@@ -78,7 +84,26 @@ Permissions:
 - replay.play
 - replay.list
 - replay.delete
+- replay.export
+- replay.benchmark
+- replay.debug
 - replay.*
+
+Hidden export usage:
+- `/replay export <name> [player=<name|all>] [start=<tick>] [end=<tick>]` exports a replay to a `.br` file under the plugin `exports/` folder and prints the generated path.
+- Replay names may contain spaces as long as all filter arguments come after the full replay name.
+
+Hidden debug dump usage:
+- `/replay debug dump <name> [start=<tick>] [end=<tick>]` writes a human-readable text dump under the plugin `dumps/` folder and prints the generated path.
+- Replay names may contain spaces as long as all filter arguments come after the full replay name.
+
+Hidden debug info usage:
+- `/replay debug info <name>` prints replay metadata including format, recording timestamp, record count, tick length, compressed/decompressed sizes, and version/index details.
+- Replay names may contain spaces.
+
+Hidden benchmark usage:
+- `/replay benchmark run <small|medium|large|all>` starts an asynchronous synthetic benchmark run and writes both Markdown and JSON reports under the plugin `benchmarks/` folder.
+- `/replay benchmark last` prints the most recent report file paths.
 
 ## Configuration
 
@@ -90,9 +115,13 @@ Default config keys are initialized in:
 Valid values for `General.Storage-Type` are:
 
 - `file`
-  - Stores replay data as JSON files under the plugin data folder.
+  - Stores replay data under the plugin data folder.
+  - New saves now write finalized binary `.br` archives.
+  - The loader still auto-detects both legacy JSON payloads and finalized binary `.br` archives through `ReplayStorageCodec` during the transition period.
 - `mysql`
   - Stores replay data in a MySQL table (`replays`) using the configured `General.MySQL.*` values.
+  - New saves now store finalized binary `.br` archives as blob data.
+  - The loader still auto-detects both legacy JSON payloads and finalized binary `.br` archives during the transition period.
 
 These values should be lowercase as shown above.
 
@@ -127,6 +156,9 @@ list-page-size: 10
 Notes:
 - If Storage-Type is invalid, plugin falls back to file storage.
 - MySQL replay names are stored in a VARCHAR(64) primary key column.
+- Binary `.br` payloads require the replay data column to be `LONGBLOB`; the plugin now widens `data` automatically during storage initialization.
+- Legacy JSON replay support is temporary compatibility only and is planned for removal in a later version; new recordings should stay on `.br`.
+- The hidden `/replay benchmark` command is now always available to senders with `replay.benchmark`, and `General.Enable-Benchmark-Command` has been removed from config
 
 ## Build from source
 
@@ -157,6 +189,24 @@ manager.startReplay("demo-session", viewerPlayer);
 ```
 
 For full documentation of every method, all events, and a complete example plugin, see the **[API Documentation](docs/API.md)**.
+
+## Documentation
+
+Primary docs:
+
+- [docs/API.md](docs/API.md) - public API reference
+- [docs/BENCHMARKS.md](docs/BENCHMARKS.md) - benchmark command usage, workload presets, and metric definitions
+- [docs/BINARY_FORMAT_SPEC.md](docs/BINARY_FORMAT_SPEC.md) - v1 binary replay payload and archive structure
+- [docs/ARCHIVE_MANIFEST_SCHEMA.md](docs/ARCHIVE_MANIFEST_SCHEMA.md) - `manifest.json` field definitions and validation rules
+- [docs/DEPRECATIONS.md](docs/DEPRECATIONS.md) - planned feature and compatibility removals
+
+Binary replay note:
+- Finalized `.br` archives now store the recording start wall-clock timestamp in `manifest.json` as `recordingStartedAtEpochMillis`.
+- Active temp append-logs also write a fixed file header carrying the same timestamp so final saves can preserve it after crash-safe recovery.
+
+Planning docs:
+
+- [docs/planning](docs/planning) - design notes, comparisons, and implementation planning documents
 
 ## Changelog
 

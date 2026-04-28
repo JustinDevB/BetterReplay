@@ -1,5 +1,6 @@
 package me.justindevb.replay;
 
+import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.api.ReplayManager;
 import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.util.VersionUtil;
@@ -170,6 +171,21 @@ public class ReplayManagerImpl implements ReplayManager {
                 })
                 .exceptionally(ex -> {
                     replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to get replay file: " + name, ex);
+                    return Optional.empty();
+                });
+    }
+
+    @Override
+    public CompletableFuture<Optional<File>> getSavedReplayFile(String name, ReplayExportQuery query) {
+        return replay.getReplayStorage().getReplayFile(name, query)
+                .thenApply(file -> {
+                    if (file == null || !file.exists()) {
+                        return Optional.<File>empty();
+                    }
+                    return Optional.of(file);
+                })
+                .exceptionally(ex -> {
+                    replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to export replay file: " + name, ex);
                     return Optional.empty();
                 });
     }

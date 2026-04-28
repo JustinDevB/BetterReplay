@@ -14,6 +14,8 @@ import java.util.Set;
 public class ReplayConfigManager {
 
     private static final int CURRENT_CONFIG_VERSION = 2;
+    private static final String OBSOLETE_COMPRESS_REPLAYS_KEY = "General.Compress-Replays";
+    private static final String OBSOLETE_COMPRESS_REPLAYS_COMMENT = "GZIP compress replay data to save disk space.";
 
     private static final String[] HEADER = new String[] {
             "===========================================",
@@ -81,6 +83,7 @@ public class ReplayConfigManager {
         for (ReplayConfigSetting setting : ReplayConfigSetting.values()) {
             for (String c : setting.getComments()) managedComments.add(normalizeManagedCommentText(c));
         }
+        managedComments.add(normalizeManagedCommentText(OBSOLETE_COMPRESS_REPLAYS_COMMENT));
 
         List<String> cleaned = new ArrayList<>();
         for (String line : lines) {
@@ -93,6 +96,8 @@ public class ReplayConfigManager {
             }
             cleaned.add(line);
         }
+
+        removeKeyLine(cleaned, OBSOLETE_COMPRESS_REPLAYS_KEY);
 
         while (!cleaned.isEmpty() && cleaned.get(0).trim().isEmpty()) {
             cleaned.remove(0);
@@ -186,6 +191,18 @@ public class ReplayConfigManager {
         }
 
         return foundIndex;
+    }
+
+    private void removeKeyLine(List<String> lines, String dottedPath) {
+        int lineIndex = findKeyLineIndex(lines, dottedPath);
+        if (lineIndex < 0) {
+            return;
+        }
+
+        lines.remove(lineIndex);
+        while (lineIndex < lines.size() && lines.get(lineIndex).trim().isEmpty()) {
+            lines.remove(lineIndex);
+        }
     }
 
     private int countLeadingSpaces(String line) {

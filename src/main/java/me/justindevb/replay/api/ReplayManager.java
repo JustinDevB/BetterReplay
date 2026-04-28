@@ -83,4 +83,15 @@ public interface ReplayManager {
      */
     CompletableFuture<Optional<File>> getSavedReplayFile(String name);
 
+    /**
+     * Export a replay file with optional player and tick-range filters.
+     *
+     * @param name replay name
+     * @param query export filters
+     * @return optional exported file
+     */
+    default CompletableFuture<Optional<File>> getSavedReplayFile(String name, ReplayExportQuery query) {
+        return getSavedReplayFile(name);
+    }
+
 }
