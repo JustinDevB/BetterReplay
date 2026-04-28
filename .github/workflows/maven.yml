@@ -47,7 +47,10 @@ jobs:
           version-type: ${{ github.ref == 'refs/heads/main' && 'release' || 'alpha' }}
           loaders: |
             paper
+            purpur
             folia
+            spigot
+            bukkit
           game-versions: |
             1.21.11
           dependencies: |
