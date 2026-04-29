@@ -300,6 +300,20 @@ Benefits of sidecar metadata:
 - it survives plugin storage refactors better than filesystem-specific attributes
 - it gives the retention service one clear source of truth
 
+Why one metadata file per replay instead of one global JSON index:
+
+- protecting or unprotecting one replay only rewrites one small metadata file instead of a shared document for every replay
+- corruption or partial-write risk is isolated to one replay rather than all replay protection metadata
+- delete operations can remove replay data and protection metadata together without rewriting unrelated entries
+- concurrent operations such as protect, unprotect, delete, and retention scans have a smaller synchronization surface
+
+Why not store this flag in the replay's main manifest:
+
+- deletion protection is local server policy, not replay-format identity
+- changing protection should not require rewriting the replay archive itself
+- archive-level metadata would make the protection flag travel with copied or exported replays, which is not required for the first iteration
+- legacy JSON replays do not share the same clean manifest model as binary `.br` archives
+
 Delete semantics for file storage should remove both the replay artifact and its metadata file when deletion is allowed.
 
 ### MySQL Protection
