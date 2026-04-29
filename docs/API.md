@@ -20,7 +20,10 @@ BetterReplay exposes a public API that other plugins can use to start/stop recor
   - [stopReplay](#stopreplay)
   - [getActiveReplays](#getactivereplays)
   - [listSavedReplays](#listsavedreplays)
+    - [listSavedReplaySummaries](#listsavedreplaysummaries)
   - [deleteSavedReplay](#deletesavedreplay)
+    - [protectSavedReplay](#protectsavedreplay)
+    - [unprotectSavedReplay](#unprotectsavedreplay)
   - [getSavedReplayFile](#getsavedreplayfile)
 - [Events](#events)
   - [RecordingStartEvent](#recordingstartevent)
@@ -343,30 +346,147 @@ manager.listSavedReplays().thenAccept(names -> {
 
 ---
 
-### deleteSavedReplay
+### listSavedReplaySummaries
 
-Deletes a saved replay from storage.
+Lists replay metadata for administrative, retention, and protection-aware workflows.
 
 ```java
-CompletableFuture<Boolean> deleteSavedReplay(String name)
+CompletableFuture<List<ReplaySummary>> listSavedReplaySummaries()
 ```
 
-| Parameter | Type | Description |
-|---|---|---|
-| `name` | `String` | The name of the replay to delete |
+Each `ReplaySummary` contains:
 
-**Returns:** A `CompletableFuture<Boolean>` — `true` if deleted, `false` if it didn't exist or the delete failed.
+| Field | Type | Description |
+|---|---|---|
+| `name` | `String` | Replay name |
+| `createdAt` | `Instant` | Replay creation timestamp |
+| `sizeBytes` | `long` | Stored replay size |
+| `protectedFromDeletion` | `boolean` | Whether delete and retention flows must skip it |
+| `protectedAt` | `Instant` | When protection was last enabled |
+| `protectedBy` | `String` | Who enabled protection |
+| `storageType` | `ReplayStorageType` | Active backing store |
 
 **Example:**
 
 ```java
 ReplayManager manager = ReplayAPI.get();
 
-manager.deleteSavedReplay("pvp-match-42").thenAccept(deleted -> {
-    if (deleted) {
-        player.sendMessage("Replay deleted.");
-    } else {
-        player.sendMessage("Replay not found or could not be deleted.");
+manager.listSavedReplaySummaries().thenAccept(summaries -> {
+    for (ReplaySummary summary : summaries) {
+        player.sendMessage(summary.name() + " protected=" + summary.protectedFromDeletion());
+    }
+});
+```
+
+---
+
+### deleteSavedReplay
+
+Deletes a saved replay from storage.
+
+```java
+CompletableFuture<ReplayDeleteResult> deleteSavedReplay(String name)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` | `String` | The name of the replay to delete |
+
+**Returns:** A `CompletableFuture<ReplayDeleteResult>`.
+
+Possible results:
+
+| Result | Meaning |
+|---|---|
+| `DELETED` | Replay was deleted |
+| `PROTECTED` | Replay is protected from deletion |
+| `NOT_FOUND` | Replay does not exist |
+
+**Migration note:** Older plugin versions returned `CompletableFuture<Boolean>`. Update integrations to branch on `ReplayDeleteResult` instead of treating every `false` outcome the same.
+
+**Example:**
+
+```java
+ReplayManager manager = ReplayAPI.get();
+
+manager.deleteSavedReplay("pvp-match-42").thenAccept(result -> {
+    switch (result) {
+        case DELETED -> player.sendMessage("Replay deleted.");
+        case PROTECTED -> player.sendMessage("Replay is protected.");
+        case NOT_FOUND -> player.sendMessage("Replay not found.");
+    }
+});
+```
+
+---
+
+### protectSavedReplay
+
+Marks a saved replay as protected from both manual deletion and retention cleanup.
+
+```java
+CompletableFuture<ReplayProtectionResult> protectSavedReplay(String name, String protectedBy)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` | `String` | The replay to protect |
+| `protectedBy` | `String` | Audit value describing who enabled protection |
+
+**Returns:** A `CompletableFuture<ReplayProtectionResult>`.
+
+Possible results:
+
+| Result | Meaning |
+|---|---|
+| `UPDATED` | Protection was enabled |
+| `ALREADY_PROTECTED` | Replay was already protected |
+| `NOT_FOUND` | Replay does not exist |
+
+**Example:**
+
+```java
+ReplayManager manager = ReplayAPI.get();
+
+manager.protectSavedReplay("pvp-match-42", player.getName()).thenAccept(result -> {
+    if (result == ReplayProtectionResult.UPDATED) {
+        player.sendMessage("Replay protected.");
+    }
+});
+```
+
+---
+
+### unprotectSavedReplay
+
+Removes deletion protection from a saved replay while preserving the last protection audit metadata.
+
+```java
+CompletableFuture<ReplayProtectionResult> unprotectSavedReplay(String name)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `name` | `String` | The replay to unprotect |
+
+**Returns:** A `CompletableFuture<ReplayProtectionResult>`.
+
+Possible results:
+
+| Result | Meaning |
+|---|---|
+| `UPDATED` | Protection was removed |
+| `ALREADY_UNPROTECTED` | Replay was already unprotected |
+| `NOT_FOUND` | Replay does not exist |
+
+**Example:**
+
+```java
+ReplayManager manager = ReplayAPI.get();
+
+manager.unprotectSavedReplay("pvp-match-42").thenAccept(result -> {
+    if (result == ReplayProtectionResult.UPDATED) {
+        player.sendMessage("Replay unprotected.");
     }
 });
 ```

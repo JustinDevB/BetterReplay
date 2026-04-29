@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Enum-based config settings model with centralized, typed config keys (pending merge in #36)
 - Versioned config migration with one-time comment backfill for legacy config files (pending merge in #36)
 - Binary replay storage now uses finalized `.br` archives with crash-safe append-log recording, lazy indexed loading, file/MySQL backend support, filtered export tooling, hidden benchmark/debug diagnostics, preserved recording start timestamps, startup recovery of orphaned temp logs, and temporary legacy JSON compatibility during migration
+- Replay protection metadata and admin commands for protecting and unprotecting saved replays from manual deletion and retention cleanup
+- Config-driven replay retention cleanup with duration parsing, scheduled scans, and protection-aware deletion skipping
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
@@ -36,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config settings ownership moved out of `Replay` into a dedicated comment-preserving config manager (pending merge in #36)
 - Replay sessions now always start at `1.0x` speed; `Playback.Max-Speed` is enforced to a minimum of `1.0`
 - Generated config output now inserts blank lines between root-level keys/sections for readability
+- `ReplayManager.deleteSavedReplay` now returns `ReplayDeleteResult`, and the public API also exposes `listSavedReplaySummaries`, `protectSavedReplay`, and `unprotectSavedReplay`
 
 ## [1.4.0] - 2026-04-10
 

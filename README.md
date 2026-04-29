@@ -54,7 +54,8 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 
 - Start and stop recordings
 - Save recordings to file or MySQL
-- List and delete stored replays
+- List, protect, unprotect, and delete stored replays
+- Automatic retention cleanup for expired replays
 - Replay sessions for viewers
 - API-first integration support for other plugins
 - Optional Floodgate soft dependency support
@@ -73,6 +74,8 @@ Subcommands:
 - play
 - list
 - delete
+- protect
+- unprotect
 - export (hidden admin utility command)
 - benchmark (hidden admin diagnostic command)
 - debug dump (hidden admin dump command)
@@ -84,6 +87,8 @@ Permissions:
 - replay.play
 - replay.list
 - replay.delete
+- replay.protect
+- replay.unprotect
 - replay.export
 - replay.benchmark
 - replay.debug
@@ -107,8 +112,9 @@ Hidden benchmark usage:
 
 ## Configuration
 
-Default config keys are initialized in:
-- [src/main/java/me/justindevb/replay/Replay.java](src/main/java/me/justindevb/replay/Replay.java)
+Default config keys and migrations are defined in:
+- [src/main/java/me/justindevb/replay/config/ReplayConfigSetting.java](src/main/java/me/justindevb/replay/config/ReplayConfigSetting.java)
+- [src/main/java/me/justindevb/replay/config/ReplayConfigManager.java](src/main/java/me/justindevb/replay/config/ReplayConfigManager.java)
 
 ### Storage-Type options
 
@@ -153,10 +159,24 @@ Additional key used by command pagination:
 list-page-size: 10
 ```
 
+Retention cleanup keys:
+
+```yaml
+Retention:
+  Enabled: false
+  Max-Age: 30d
+  Check-Interval: 1h
+  Delete-Partial-Failures: false
+  Log-Deletions: true
+```
+
 Notes:
 - If Storage-Type is invalid, plugin falls back to file storage.
 - MySQL replay names are stored in a VARCHAR(64) primary key column.
 - Binary `.br` payloads require the replay data column to be `LONGBLOB`; the plugin now widens `data` automatically during storage initialization.
+- Protected replays are skipped by both retention cleanup and manual delete commands until they are explicitly unprotected.
+- Protection stores required audit metadata: `protectedAt` and `protectedBy`.
+- Retention durations accept `s`, `m`, `h`, and `d` suffixes.
 - Legacy JSON replay support is temporary compatibility only and is planned for removal in a later version; new recordings should stay on `.br`.
 - The hidden `/replay benchmark` command is now always available to senders with `replay.benchmark`, and `General.Enable-Benchmark-Command` has been removed from config
 
