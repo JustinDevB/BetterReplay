@@ -5,6 +5,7 @@ import me.justindevb.replay.benchmark.ReplayBenchmarkCommand;
 import me.justindevb.replay.config.ReplayConfigSetting;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
+import me.justindevb.replay.storage.ReplayDeleteResult;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -223,10 +224,12 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                 }
                 String name = joinArgs(args, 1);
                 replayManager.deleteSavedReplay(name)
-                        .thenAccept(success -> {
+                        .thenAccept(result -> {
                             Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> {
-                                if (success) {
+                                if (result == ReplayDeleteResult.DELETED) {
                                     p.sendMessage("§aDeleted replay: " + name);
+                                } else if (result == ReplayDeleteResult.PROTECTED) {
+                                    p.sendMessage("§cReplay is protected and must be unprotected before deletion: " + name);
                                 } else {
                                     p.sendMessage("§cReplay not found: " + name);
                                 }

@@ -2,10 +2,8 @@ package me.justindevb.replay.storage;
 
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.api.ReplayExportQuery;
-import me.justindevb.replay.storage.ReplayInspection;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
-import org.bukkit.configuration.file.FileConfiguration;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -150,14 +148,14 @@ class FileReplayStorageTest {
     void deleteReplay_existing_returnsTrue() throws ExecutionException, InterruptedException {
         storage.saveReplay("todelete", sampleTimeline()).get();
 
-        assertTrue(storage.deleteReplay("todelete").get());
+        assertEquals(ReplayDeleteResult.DELETED, storage.deleteReplay("todelete").get());
 
         assertNull(storage.loadReplay("todelete").get());
     }
 
     @Test
     void deleteReplay_nonExistent_returnsFalse() throws ExecutionException, InterruptedException {
-        assertFalse(storage.deleteReplay("nope").get());
+        assertEquals(ReplayDeleteResult.NOT_FOUND, storage.deleteReplay("nope").get());
     }
 
     // ── replayExists ──────────────────────────────────────────

@@ -4,6 +4,7 @@ import me.justindevb.replay.api.ReplayManager;
 import me.justindevb.replay.benchmark.ReplayBenchmarkCommand;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
+import me.justindevb.replay.storage.ReplayDeleteResult;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.entity.Player;
@@ -258,6 +259,56 @@ class ReplayCommandTest {
             replayCommand.onCommand(player, command, "replay", new String[]{"delete"});
             // Sender gets usage message
             verify(player).sendMessage("Usage: /replay delete <name>");
+        }
+
+        @Test
+        void deleteSuccess_showsDeletedMessage() {
+            when(player.hasPermission("replay.delete")).thenReturn(true);
+            when(replayManager.deleteSavedReplay("demo"))
+                    .thenReturn(CompletableFuture.completedFuture(ReplayDeleteResult.DELETED));
+
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = mock(Replay.class);
+                com.tcoded.folialib.FoliaLib foliaLib = mock(com.tcoded.folialib.FoliaLib.class);
+                com.tcoded.folialib.impl.PlatformScheduler scheduler = mock(com.tcoded.folialib.impl.PlatformScheduler.class);
+                when(plugin.getFoliaLib()).thenReturn(foliaLib);
+                when(foliaLib.getScheduler()).thenReturn(scheduler);
+                doAnswer(invocation -> {
+                    java.util.function.Consumer<?> consumer = invocation.getArgument(0);
+                    consumer.accept(null);
+                    return null;
+                }).when(scheduler).runNextTick(any());
+                replay.when(Replay::getInstance).thenReturn(plugin);
+
+                replayCommand.onCommand(player, command, "replay", new String[]{"delete", "demo"});
+
+                verify(player).sendMessage("§aDeleted replay: demo");
+            }
+        }
+
+        @Test
+        void deleteProtected_showsProtectedMessage() {
+            when(player.hasPermission("replay.delete")).thenReturn(true);
+            when(replayManager.deleteSavedReplay("demo"))
+                    .thenReturn(CompletableFuture.completedFuture(ReplayDeleteResult.PROTECTED));
+
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = mock(Replay.class);
+                com.tcoded.folialib.FoliaLib foliaLib = mock(com.tcoded.folialib.FoliaLib.class);
+                com.tcoded.folialib.impl.PlatformScheduler scheduler = mock(com.tcoded.folialib.impl.PlatformScheduler.class);
+                when(plugin.getFoliaLib()).thenReturn(foliaLib);
+                when(foliaLib.getScheduler()).thenReturn(scheduler);
+                doAnswer(invocation -> {
+                    java.util.function.Consumer<?> consumer = invocation.getArgument(0);
+                    consumer.accept(null);
+                    return null;
+                }).when(scheduler).runNextTick(any());
+                replay.when(Replay::getInstance).thenReturn(plugin);
+
+                replayCommand.onCommand(player, command, "replay", new String[]{"delete", "demo"});
+
+                verify(player).sendMessage("§cReplay is protected and must be unprotected before deletion: demo");
+            }
         }
     }
 

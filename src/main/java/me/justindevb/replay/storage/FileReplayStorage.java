@@ -10,6 +10,7 @@ import me.justindevb.replay.util.io.ReplayCompressor;
 
 import java.io.*;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -119,10 +120,47 @@ public class FileReplayStorage implements ReplayStorage {
     }
 
     @Override
-    public CompletableFuture<Boolean> deleteReplay(String name) {
+    public CompletableFuture<ReplayDeleteResult> deleteReplay(String name) {
         return CompletableFuture.supplyAsync(() -> {
             File file = resolveExisting(name);
-            return file != null && file.delete();
+            if (file == null) {
+                return ReplayDeleteResult.NOT_FOUND;
+            }
+            return file.delete() ? ReplayDeleteResult.DELETED : ReplayDeleteResult.NOT_FOUND;
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<ReplaySummary>> listReplaySummaries() {
+        return CompletableFuture.supplyAsync(() -> {
+            List<ReplaySummary> summaries = new ArrayList<>();
+            File[] files = replayFolder.listFiles(
+                    (dir, n) -> n.endsWith(JsonReplayStorageCodec.EXT_COMPRESSED)
+                            || n.endsWith(JsonReplayStorageCodec.EXT_UNCOMPRESSED)
+                            || n.endsWith(BinaryReplayFormat.FILE_EXTENSION)
+                            || n.endsWith(saveCodec.fileExtension(false))
+                            || n.endsWith(saveCodec.fileExtension(true)));
+            if (files == null) {
+                return summaries;
+            }
+            for (File file : files) {
+                String extension = detectExtension(file.getName());
+                if (extension == null) {
+                    continue;
+                }
+                try {
+                    summaries.add(new ReplaySummary(
+                            file.getName().substring(0, file.getName().length() - extension.length()),
+                            Instant.ofEpochMilli(Files.getLastModifiedTime(file.toPath()).toMillis()),
+                            file.length(),
+                            false,
+                            null,
+                            null,
+                            ReplayStorageType.FILE));
+                } catch (IOException ignored) {
+                }
+            }
+            return summaries;
         });
     }
 

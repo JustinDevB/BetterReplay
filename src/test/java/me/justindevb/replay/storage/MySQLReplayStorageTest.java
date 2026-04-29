@@ -29,7 +29,6 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -78,7 +77,6 @@ class MySQLReplayStorageTest {
         when(plugin.getLogger()).thenReturn(Logger.getLogger("MySQLReplayStorageTest"));
 
         doAnswer(invocation -> {
-            @SuppressWarnings("unchecked")
             java.util.function.Consumer<WrappedTask> consumer = invocation.getArgument(0);
             WrappedTask task = mock(WrappedTask.class);
             consumer.accept(task);
@@ -203,6 +201,24 @@ class MySQLReplayStorageTest {
         assertTrue(dumpText.contains("[tick=5]"));
         assertTrue(dumpText.contains("[tick=10]"));
         assertFalse(dumpText.contains("[tick=0]"));
+    }
+
+    @Test
+    void deleteReplay_noRow_returnsNotFound() throws Exception {
+        PreparedStatement deleteStatement = mock(PreparedStatement.class);
+        when(connection.prepareStatement("DELETE FROM replays WHERE name=?")).thenReturn(deleteStatement);
+        when(deleteStatement.executeUpdate()).thenReturn(0);
+
+        assertEquals(ReplayDeleteResult.NOT_FOUND, storage.deleteReplay("missing").get());
+    }
+
+    @Test
+    void deleteReplay_rowDeleted_returnsDeleted() throws Exception {
+        PreparedStatement deleteStatement = mock(PreparedStatement.class);
+        when(connection.prepareStatement("DELETE FROM replays WHERE name=?")).thenReturn(deleteStatement);
+        when(deleteStatement.executeUpdate()).thenReturn(1);
+
+        assertEquals(ReplayDeleteResult.DELETED, storage.deleteReplay("present").get());
     }
 
     private static List<TimelineEvent> sampleTimeline() {

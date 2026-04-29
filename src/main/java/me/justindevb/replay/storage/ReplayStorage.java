@@ -5,6 +5,7 @@ import me.justindevb.replay.debug.ReplayDumpQuery;
 import me.justindevb.replay.recording.TimelineEvent;
 
 import java.io.File;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
@@ -20,7 +21,19 @@ public interface ReplayStorage {
 
     CompletableFuture<List<String>> listReplays();
 
-    CompletableFuture<Boolean> deleteReplay(String name);
+    default CompletableFuture<List<ReplaySummary>> listReplaySummaries() {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Replay summaries are not supported by this storage backend"));
+    }
+
+    CompletableFuture<ReplayDeleteResult> deleteReplay(String name);
+
+    default CompletableFuture<ReplayProtectionResult> protectReplay(String name, Instant protectedAt, String protectedBy) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Replay protection is not supported by this storage backend"));
+    }
+
+    default CompletableFuture<ReplayProtectionResult> unprotectReplay(String name) {
+        return CompletableFuture.failedFuture(new UnsupportedOperationException("Replay protection is not supported by this storage backend"));
+    }
 
     CompletableFuture<Boolean> replayExists(String name);
 

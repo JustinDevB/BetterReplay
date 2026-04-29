@@ -2,6 +2,7 @@ package me.justindevb.replay.util;
 
 
 import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.storage.ReplayDeleteResult;
 import me.justindevb.replay.storage.ReplayStorage;
 
 import java.util.List;
@@ -47,7 +48,7 @@ public class ReplayObject {
     }
 
     /** Deletes this replay from storage */
-    public CompletableFuture<Boolean> delete() {
+    public CompletableFuture<ReplayDeleteResult> delete() {
         return storage.deleteReplay(name);
     }
 

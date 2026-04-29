@@ -10,6 +10,7 @@ import me.justindevb.replay.util.io.ReplayCompressor;
 import javax.sql.DataSource;
 import java.io.*;
 import java.sql.*;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -151,7 +152,7 @@ public class MySQLReplayStorage implements ReplayStorage {
 
 
     @Override
-    public CompletableFuture<Boolean> deleteReplay(String name) {
+    public CompletableFuture<ReplayDeleteResult> deleteReplay(String name) {
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
@@ -160,10 +161,39 @@ public class MySQLReplayStorage implements ReplayStorage {
 
                 ps.setString(1, name);
                 int affected = ps.executeUpdate();
-                return affected > 0;
+                return affected > 0 ? ReplayDeleteResult.DELETED : ReplayDeleteResult.NOT_FOUND;
 
             } catch (Exception e) {
                 throw new RuntimeException("Failed to delete replay: " + name, e);
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<ReplaySummary>> listReplaySummaries() {
+        return CompletableFuture.supplyAsync(() -> {
+            List<ReplaySummary> summaries = new ArrayList<>();
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(
+                         "SELECT name, created_at, OCTET_LENGTH(data) AS data_size FROM replays ORDER BY created_at DESC"
+                 );
+                 ResultSet rs = ps.executeQuery()) {
+
+                while (rs.next()) {
+                    Timestamp createdAt = rs.getTimestamp("created_at");
+                    summaries.add(new ReplaySummary(
+                            rs.getString("name"),
+                            createdAt != null ? createdAt.toInstant() : Instant.EPOCH,
+                            rs.getLong("data_size"),
+                            false,
+                            null,
+                            null,
+                            ReplayStorageType.MYSQL));
+                }
+                return summaries;
+
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to list replay summaries", e);
             }
         });
     }
