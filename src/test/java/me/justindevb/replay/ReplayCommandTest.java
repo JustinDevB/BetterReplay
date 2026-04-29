@@ -5,6 +5,7 @@ import me.justindevb.replay.benchmark.ReplayBenchmarkCommand;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.storage.ReplayDeleteResult;
+import me.justindevb.replay.storage.ReplayProtectionResult;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.entity.Player;
@@ -83,6 +84,44 @@ class ReplayCommandTest {
         assertTrue(result);
         verify(replayDebugCommand).handle(consoleSender, new String[]{"debug", "dump", "demo"});
         verify(consoleSender, never()).sendMessage("Must be a player to execute this command");
+    }
+
+    @Test
+    void protectSubcommand_canRunFromConsole() {
+        org.bukkit.command.CommandSender consoleSender = mock(org.bukkit.command.CommandSender.class);
+        when(consoleSender.hasPermission("replay.protect")).thenReturn(true);
+        when(replayManager.protectSavedReplay("demo", "console"))
+                .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+
+        try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+            Replay plugin = immediateReplayPlugin();
+            replay.when(Replay::getInstance).thenReturn(plugin);
+
+            boolean result = replayCommand.onCommand(consoleSender, command, "replay", new String[]{"protect", "demo"});
+
+            assertTrue(result);
+            verify(replayManager).protectSavedReplay("demo", "console");
+            verify(consoleSender).sendMessage("§aProtected replay: demo");
+        }
+    }
+
+    @Test
+    void unprotectSubcommand_canRunFromConsole() {
+        org.bukkit.command.CommandSender consoleSender = mock(org.bukkit.command.CommandSender.class);
+        when(consoleSender.hasPermission("replay.unprotect")).thenReturn(true);
+        when(replayManager.unprotectSavedReplay("demo"))
+                .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+
+        try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+            Replay plugin = immediateReplayPlugin();
+            replay.when(Replay::getInstance).thenReturn(plugin);
+
+            boolean result = replayCommand.onCommand(consoleSender, command, "replay", new String[]{"unprotect", "demo"});
+
+            assertTrue(result);
+            verify(replayManager).unprotectSavedReplay("demo");
+            verify(consoleSender).sendMessage("§aUnprotected replay: demo");
+        }
     }
 
     // ── No args ───────────────────────────────────────────────
@@ -268,16 +307,7 @@ class ReplayCommandTest {
                     .thenReturn(CompletableFuture.completedFuture(ReplayDeleteResult.DELETED));
 
             try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
-                Replay plugin = mock(Replay.class);
-                com.tcoded.folialib.FoliaLib foliaLib = mock(com.tcoded.folialib.FoliaLib.class);
-                com.tcoded.folialib.impl.PlatformScheduler scheduler = mock(com.tcoded.folialib.impl.PlatformScheduler.class);
-                when(plugin.getFoliaLib()).thenReturn(foliaLib);
-                when(foliaLib.getScheduler()).thenReturn(scheduler);
-                doAnswer(invocation -> {
-                    java.util.function.Consumer<?> consumer = invocation.getArgument(0);
-                    consumer.accept(null);
-                    return null;
-                }).when(scheduler).runNextTick(any());
+                Replay plugin = immediateReplayPlugin();
                 replay.when(Replay::getInstance).thenReturn(plugin);
 
                 replayCommand.onCommand(player, command, "replay", new String[]{"delete", "demo"});
@@ -293,16 +323,7 @@ class ReplayCommandTest {
                     .thenReturn(CompletableFuture.completedFuture(ReplayDeleteResult.PROTECTED));
 
             try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
-                Replay plugin = mock(Replay.class);
-                com.tcoded.folialib.FoliaLib foliaLib = mock(com.tcoded.folialib.FoliaLib.class);
-                com.tcoded.folialib.impl.PlatformScheduler scheduler = mock(com.tcoded.folialib.impl.PlatformScheduler.class);
-                when(plugin.getFoliaLib()).thenReturn(foliaLib);
-                when(foliaLib.getScheduler()).thenReturn(scheduler);
-                doAnswer(invocation -> {
-                    java.util.function.Consumer<?> consumer = invocation.getArgument(0);
-                    consumer.accept(null);
-                    return null;
-                }).when(scheduler).runNextTick(any());
+                Replay plugin = immediateReplayPlugin();
                 replay.when(Replay::getInstance).thenReturn(plugin);
 
                 replayCommand.onCommand(player, command, "replay", new String[]{"delete", "demo"});
@@ -344,6 +365,8 @@ class ReplayCommandTest {
             when(player.hasPermission("replay.play")).thenReturn(false);
             when(player.hasPermission("replay.delete")).thenReturn(false);
             when(player.hasPermission("replay.list")).thenReturn(false);
+            when(player.hasPermission("replay.protect")).thenReturn(false);
+            when(player.hasPermission("replay.unprotect")).thenReturn(false);
 
             List<String> completions = replayCommand.onTabComplete(player, command, "replay", new String[]{""});
             assertTrue(completions.contains("start"));
@@ -388,6 +411,8 @@ class ReplayCommandTest {
             when(player.hasPermission("replay.play")).thenReturn(true);
             when(player.hasPermission("replay.delete")).thenReturn(true);
             when(player.hasPermission("replay.list")).thenReturn(true);
+            when(player.hasPermission("replay.protect")).thenReturn(true);
+            when(player.hasPermission("replay.unprotect")).thenReturn(true);
 
             List<String> completions = replayCommand.onTabComplete(player, command, "replay", new String[]{"st"});
             assertTrue(completions.contains("start"));
@@ -423,5 +448,69 @@ class ReplayCommandTest {
             List<String> completions = replayCommand.onTabComplete(player, command, "replay", new String[]{"delete", ""});
             assertTrue(completions.contains("r1"));
         }
+
+        @Test
+        void protectSubcommand_suggestsCachedReplays() {
+            when(player.hasPermission("replay.protect")).thenReturn(true);
+            when(replayManager.getCachedReplayNames()).thenReturn(List.of("r1", "r2"));
+
+            List<String> completions = replayCommand.onTabComplete(player, command, "replay", new String[]{"protect", ""});
+            assertTrue(completions.contains("r1"));
+        }
+    }
+
+    @Nested
+    class Protect {
+        @Test
+        void playerProtectSuccess_usesPlayerNameAsActor() {
+            when(player.hasPermission("replay.protect")).thenReturn(true);
+            when(player.getName()).thenReturn("Steve");
+            when(replayManager.protectSavedReplay("demo", "Steve"))
+                    .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = immediateReplayPlugin();
+                replay.when(Replay::getInstance).thenReturn(plugin);
+
+                replayCommand.onCommand(player, command, "replay", new String[]{"protect", "demo"});
+
+                verify(replayManager).protectSavedReplay("demo", "Steve");
+                verify(player).sendMessage("§aProtected replay: demo");
+            }
+        }
+    }
+
+    @Nested
+    class Unprotect {
+        @Test
+        void playerUnprotectSuccess_showsMessage() {
+            when(player.hasPermission("replay.unprotect")).thenReturn(true);
+            when(replayManager.unprotectSavedReplay("demo"))
+                    .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = immediateReplayPlugin();
+                replay.when(Replay::getInstance).thenReturn(plugin);
+
+                replayCommand.onCommand(player, command, "replay", new String[]{"unprotect", "demo"});
+
+                verify(replayManager).unprotectSavedReplay("demo");
+                verify(player).sendMessage("§aUnprotected replay: demo");
+            }
+        }
+    }
+
+    private Replay immediateReplayPlugin() {
+        Replay plugin = mock(Replay.class);
+        com.tcoded.folialib.FoliaLib foliaLib = mock(com.tcoded.folialib.FoliaLib.class);
+        com.tcoded.folialib.impl.PlatformScheduler scheduler = mock(com.tcoded.folialib.impl.PlatformScheduler.class);
+        when(plugin.getFoliaLib()).thenReturn(foliaLib);
+        when(foliaLib.getScheduler()).thenReturn(scheduler);
+        doAnswer(invocation -> {
+            java.util.function.Consumer<?> consumer = invocation.getArgument(0);
+            consumer.accept(null);
+            return null;
+        }).when(scheduler).runNextTick(any());
+        return plugin;
     }
 }

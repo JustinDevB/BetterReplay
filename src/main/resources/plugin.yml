@@ -18,6 +18,8 @@ permissions:
       replay.stop: true
       replay.list: true
       replay.delete: true
+      replay.protect: true
+      replay.unprotect: true
       replay.play: true
       replay.export: true
       replay.benchmark: true
@@ -36,6 +38,12 @@ permissions:
     default: op
   replay.delete:
     description: Allows deleting saved replays
+    default: op
+  replay.protect:
+    description: Allows protecting saved replays from deletion
+    default: op
+  replay.unprotect:
+    description: Allows removing replay deletion protection
     default: op
   replay.export:
     description: Allows running the hidden replay export command

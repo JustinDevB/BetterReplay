@@ -6,6 +6,7 @@ import me.justindevb.replay.config.ReplayConfigSetting;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.storage.ReplayDeleteResult;
+import me.justindevb.replay.storage.ReplayProtectionResult;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -52,17 +53,29 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             return replayDebugCommand.handle(sender, args);
         }
 
-        if (!(sender instanceof Player p)) {
-            sender.sendMessage("Must be a player to execute this command");
-            return true;
-        }
-
         if (args.length == 0) {
+            if (!(sender instanceof Player p)) {
+                sender.sendMessage("Must be a player to execute this command");
+                return true;
+            }
             sendHelp(p);
             return true;
         }
 
-        switch (args[0].toLowerCase()) {
+        String subcommand = args[0].toLowerCase();
+
+        if (!(sender instanceof Player p)) {
+            return switch (subcommand) {
+                case "protect" -> handleProtect(sender, args, "console");
+                case "unprotect" -> handleUnprotect(sender, args);
+                default -> {
+                    sender.sendMessage("Must be a player to execute this command");
+                    yield true;
+                }
+            };
+        }
+
+        switch (subcommand) {
             case "start" -> {
                 if (!p.hasPermission("replay.start")) {
                     p.sendMessage("You do not have permission");
@@ -243,6 +256,12 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                         });
                         return true;
             }
+            case "protect" -> {
+                return handleProtect(sender, args, p.getName());
+            }
+            case "unprotect" -> {
+                return handleUnprotect(sender, args);
+            }
             default -> {
                 p.sendMessage("§cUnknown subcommand: §f" + args[0]);
                 sendHelp(p);
@@ -268,6 +287,10 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             p.sendMessage("§e/replay list [page] §7- List saved replays");
         if (p.hasPermission("replay.delete"))
             p.sendMessage("§e/replay delete <name> §7- Delete a saved replay");
+        if (p.hasPermission("replay.protect"))
+            p.sendMessage("§e/replay protect <name> §7- Protect a replay from deletion");
+        if (p.hasPermission("replay.unprotect"))
+            p.sendMessage("§e/replay unprotect <name> §7- Remove replay deletion protection");
     }
 
     @Override
@@ -293,13 +316,16 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             if (sender.hasPermission("replay.play")) completions.add("play");
             if (sender.hasPermission("replay.delete")) completions.add("delete");
             if (sender.hasPermission("replay.list")) completions.add("list");
+            if (sender.hasPermission("replay.protect")) completions.add("protect");
+            if (sender.hasPermission("replay.unprotect")) completions.add("unprotect");
 
             return completions.stream()
                     .filter(s -> s.startsWith(args[0].toLowerCase()))
                     .toList();
         }
 
-        if (args.length >= 2 && (args[0].equalsIgnoreCase("delete") || args[0].equalsIgnoreCase("play"))) {
+        if (args.length >= 2 && (args[0].equalsIgnoreCase("delete") || args[0].equalsIgnoreCase("play")
+            || args[0].equalsIgnoreCase("protect") || args[0].equalsIgnoreCase("unprotect"))) {
             if (!sender.hasPermission("replay." + args[0].toLowerCase()))
                 return Collections.emptyList();
 
@@ -386,6 +412,60 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             return "";
         }
         return String.join(" ", Arrays.copyOfRange(args, fromIndex, args.length)).trim();
+    }
+
+    private boolean handleProtect(CommandSender sender, String[] args, String protectedBy) {
+        if (!sender.hasPermission("replay.protect")) {
+            sender.sendMessage("You do not have permission");
+            return true;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /replay protect <name>");
+            return true;
+        }
+
+        String name = joinArgs(args, 1);
+        replayManager.protectSavedReplay(name, protectedBy)
+                .thenAccept(result -> sendMessageNextTick(sender, switch (result) {
+                    case UPDATED -> "§aProtected replay: " + name;
+                    case ALREADY_PROTECTED -> "§eReplay is already protected: " + name;
+                    case ALREADY_UNPROTECTED, NOT_FOUND -> "§cReplay not found: " + name;
+                }))
+                .exceptionally(ex -> {
+                    Replay.getInstance().getLogger().log(Level.SEVERE, "Failed to protect replay: " + name, ex);
+                    sendMessageNextTick(sender, "§cFailed to protect replay: " + name);
+                    return null;
+                });
+        return true;
+    }
+
+    private boolean handleUnprotect(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("replay.unprotect")) {
+            sender.sendMessage("You do not have permission");
+            return true;
+        }
+        if (args.length < 2) {
+            sender.sendMessage("Usage: /replay unprotect <name>");
+            return true;
+        }
+
+        String name = joinArgs(args, 1);
+        replayManager.unprotectSavedReplay(name)
+                .thenAccept(result -> sendMessageNextTick(sender, switch (result) {
+                    case UPDATED -> "§aUnprotected replay: " + name;
+                    case ALREADY_UNPROTECTED -> "§eReplay is already unprotected: " + name;
+                    case ALREADY_PROTECTED, NOT_FOUND -> "§cReplay not found: " + name;
+                }))
+                .exceptionally(ex -> {
+                    Replay.getInstance().getLogger().log(Level.SEVERE, "Failed to unprotect replay: " + name, ex);
+                    sendMessageNextTick(sender, "§cFailed to unprotect replay: " + name);
+                    return null;
+                });
+        return true;
+    }
+
+    private void sendMessageNextTick(CommandSender sender, String message) {
+        Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> sender.sendMessage(message));
     }
 
 }
