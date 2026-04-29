@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 public class FileReplayStorage implements ReplayStorage {
@@ -24,6 +25,7 @@ public class FileReplayStorage implements ReplayStorage {
     private final ReplayFormatDetector formatDetector;
     private final ReplayExporter replayExporter;
     private final ReplayDumpWriter replayDumpWriter;
+    private final FileReplayProtectionStore protectionStore;
 
     public FileReplayStorage(Replay replay) {
         this(replay, new BinaryReplayStorageCodec(), defaultFormatDetector());
@@ -39,6 +41,7 @@ public class FileReplayStorage implements ReplayStorage {
         this.formatDetector = formatDetector;
         this.replayExporter = new ReplayExporter(new File(replay.getDataFolder(), "exports"));
         this.replayDumpWriter = new ReplayDumpWriter(new File(replay.getDataFolder(), "dumps"));
+        this.protectionStore = new FileReplayProtectionStore(replay.getDataFolder());
         this.replayFolder = new File(replay.getDataFolder(), "replays");
         if (!replayFolder.exists())
             replayFolder.mkdirs();
@@ -126,7 +129,19 @@ public class FileReplayStorage implements ReplayStorage {
             if (file == null) {
                 return ReplayDeleteResult.NOT_FOUND;
             }
-            return file.delete() ? ReplayDeleteResult.DELETED : ReplayDeleteResult.NOT_FOUND;
+            try {
+                Optional<FileReplayProtectionStore.ReplayProtectionMetadata> metadata = protectionStore.readProtection(name);
+                if (metadata.isPresent() && metadata.get().protectedFromDeletion()) {
+                    return ReplayDeleteResult.PROTECTED;
+                }
+                if (!file.delete()) {
+                    return ReplayDeleteResult.NOT_FOUND;
+                }
+                protectionStore.deleteMetadata(name);
+                return ReplayDeleteResult.DELETED;
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to delete replay " + name, e);
+            }
         });
     }
 
@@ -149,18 +164,48 @@ public class FileReplayStorage implements ReplayStorage {
                     continue;
                 }
                 try {
+                    String replayName = file.getName().substring(0, file.getName().length() - extension.length());
+                    Optional<FileReplayProtectionStore.ReplayProtectionMetadata> metadata = protectionStore.readProtection(replayName);
                     summaries.add(new ReplaySummary(
-                            file.getName().substring(0, file.getName().length() - extension.length()),
+                            replayName,
                             Instant.ofEpochMilli(Files.getLastModifiedTime(file.toPath()).toMillis()),
                             file.length(),
-                            false,
-                            null,
-                            null,
+                            metadata.map(FileReplayProtectionStore.ReplayProtectionMetadata::protectedFromDeletion).orElse(false),
+                            metadata.map(FileReplayProtectionStore.ReplayProtectionMetadata::protectedAt).orElse(null),
+                            metadata.map(FileReplayProtectionStore.ReplayProtectionMetadata::protectedBy).orElse(null),
                             ReplayStorageType.FILE));
                 } catch (IOException ignored) {
                 }
             }
             return summaries;
+        });
+    }
+
+    @Override
+    public CompletableFuture<ReplayProtectionResult> protectReplay(String name, Instant protectedAt, String protectedBy) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (resolveExisting(name) == null) {
+                return ReplayProtectionResult.NOT_FOUND;
+            }
+            try {
+                return protectionStore.protectReplay(name, protectedAt, protectedBy);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to protect replay " + name, e);
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<ReplayProtectionResult> unprotectReplay(String name) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (resolveExisting(name) == null) {
+                return ReplayProtectionResult.NOT_FOUND;
+            }
+            try {
+                return protectionStore.unprotectReplay(name);
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to unprotect replay " + name, e);
+            }
         });
     }
 
