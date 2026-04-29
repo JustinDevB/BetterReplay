@@ -27,6 +27,8 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.logging.Logger;
@@ -39,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -54,7 +57,16 @@ class MySQLReplayStorageTest {
     @Mock private Statement statement;
     @Mock private PreparedStatement saveStatement;
     @Mock private PreparedStatement selectStatement;
+    @Mock private PreparedStatement showColumnsStatement;
+    @Mock private PreparedStatement protectionStateStatement;
+    @Mock private PreparedStatement protectStatement;
+    @Mock private PreparedStatement unprotectStatement;
+    @Mock private PreparedStatement deleteStatement;
+    @Mock private PreparedStatement summaryStatement;
     @Mock private ResultSet selectResultSet;
+    @Mock private ResultSet showColumnsResultSet;
+    @Mock private ResultSet protectionStateResultSet;
+    @Mock private ResultSet summaryResultSet;
     @Mock private Replay plugin;
     @Mock private FileConfiguration config;
     @Mock private PluginMeta pluginMeta;
@@ -93,19 +105,47 @@ class MySQLReplayStorageTest {
             if (sql.startsWith("SELECT data FROM replays WHERE name=?")) {
                 return selectStatement;
             }
+            if (sql.startsWith("SHOW COLUMNS FROM replays LIKE ?")) {
+                return showColumnsStatement;
+            }
+            if (sql.startsWith("SELECT is_protected FROM replays WHERE name=?")) {
+                return protectionStateStatement;
+            }
+            if (sql.startsWith("UPDATE replays SET is_protected = TRUE")) {
+                return protectStatement;
+            }
+            if (sql.startsWith("UPDATE replays SET is_protected = FALSE")) {
+                return unprotectStatement;
+            }
+            if (sql.startsWith("DELETE FROM replays WHERE name=?")) {
+                return deleteStatement;
+            }
+            if (sql.startsWith("SELECT name, created_at, OCTET_LENGTH(data) AS data_size, is_protected")) {
+                return summaryStatement;
+            }
             return mock(PreparedStatement.class);
         });
 
         when(selectStatement.executeQuery()).thenReturn(selectResultSet);
+        when(showColumnsStatement.executeQuery()).thenReturn(showColumnsResultSet);
+        when(protectionStateStatement.executeQuery()).thenReturn(protectionStateResultSet);
+        when(summaryStatement.executeQuery()).thenReturn(summaryResultSet);
+        when(showColumnsResultSet.next()).thenReturn(false);
         when(saveStatement.executeUpdate()).thenAnswer(invocation -> {
             return 1;
         });
+        when(protectStatement.executeUpdate()).thenReturn(1);
+        when(unprotectStatement.executeUpdate()).thenReturn(1);
+        when(deleteStatement.executeUpdate()).thenReturn(1);
         storage = new MySQLReplayStorage(dataSource, plugin);
     }
 
     @Test
     void initCreatesOrWidensReplayBlobColumn() throws Exception {
         verify(statement, atLeastOnce()).executeUpdate(contains("CREATE TABLE IF NOT EXISTS replays"));
+        verify(statement).executeUpdate("ALTER TABLE replays ADD COLUMN is_protected BOOLEAN NOT NULL DEFAULT FALSE");
+        verify(statement).executeUpdate("ALTER TABLE replays ADD COLUMN protected_at TIMESTAMP NULL");
+        verify(statement).executeUpdate("ALTER TABLE replays ADD COLUMN protected_by VARCHAR(64) NULL");
         verify(statement).executeUpdate("ALTER TABLE replays MODIFY COLUMN data LONGBLOB NOT NULL");
     }
 
@@ -205,20 +245,68 @@ class MySQLReplayStorageTest {
 
     @Test
     void deleteReplay_noRow_returnsNotFound() throws Exception {
-        PreparedStatement deleteStatement = mock(PreparedStatement.class);
-        when(connection.prepareStatement("DELETE FROM replays WHERE name=?")).thenReturn(deleteStatement);
-        when(deleteStatement.executeUpdate()).thenReturn(0);
+        when(protectionStateResultSet.next()).thenReturn(false);
 
         assertEquals(ReplayDeleteResult.NOT_FOUND, storage.deleteReplay("missing").get());
     }
 
     @Test
     void deleteReplay_rowDeleted_returnsDeleted() throws Exception {
-        PreparedStatement deleteStatement = mock(PreparedStatement.class);
-        when(connection.prepareStatement("DELETE FROM replays WHERE name=?")).thenReturn(deleteStatement);
-        when(deleteStatement.executeUpdate()).thenReturn(1);
+        when(protectionStateResultSet.next()).thenReturn(true);
+        when(protectionStateResultSet.getBoolean("is_protected")).thenReturn(false);
 
         assertEquals(ReplayDeleteResult.DELETED, storage.deleteReplay("present").get());
+    }
+
+    @Test
+    void deleteReplay_protectedRow_returnsProtected() throws Exception {
+        when(protectionStateResultSet.next()).thenReturn(true);
+        when(protectionStateResultSet.getBoolean("is_protected")).thenReturn(true);
+
+        assertEquals(ReplayDeleteResult.PROTECTED, storage.deleteReplay("protected").get());
+    }
+
+    @Test
+    void protectReplay_updatesProtectionColumns() throws Exception {
+        when(protectionStateResultSet.next()).thenReturn(true);
+        when(protectionStateResultSet.getBoolean("is_protected")).thenReturn(false);
+
+        ReplayProtectionResult result = storage.protectReplay("demo", Instant.parse("2026-04-29T17:00:00Z"), "console").get();
+
+        assertEquals(ReplayProtectionResult.UPDATED, result);
+        verify(protectStatement).setTimestamp(eq(1), eq(Timestamp.from(Instant.parse("2026-04-29T17:00:00Z"))));
+        verify(protectStatement).setString(2, "console");
+        verify(protectStatement).setString(3, "demo");
+    }
+
+    @Test
+    void unprotectReplay_clearsOnlyBooleanFlag() throws Exception {
+        when(protectionStateResultSet.next()).thenReturn(true);
+        when(protectionStateResultSet.getBoolean("is_protected")).thenReturn(true);
+
+        ReplayProtectionResult result = storage.unprotectReplay("demo").get();
+
+        assertEquals(ReplayProtectionResult.UPDATED, result);
+        verify(unprotectStatement).setString(1, "demo");
+    }
+
+    @Test
+    void listReplaySummaries_includesProtectionMetadata() throws Exception {
+        when(summaryResultSet.next()).thenReturn(true, false);
+        when(summaryResultSet.getString("name")).thenReturn("demo");
+        when(summaryResultSet.getTimestamp("created_at")).thenReturn(Timestamp.from(Instant.parse("2026-04-29T17:00:00Z")));
+        when(summaryResultSet.getLong("data_size")).thenReturn(42L);
+        when(summaryResultSet.getBoolean("is_protected")).thenReturn(true);
+        when(summaryResultSet.getTimestamp("protected_at")).thenReturn(Timestamp.from(Instant.parse("2026-04-29T18:00:00Z")));
+        when(summaryResultSet.getString("protected_by")).thenReturn("console");
+
+        ReplaySummary summary = storage.listReplaySummaries().get().getFirst();
+
+        assertEquals("demo", summary.name());
+        assertTrue(summary.protectedFromDeletion());
+        assertEquals(Instant.parse("2026-04-29T18:00:00Z"), summary.protectedAt());
+        assertEquals("console", summary.protectedBy());
+        assertEquals(ReplayStorageType.MYSQL, summary.storageType());
     }
 
     private static List<TimelineEvent> sampleTimeline() {
