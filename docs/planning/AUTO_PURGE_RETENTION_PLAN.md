@@ -207,6 +207,137 @@ Recommended safeguards:
 
 This keeps retention separated from recording finalization and avoids deleting incomplete artifacts.
 
+### Protected Recording Exemptions
+
+Retention should support an explicit per-recording protection flag so admins can exempt specific recordings from auto purge.
+
+Recommended rules:
+
+- protected recordings must never be selected as retention candidates
+- manual deletion should reject protected recordings unless the caller explicitly unprotects or forces deletion
+- protection state should live in storage metadata, not in platform-specific filesystem attributes
+
+This is important because filesystem custom attributes are not portable enough for a cross-backend feature.
+
+- Windows-style file attributes such as read-only do not map cleanly to MySQL
+- extended attributes are not guaranteed across filesystems, copies, backups, or archive/export flows
+- they are harder to surface in tests and harder to treat as part of the plugin's storage contract
+
+### Protected Metadata Model
+
+The retention metadata surface should grow beyond just `createdAt`.
+
+Protection metadata must include who set the flag and when it was set.
+
+Recommended shape:
+
+```java
+public record ReplaySummary(
+        String name,
+        Instant createdAt,
+        long sizeBytes,
+        boolean protectedFromDeletion,
+        Instant protectedAt,
+        String protectedBy,
+        ReplayStorageType storageType
+) {}
+```
+
+The first iteration should require all three protection fields: `protectedFromDeletion`, `protectedAt`, and `protectedBy`.
+
+Recommended semantics:
+
+- when `protectedFromDeletion` is `true`, `protectedAt` must be present
+- when `protectedFromDeletion` is `true`, `protectedBy` must be present
+- when protection is cleared, implementations may either null the audit fields or preserve the last protection audit values, but this behavior should be documented and consistent across backends
+
+Recommended storage contract additions:
+
+```java
+CompletableFuture<List<ReplaySummary>> listReplaySummaries();
+CompletableFuture<Boolean> setReplayProtected(String name, boolean protectedFromDeletion);
+```
+
+If the delete path needs to distinguish between missing and protected recordings, a richer result than `boolean` is preferable.
+
+For example:
+
+```java
+public enum ReplayDeleteResult {
+        DELETED,
+        NOT_FOUND,
+        PROTECTED
+}
+```
+
+That avoids collapsing several different outcomes into one false return value.
+
+### File Storage Protection
+
+For file-backed storage, the recommended implementation is a sidecar metadata file or a dedicated metadata directory, not OS-level file attributes.
+
+Examples:
+
+- `plugins/BetterReplay/replays-meta/<name>.json`
+- `plugins/BetterReplay/replays/<name>.meta.json`
+
+Recommended file metadata fields:
+
+```json
+{
+        "protectedFromDeletion": true,
+        "protectedAt": "2026-04-29T12:00:00Z",
+        "protectedBy": "console"
+}
+```
+
+These file metadata fields should be treated as required whenever a replay is marked protected.
+
+Benefits of sidecar metadata:
+
+- it is backend-local policy without changing the replay archive format
+- it works for both legacy JSON replays and current binary `.br` archives
+- it survives plugin storage refactors better than filesystem-specific attributes
+- it gives the retention service one clear source of truth
+
+Delete semantics for file storage should remove both the replay artifact and its metadata file when deletion is allowed.
+
+### MySQL Protection
+
+For MySQL-backed storage, a dedicated column is the right design.
+
+Recommended schema additions:
+
+```sql
+ALTER TABLE replays
+        ADD COLUMN is_protected BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN protected_at TIMESTAMP NULL,
+        ADD COLUMN protected_by VARCHAR(64) NULL;
+```
+
+Required fields:
+
+- `is_protected`
+- `protected_at`
+- `protected_by`
+
+When `is_protected = TRUE`, both `protected_at` and `protected_by` should be populated.
+
+With that shape, retention can filter purge candidates directly in SQL and manual deletion can reject protected rows consistently.
+
+### Optional Archive-Level Portability
+
+If the plugin later needs protection state to travel with the replay file across exports or server migrations, an optional manifest field could be added to the replay archive metadata.
+
+That should be treated as a separate design decision from first-iteration retention.
+
+Recommendation:
+
+- first iteration: keep protection as local storage metadata only
+- future iteration: consider an archive-level flag only if cross-server portability becomes a real requirement
+
+That keeps the binary replay manifest focused on format compatibility and archive integrity instead of local server retention policy.
+
 ## Config and Admin Experience
 
 ### Config Defaults
@@ -257,6 +388,7 @@ This feature needs both unit coverage and regression coverage.
 - retention disabled does not schedule a task
 - expired recordings are selected using `createdAt` and `maxAge`
 - boundary-age recordings are not deleted early
+- protected recordings are excluded from purge candidates
 - delete failures are logged and do not crash future runs
 - continue-versus-stop behavior matches config after a deletion failure
 
@@ -264,18 +396,21 @@ This feature needs both unit coverage and regression coverage.
 
 - file backend lists replay summaries without loading full payloads
 - expired file-backed recordings are deleted through the storage adapter
+- protected file-backed recordings are skipped based on sidecar metadata
 - missing file artifacts are handled as warnings
 
 ### MySQL Storage Tests
 
 - MySQL backend exposes replay summaries with correct timestamps
 - expired database recordings are deleted through the adapter contract
+- protected database recordings are excluded by metadata or SQL filtering
 - backend-specific query failures propagate as handled retention failures
 
 ### Regression Cases
 
 - finalized recordings are purgeable, active sessions are not
 - retention disabled preserves old recordings indefinitely
+- protected recordings survive purge runs until explicitly unprotected
 - very small retention windows still respect the strict boundary rule
 
 ## Documentation Impact
@@ -290,14 +425,16 @@ When implemented, the following docs will need updates:
 
 1. What field is the canonical recording creation timestamp for file-backed storage: manifest metadata, filename encoding, or filesystem metadata?
 2. Does the MySQL schema already expose replay creation timestamps in a lightweight queryable table, or does that need to be added?
-3. Should retention support an exclusion marker for recordings that admins want to keep permanently?
-4. Should the service emit metrics or benchmark hooks for large purge runs?
+3. Do we want a first-iteration admin command such as `/replay protect <name>` and `/replay unprotect <name>`, or is config plus internal API enough initially?
+4. Should protection remain local storage metadata only, or eventually travel with exported replay archives?
+5. Should the service emit metrics or benchmark hooks for large purge runs?
 
 ## Recommended First Implementation Order
 
 1. Add validated retention config parsing and a small `RetentionPolicy` model.
-2. Extend the storage abstraction with lightweight replay summary enumeration.
-3. Implement `ReplayRetentionService` with periodic scheduling and summary logging.
-4. Add backend-specific summary enumeration for file and MySQL storage.
-5. Add regression tests covering selection, deletion, failures, and active-recording safety.
-6. Update `README.md` and `CHANGELOG.md` when code implementation begins.
+2. Extend the storage abstraction with lightweight replay summary enumeration and a protected-flag update path.
+3. Implement protected metadata persistence for file storage and MySQL storage.
+4. Implement `ReplayRetentionService` with periodic scheduling and summary logging.
+5. Add backend-specific summary enumeration and protected-filter handling for file and MySQL storage.
+6. Add regression tests covering selection, deletion, failures, active-recording safety, and protected replay exemptions.
+7. Update `README.md` and `CHANGELOG.md` when code implementation begins.
