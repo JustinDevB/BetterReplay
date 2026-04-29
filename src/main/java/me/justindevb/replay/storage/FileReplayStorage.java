@@ -166,9 +166,10 @@ public class FileReplayStorage implements ReplayStorage {
                 try {
                     String replayName = file.getName().substring(0, file.getName().length() - extension.length());
                     Optional<FileReplayProtectionStore.ReplayProtectionMetadata> metadata = protectionStore.readProtection(replayName);
+                    Instant createdAt = resolveCreatedAt(replayName, file);
                     summaries.add(new ReplaySummary(
                             replayName,
-                            Instant.ofEpochMilli(Files.getLastModifiedTime(file.toPath()).toMillis()),
+                        createdAt,
                             file.length(),
                             metadata.map(FileReplayProtectionStore.ReplayProtectionMetadata::protectedFromDeletion).orElse(false),
                             metadata.map(FileReplayProtectionStore.ReplayProtectionMetadata::protectedAt).orElse(null),
@@ -179,6 +180,16 @@ public class FileReplayStorage implements ReplayStorage {
             }
             return summaries;
         });
+    }
+
+    private Instant resolveCreatedAt(String replayName, File file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file.toPath());
+        ReplayStorageCodec codec = formatDetector.detectCodec(file.getName(), bytes);
+        ReplayInspection inspection = codec.inspectReplay(replayName, bytes, replay.getPluginMeta().getVersion());
+        if (inspection.recordingStartedAtEpochMillis() != null && inspection.recordingStartedAtEpochMillis() > 0) {
+            return Instant.ofEpochMilli(inspection.recordingStartedAtEpochMillis());
+        }
+        return Instant.ofEpochMilli(Files.getLastModifiedTime(file.toPath()).toMillis());
     }
 
     @Override

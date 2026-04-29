@@ -15,6 +15,8 @@ import me.justindevb.replay.config.ReplayConfigSetting;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.listeners.PacketEventsListener;
+import me.justindevb.replay.retention.ReplayRetentionService;
+import me.justindevb.replay.retention.RetentionPolicy;
 import me.justindevb.replay.util.ReplayCache;
 import me.justindevb.replay.util.UpdateChecker;
 import me.justindevb.replay.storage.FileReplayStorage;
@@ -39,6 +41,7 @@ public class Replay extends JavaPlugin {
     private ReplayManagerImpl manager;
     private FoliaLib foliaLib;
     private ReplayBenchmarkService replayBenchmarkService;
+    private ReplayRetentionService replayRetentionService;
 
     @Override
     public void onLoad() {
@@ -74,6 +77,7 @@ public class Replay extends JavaPlugin {
         ReplayAPI.init(manager);
 
         initStorage();
+        initRetention();
         recorderManager.recoverPendingAppendLogs();
 
         initBstats();
@@ -93,6 +97,9 @@ public class Replay extends JavaPlugin {
 
         PacketEvents.getAPI().terminate();
         ReplayAPI.shutdown();
+
+        if (replayRetentionService != null)
+            replayRetentionService.stop();
 
         if (connectionManager != null)
             connectionManager.shutdown();
@@ -158,6 +165,12 @@ public class Replay extends JavaPlugin {
 
         replayCache = new ReplayCache();
         getReplayStorage().listReplays().thenAccept(replays -> replayCache.setReplays(replays));
+    }
+
+    private void initRetention() {
+        RetentionPolicy policy = RetentionPolicy.fromConfig(getConfig(), getLogger());
+        replayRetentionService = new ReplayRetentionService(getReplayStorage(), foliaLib, getLogger(), policy, replayCache);
+        replayRetentionService.start();
     }
 
     public ReplayCache getReplayCache() {
