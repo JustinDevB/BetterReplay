@@ -31,6 +31,7 @@ import java.util.zip.ZipOutputStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -154,6 +155,56 @@ class BinaryReplayStorageCodecTest {
         assertEquals(1, manifest.chunkEntryCount());
         assertTrue(entries.containsKey("chunks/world/r.0.0.brregion"));
     }
+
+        @Test
+        void decodeReplayData_loadsChunkEntriesWhenManifestAndArchiveMatch() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+
+        byte[] archive = codec.finalizeReplay(
+            "decode-chunks",
+            new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
+            "1.4.0");
+
+        me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(archive, "1.4.0");
+
+        assertEquals(3, replayData.timeline().size());
+        assertTrue(replayData.chunkData().hasChunkData());
+        assertEquals(1, replayData.chunkData().regionEntries().size());
+        assertNotNull(replayData.chunkData().regionEntries().get("chunks/world/r.0.0.brregion"));
+        }
+
+        @Test
+        void decodeReplayData_softFailsWhenChunkManifestDoesNotMatchArchive() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+
+        byte[] archive = codec.finalizeReplay(
+            "decode-soft-fail",
+            new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
+            "1.4.0");
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+            BinaryReplayManifest.class);
+        BinaryReplayManifest mutated = new BinaryReplayManifest(
+            manifest.formatVersion(),
+            manifest.recordedWithVersion(),
+            manifest.minimumViewerVersion(),
+            manifest.recordingStartedAtEpochMillis(),
+            manifest.payloadChecksum(),
+            manifest.payloadChecksumAlgorithm(),
+            manifest.hasChunkData(),
+            manifest.chunkRegionEntryCount(),
+            manifest.chunkEntryCount() + 1,
+            manifest.chunkCoordinateHash());
+        entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(mutated).getBytes(StandardCharsets.UTF_8));
+
+        me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(writeArchive(entries), "1.4.0");
+
+        assertEquals(3, replayData.timeline().size());
+        assertFalse(replayData.chunkData().hasChunkData());
+        assertTrue(replayData.chunkData().regionEntries().isEmpty());
+        }
 
     private static List<TimelineEvent> sampleTimeline() {
         return List.of(

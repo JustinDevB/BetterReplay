@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 2 chunk capture scaffolding with typed recording config keys, shared chunk abstractions, replay playback payload loading, and optional chunk archive injection into binary finalization
 - Phase 3 recording-time chunk discovery with player-radius interest tracking, deduplicated baseline capture, bounded unique-chunk caps, and temp-region persistence during active recordings
 - Phase 4 chunk archive finalization from temp-region artifacts during save and recovery, including delayed temp cleanup after successful persistence and `.brregion` archive emission
+- Phase 5 binary replay loading for chunk-enabled archives with manifest-to-entry validation and soft-fail fallback to timeline-only playback when chunk sidecar data is invalid
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
