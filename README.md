@@ -54,6 +54,7 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 
 - Start and stop recordings
 - Save recordings to file or MySQL
+- Optional chunk baseline capture for binary `.br` replays, including playback-time block overlays and restore-on-exit cleanup
 - List, protect, unprotect, and delete stored replays
 - Automatic retention cleanup for expired replays
 - Replay sessions for viewers
@@ -161,6 +162,17 @@ List:
   Protected-Highlight-Color: "&6"
 ```
 
+Chunk baseline capture keys:
+
+```yaml
+Recording:
+  Chunk-Capture:
+    Enabled: false
+    Radius: 1
+    Capture-Interval-Ticks: 20
+    Max-Unique-Chunks-Per-Recording: 20000
+```
+
 Retention cleanup keys:
 
 ```yaml
@@ -176,6 +188,11 @@ Notes:
 - If Storage-Type is invalid, plugin falls back to file storage.
 - MySQL replay names are stored in a VARCHAR(64) primary key column.
 - Binary `.br` payloads require the replay data column to be `LONGBLOB`; the plugin now widens `data` automatically during storage initialization.
+- Chunk baseline capture is stored only in finalized binary `.br` archives; legacy JSON replays remain timeline-only.
+- `Recording.Chunk-Capture.Enabled` captures palette-compressed chunk baselines around tracked players during recording and replays those block states on demand around the viewer.
+- `Recording.Chunk-Capture.Radius` controls the square chunk-interest window around each tracked player.
+- `Recording.Chunk-Capture.Capture-Interval-Ticks` controls how often the plugin recomputes chunk interest and exports newly discovered chunks.
+- `Recording.Chunk-Capture.Max-Unique-Chunks-Per-Recording` bounds capture size; once the cap is reached, recording continues but additional chunk baselines are skipped.
 - Protected replays are skipped by both retention cleanup and manual delete commands until they are explicitly unprotected.
 - Protection stores required audit metadata: `protectedAt` and `protectedBy`.
 - Protected replays are highlighted in `/replay list` using `List.Protected-Highlight-Color`; the default is gold (`&6`).
@@ -226,6 +243,7 @@ Primary docs:
 Binary replay note:
 - Finalized `.br` archives now store the recording start wall-clock timestamp in `manifest.json` as `recordingStartedAtEpochMillis`.
 - Active temp append-logs also write a fixed file header carrying the same timestamp so final saves can preserve it after crash-safe recovery.
+- Chunk-enabled `.br` archives may also include `chunks/` region entries containing palette-compressed chunk baselines that are decoded lazily during playback.
 
 Planning docs:
 

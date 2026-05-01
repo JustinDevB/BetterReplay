@@ -110,6 +110,30 @@ v1 freezes exactly one supported codec:
 
 Unknown chunk codec identifiers are a hard parse failure for the affected entry.
 
+## Chunk Baseline Payload (`BRCS`)
+
+The uncompressed bytes inside each chunk payload encode one full chunk baseline snapshot before the outer `LZ4_FRAME` compression is applied.
+
+v1 uses this layout:
+
+| Field | Width | Encoding | v1 value |
+|-------|-------|----------|----------|
+| magic | 4 bytes | raw ASCII bytes | `BRCS` |
+| version | 1 byte | unsigned byte | `0x01` |
+| reserved | 3 bytes | zero-filled | `0x00 0x00 0x00` |
+| `minY` | 4 bytes | little-endian signed int32 | world minimum build height |
+| `height` | 4 bytes | little-endian signed int32, positive in valid payloads | vertical block span for this snapshot |
+| `paletteSize` | VarInt | non-negative | number of unique block-state strings |
+| `palette[]` | repeated | length-prefixed UTF-8 strings | deterministic insertion order of block-state strings |
+| `stateIndexes[]` | `16 * 16 * height * 2` bytes | little-endian unsigned uint16 values | palette index for each block in Y-major, then Z-major, then X-major order |
+
+Rules:
+
+- `stateIndexes` always covers exactly one chunk volume of `16 * 16 * height` blocks
+- palette indices reference entries in `palette[]`
+- v1 chunk capture stores block states only; block entities, lighting, and biome data are intentionally excluded
+- playback decodes this payload lazily when a viewer enters the corresponding recorded chunk window
+
 ## Finalized Chunk Region Entries (`.brregion`)
 
 Each `.brregion` entry stores chunk baselines for one Minecraft region in a playback-optimized format.

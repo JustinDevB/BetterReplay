@@ -31,6 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 5 binary replay loading for chunk-enabled archives with manifest-to-entry validation and soft-fail fallback to timeline-only playback when chunk sidecar data is invalid
 - Phase 6 on-demand playback chunk lookup and viewer block-state application around the replay spectator, with cached region decoding for chunk-enabled binary replays
 - Phase 7 replay teardown hardening so chunk-applied viewer block states are restored when playback chunks unload or the viewer disconnects mid-session
+- Phase 8 storage backend parity coverage, chunk capture documentation updates, and full test-suite hardening for the completed chunk-enabled binary replay flow
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
