@@ -34,7 +34,9 @@ public enum ReplayConfigSetting {
     RETENTION_LOG_DELETIONS("Retention.Log-Deletions", true,
             "Whether successful retention deletions are logged individually."),
     LIST_PAGE_SIZE("list-page-size", 10,
-            "Number of replay names shown per /replay list page.");
+            "Number of replay names shown per /replay list page."),
+    LIST_PROTECTED_HIGHLIGHT_COLOR("list-protected-highlight-color", "&6",
+            "Legacy chat color code used to highlight protected replays in /replay list (for example &6). ");
 
     private final String key;
     private final Object defaultValue;

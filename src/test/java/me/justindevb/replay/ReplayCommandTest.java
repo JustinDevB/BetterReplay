@@ -6,6 +6,8 @@ import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.storage.ReplayDeleteResult;
 import me.justindevb.replay.storage.ReplayProtectionResult;
+import me.justindevb.replay.storage.ReplayStorageType;
+import me.justindevb.replay.storage.ReplaySummary;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.entity.Player;
@@ -19,6 +21,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -343,6 +346,37 @@ class ReplayCommandTest {
             replayCommand.onCommand(player, command, "replay", new String[]{"list"});
             verify(player).sendMessage("You do not have permission");
         }
+
+        @Test
+        void protectedReplay_usesConfiguredHighlightColor() {
+            when(player.hasPermission("replay.list")).thenReturn(true);
+            when(replayManager.listSavedReplaySummaries()).thenReturn(CompletableFuture.completedFuture(List.of(
+                    new ReplaySummary("normal", Instant.EPOCH, 10L, false, null, null, ReplayStorageType.FILE),
+                    new ReplaySummary("protected", Instant.EPOCH, 20L, true, Instant.EPOCH, "Steve", ReplayStorageType.FILE)
+            )));
+
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class);
+                 MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
+                Replay plugin = mock(Replay.class);
+                org.bukkit.scheduler.BukkitScheduler bukkitScheduler = mock(org.bukkit.scheduler.BukkitScheduler.class);
+
+                when(plugin.getConfig()).thenReturn(configWithProtectedReplayColor("&c"));
+                doAnswer(invocation -> {
+                    Runnable runnable = invocation.getArgument(1);
+                    runnable.run();
+                    return null;
+                }).when(bukkitScheduler).runTask(eq(plugin), any(Runnable.class));
+
+                replay.when(Replay::getInstance).thenReturn(plugin);
+                bukkit.when(Bukkit::getScheduler).thenReturn(bukkitScheduler);
+
+                replayCommand.onCommand(player, command, "replay", new String[]{"list"});
+
+                verify(replayManager).listSavedReplaySummaries();
+                verify(player).sendMessage("§e- §fnormal");
+                verify(player).sendMessage("§e- §cprotected");
+            }
+        }
     }
 
     // ── Unknown subcommand ────────────────────────────────────
@@ -512,5 +546,12 @@ class ReplayCommandTest {
             return null;
         }).when(scheduler).runNextTick(any());
         return plugin;
+    }
+
+    private org.bukkit.configuration.file.FileConfiguration configWithProtectedReplayColor(String color) {
+        org.bukkit.configuration.file.YamlConfiguration config = new org.bukkit.configuration.file.YamlConfiguration();
+        config.set("list-page-size", 10);
+        config.set("list-protected-highlight-color", color);
+        return config;
     }
 }

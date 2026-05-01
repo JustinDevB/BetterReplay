@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Binary replay storage now uses finalized `.br` archives with crash-safe append-log recording, lazy indexed loading, file/MySQL backend support, filtered export tooling, hidden benchmark/debug diagnostics, preserved recording start timestamps, startup recovery of orphaned temp logs, and temporary legacy JSON compatibility during migration
 - Replay protection metadata and admin commands for protecting and unprotecting saved replays from manual deletion and retention cleanup
 - Config-driven replay retention cleanup with duration parsing, scheduled scans, and protection-aware deletion skipping
+- Configurable protected replay highlighting in `/replay list`
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)

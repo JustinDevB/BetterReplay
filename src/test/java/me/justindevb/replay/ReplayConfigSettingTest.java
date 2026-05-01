@@ -49,6 +49,16 @@ class ReplayConfigSettingTest {
     }
 
     @Test
+    void protectedReplayHighlightColor_usesExpectedKeyAndDefault() {
+        when(config.getString("list-protected-highlight-color", "&6")).thenReturn("&c");
+
+        String value = ReplayConfigSetting.LIST_PROTECTED_HIGHLIGHT_COLOR.getString(config);
+
+        assertEquals("&c", value);
+        verify(config).getString("list-protected-highlight-color", "&6");
+    }
+
+    @Test
     void settingComments_areDefinedForEachParameter() {
         for (ReplayConfigSetting setting : ReplayConfigSetting.values()) {
             assertTrue(setting.getComments().length > 0, "Missing comments for " + setting.name());

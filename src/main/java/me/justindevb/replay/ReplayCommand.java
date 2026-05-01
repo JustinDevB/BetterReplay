@@ -7,10 +7,12 @@ import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.storage.ReplayDeleteResult;
 import me.justindevb.replay.storage.ReplayProtectionResult;
+import me.justindevb.replay.storage.ReplaySummary;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -169,14 +171,17 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
                 final int page = parsedPage;
 
-                replayManager.listSavedReplays()
+                replayManager.listSavedReplaySummaries()
                         .thenAccept(replays -> Bukkit.getScheduler().runTask(Replay.getInstance(), () -> {
                             if (replays.isEmpty()) {
                                 p.sendMessage("§cNo replays found.");
                                 return;
                             }
 
-                            int perPage = ReplayConfigSetting.LIST_PAGE_SIZE.getInt(Replay.getInstance().getConfig());
+                            Replay plugin = Replay.getInstance();
+                            int perPage = ReplayConfigSetting.LIST_PAGE_SIZE.getInt(plugin.getConfig());
+                            String protectedHighlightColor = resolveConfiguredColor(
+                                    ReplayConfigSetting.LIST_PROTECTED_HIGHLIGHT_COLOR.getString(plugin.getConfig()));
                             int totalPages = (int) Math.ceil((double) replays.size() / perPage);
 
                             if (page > totalPages) {
@@ -189,7 +194,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
                             p.sendMessage("§6Replays §7(Page " + page + "/" + totalPages + ")");
                             for (int i = from; i < to; i++) {
-                                p.sendMessage("§e- §f" + replays.get(i));
+                                p.sendMessage("§e- " + formatReplayListName(replays.get(i), protectedHighlightColor));
                             }
 
                             Component navigation = Component.empty();
@@ -412,6 +417,23 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             return "";
         }
         return String.join(" ", Arrays.copyOfRange(args, fromIndex, args.length)).trim();
+    }
+
+    private String formatReplayListName(ReplaySummary replay, String protectedHighlightColor) {
+        if (replay.protectedFromDeletion()) {
+            return protectedHighlightColor + replay.name();
+        }
+        return "§f" + replay.name();
+    }
+
+    private String resolveConfiguredColor(String configuredColor) {
+        String defaultColor = ChatColor.GOLD.toString();
+        if (configuredColor == null || configuredColor.isBlank()) {
+            return defaultColor;
+        }
+
+        String translated = ChatColor.translateAlternateColorCodes('&', configuredColor.trim());
+        return translated.contains(String.valueOf(ChatColor.COLOR_CHAR)) ? translated : defaultColor;
     }
 
     private boolean handleProtect(CommandSender sender, String[] args, String protectedBy) {
