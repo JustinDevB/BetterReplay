@@ -48,11 +48,7 @@ public class MySQLReplayStorage implements ReplayStorage {
     }
 
     private byte[] encodeForStorage(String name, ReplaySaveRequest request) throws IOException {
-        byte[] payload = saveCodec.finalizeReplay(
-                name,
-                request.timeline(),
-                replay.getPluginMeta().getVersion(),
-                request.recordingStartedAtEpochMillis());
+        byte[] payload = saveCodec.finalizeReplay(name, request, replay.getPluginMeta().getVersion());
         return usesCodecCompression() ? ReplayCompressor.compress(new String(payload, java.nio.charset.StandardCharsets.UTF_8)) : payload;
     }
 
@@ -139,6 +135,11 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<List<TimelineEvent>> loadReplay(String name) {
+        return loadReplayData(name).thenApply(data -> data == null ? null : data.timeline());
+    }
+
+    @Override
+    public CompletableFuture<ReplayPlaybackData> loadReplayData(String name) {
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
@@ -151,7 +152,7 @@ public class MySQLReplayStorage implements ReplayStorage {
                     if (!rs.next()) return null;
                     byte[] data = rs.getBytes("data");
                     ReplayStorageCodec codec = formatDetector.detectCodec(name, data);
-                    return codec.decodeTimeline(data, replay.getPluginMeta().getVersion());
+                    return codec.decodeReplayData(data, replay.getPluginMeta().getVersion());
                 }
 
             } catch (Exception e) {

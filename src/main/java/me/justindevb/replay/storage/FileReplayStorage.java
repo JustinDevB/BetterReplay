@@ -69,11 +69,7 @@ public class FileReplayStorage implements ReplayStorage {
     }
 
     private byte[] encodeForStorage(String name, ReplaySaveRequest request) throws IOException {
-        byte[] payload = saveCodec.finalizeReplay(
-                name,
-                request.timeline(),
-                replay.getPluginMeta().getVersion(),
-                request.recordingStartedAtEpochMillis());
+        byte[] payload = saveCodec.finalizeReplay(name, request, replay.getPluginMeta().getVersion());
         return usesCodecCompression() ? ReplayCompressor.compress(new String(payload, java.nio.charset.StandardCharsets.UTF_8)) : payload;
     }
 
@@ -108,6 +104,11 @@ public class FileReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<List<TimelineEvent>> loadReplay(String name) {
+        return loadReplayData(name).thenApply(data -> data == null ? null : data.timeline());
+    }
+
+    @Override
+    public CompletableFuture<ReplayPlaybackData> loadReplayData(String name) {
         return CompletableFuture.supplyAsync(() -> {
             File file = resolveExisting(name);
             if (file == null) return null;
@@ -115,7 +116,7 @@ public class FileReplayStorage implements ReplayStorage {
             try {
                 byte[] bytes = Files.readAllBytes(file.toPath());
                 ReplayStorageCodec codec = formatDetector.detectCodec(file.getName(), bytes);
-                return codec.decodeTimeline(bytes, replay.getPluginMeta().getVersion());
+                return codec.decodeReplayData(bytes, replay.getPluginMeta().getVersion());
             } catch (IOException e) {
                 throw new RuntimeException("Failed to load replay " + name, e);
             }

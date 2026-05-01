@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Configurable protected replay highlighting in `/replay list`
 - Chunk data recording design document with config, storage container, compression, playback, and teardown plan (`docs/planning/CHUNK_DATA_RECORDING.md`)
 - Phase 1 chunk archive contract implementation covering additive manifest metadata, canonical `chunks/` entry naming, finalized `.brregion` and temp-region binary layouts, LZ4 chunk codec IDs, and regression tests
+- Phase 2 chunk capture scaffolding with typed recording config keys, shared chunk abstractions, replay playback payload loading, and optional chunk archive injection into binary finalization
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)

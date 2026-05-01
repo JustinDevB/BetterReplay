@@ -1,7 +1,9 @@
 package me.justindevb.replay;
 
 import me.justindevb.replay.api.ReplayExportQuery;
+import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.storage.ReplayDeleteResult;
+import me.justindevb.replay.storage.ReplayPlaybackData;
 import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.storage.ReplayStorageType;
@@ -205,6 +207,23 @@ class ReplayManagerImplTest {
         Player viewer = mock(Player.class);
         Optional<ReplaySession> result = manager.startReplay("", viewer).join();
         assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void startReplay_usesReplayPlaybackDataLoadingPath() {
+        Player viewer = mock(Player.class);
+        when(storage.replayExists("test")).thenReturn(CompletableFuture.completedFuture(true));
+        when(storage.loadReplayData("test")).thenReturn(CompletableFuture.completedFuture(
+                new ReplayPlaybackData(List.of(), ReplayChunkData.NONE)));
+
+        try (org.mockito.MockedStatic<org.bukkit.Bukkit> bukkit = org.mockito.Mockito.mockStatic(org.bukkit.Bukkit.class)) {
+            bukkit.when(org.bukkit.Bukkit::isPrimaryThread).thenReturn(true);
+            Optional<ReplaySession> result = manager.startReplay("test", viewer).join();
+            assertTrue(result.isEmpty());
+        }
+
+        verify(storage).loadReplayData("test");
+        verify(storage, never()).loadReplay("test");
     }
 
     @Test

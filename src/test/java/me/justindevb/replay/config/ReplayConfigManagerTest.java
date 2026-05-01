@@ -56,6 +56,12 @@ class ReplayConfigManagerTest {
         assertFalse(migrated.contains("Compress-Replays:"));
         assertTrue(migrated.contains("# Check for plugin updates on startup."));
         assertTrue(migrated.contains("# Enable automatic deletion of old replays."));
+        assertTrue(migrated.contains("Recording:"));
+        assertTrue(migrated.contains("Chunk-Capture:"));
+        assertTrue(migrated.contains("Enabled: false"));
+        assertTrue(migrated.contains("Radius: 1"));
+        assertTrue(migrated.contains("Capture-Interval-Ticks: 20"));
+        assertTrue(migrated.contains("Max-Unique-Chunks-Per-Recording: 20000"));
         assertTrue(migrated.contains("Retention:"));
         assertTrue(migrated.contains("List:"));
         assertTrue(migrated.contains("Page-Size: 10"));

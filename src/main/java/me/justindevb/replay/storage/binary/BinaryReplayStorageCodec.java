@@ -1,11 +1,13 @@
 package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
+import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayFormat;
 import me.justindevb.replay.storage.ReplayInspection;
 import me.justindevb.replay.storage.ReplayInspectionBuilder;
 import me.justindevb.replay.storage.ReplayIndexedTimeline;
+import me.justindevb.replay.storage.ReplayPlaybackData;
 import me.justindevb.replay.storage.ReplayStorageCodec;
 import me.justindevb.replay.util.VersionUtil;
 import net.jpountz.lz4.LZ4FrameInputStream;
@@ -97,6 +99,12 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
     }
 
     @Override
+    public ReplayPlaybackData decodeReplayData(byte[] storedBytes, String runningVersion) throws IOException {
+        ParsedBinaryReplay replay = openReplay(storedBytes, runningVersion);
+        return new ReplayPlaybackData(replay.timeline(), replay.chunkData());
+    }
+
+    @Override
     public ReplayInspection inspectReplay(String replayName, byte[] storedBytes, String runningVersion) throws IOException {
         ArchiveEntries archiveEntries = readArchiveEntries(storedBytes);
         BinaryReplayManifest manifest = parseManifest(archiveEntries.manifestBytes());
@@ -139,7 +147,7 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
 
         ParsedPayload parsedPayload = parsePayload(payload);
         LazyTimeline timeline = new LazyTimeline(payload, parsedPayload.events(), parsedPayload.stringTable(), parsedPayload.tickIndex());
-        return new ParsedBinaryReplay(manifest, timeline, parsedPayload.tickIndex(), parsedPayload.stringTable(), parsedPayload.indexLoaded());
+        return new ParsedBinaryReplay(manifest, timeline, parsedPayload.tickIndex(), parsedPayload.stringTable(), parsedPayload.indexLoaded(), ReplayChunkData.NONE);
     }
 
     private ArchiveEntries readArchiveEntries(byte[] storedBytes) throws IOException {
@@ -375,7 +383,8 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
             LazyTimeline timeline,
             List<BinaryTickIndexEntry> tickIndex,
             List<String> stringTable,
-            boolean indexLoaded
+            boolean indexLoaded,
+            ReplayChunkData chunkData
     ) {
     }
 

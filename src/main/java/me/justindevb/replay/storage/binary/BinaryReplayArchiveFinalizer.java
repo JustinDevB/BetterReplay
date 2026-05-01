@@ -1,6 +1,7 @@
 package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
+import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayFinalizer;
 import net.jpountz.lz4.LZ4FrameOutputStream;
@@ -36,7 +37,7 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
             String pluginVersion,
             long recordingStartedAtEpochMillis
     ) throws IOException {
-        return finalizeRecoveredReplay(replayName, buildRecovery(timeline, recordingStartedAtEpochMillis), pluginVersion);
+        return finalizeRecoveredReplay(replayName, buildRecovery(timeline, recordingStartedAtEpochMillis), pluginVersion, ReplayChunkData.NONE);
     }
 
     public byte[] finalizeRecoveredReplay(
@@ -44,15 +45,26 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
             BinaryReplayAppendLogRecovery recovery,
             String pluginVersion
     ) throws IOException {
+        return finalizeRecoveredReplay(replayName, recovery, pluginVersion, ReplayChunkData.NONE);
+        }
+
+        public byte[] finalizeRecoveredReplay(
+            String replayName,
+            BinaryReplayAppendLogRecovery recovery,
+            String pluginVersion,
+            ReplayChunkData chunkData
+        ) throws IOException {
         byte[] finalizedPayload = buildFinalizedPayload(recovery.records(), recovery.timeline(), recovery.stringTable());
         byte[] compressedPayload = compress(finalizedPayload);
+        ReplayChunkData effectiveChunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
         BinaryReplayManifest manifest = BinaryReplayManifest.createV1(
                 pluginVersion,
                 pluginVersion,
                 resolveRecordingStartedAtEpochMillis(recovery),
-                crc32cHex(compressedPayload));
+            crc32cHex(compressedPayload),
+            effectiveChunkData.metadata());
         byte[] manifestBytes = gson.toJson(manifest).getBytes(StandardCharsets.UTF_8);
-        return buildArchive(manifestBytes, compressedPayload);
+        return buildArchive(manifestBytes, compressedPayload, effectiveChunkData);
     }
 
     private static BinaryReplayAppendLogRecovery buildRecovery(List<TimelineEvent> timeline, long recordingStartedAtEpochMillis) throws IOException {
@@ -166,11 +178,14 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
         return out.toByteArray();
     }
 
-    private static byte[] buildArchive(byte[] manifestBytes, byte[] replayBytes) throws IOException {
+    private static byte[] buildArchive(byte[] manifestBytes, byte[] replayBytes, ReplayChunkData chunkData) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
             writeStoredEntry(zip, BinaryReplayFormat.MANIFEST_ENTRY_NAME, manifestBytes);
             writeStoredEntry(zip, BinaryReplayFormat.REPLAY_ENTRY_NAME, replayBytes);
+            for (Map.Entry<String, byte[]> entry : chunkData.regionEntries().entrySet()) {
+                writeStoredEntry(zip, entry.getKey(), entry.getValue());
+            }
         }
         return out.toByteArray();
     }

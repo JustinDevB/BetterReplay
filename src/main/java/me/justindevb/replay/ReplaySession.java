@@ -12,10 +12,12 @@ import me.justindevb.replay.entity.RecordedEntityFactory;
 import me.justindevb.replay.entity.RecordedPlayer;
 import me.justindevb.replay.api.events.ReplayStartEvent;
 import me.justindevb.replay.api.events.ReplayStopEvent;
+import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.playback.PlaybackEngine;
 import me.justindevb.replay.playback.ReplayBlockManager;
 import me.justindevb.replay.playback.ReplayInventoryUI;
 import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.storage.ReplayPlaybackData;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
@@ -41,6 +43,7 @@ public class ReplaySession implements Listener, PacketListener {
 
     private WrappedTask replayTask = null;
     private List<TimelineEvent> timeline;
+    private final ReplayChunkData chunkData;
     private final Set<Integer> trackedEntityIds = new HashSet<>();
     private final Set<UUID> deadEntities = new HashSet<>();
     private final Map<UUID, RecordedEntity> recordedEntities = new HashMap<>();
@@ -58,9 +61,15 @@ public class ReplaySession implements Listener, PacketListener {
     private final ReplayInventoryUI inventoryUI;
 
     public ReplaySession(List<TimelineEvent> timeline, Player viewer, Replay replay) {
+        this(new ReplayPlaybackData(timeline), viewer, replay);
+    }
+
+    public ReplaySession(ReplayPlaybackData replayData, Player viewer, Replay replay) {
         this.timeline = timeline;
         this.viewer = viewer;
         this.replay = replay;
+        this.timeline = replayData.timeline();
+        this.chunkData = replayData.chunkData();
 
         this.speedStep = replay.getConfig().getDouble("Playback.Speed-Step", 0.2);
         this.maxSpeed = Math.max(1.0D, replay.getConfig().getDouble("Playback.Max-Speed", 1.0D));
