@@ -37,7 +37,11 @@ jobs:
           path: target/*.jar
 
       - name: Publish to Modrinth
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        if: >
+          (github.repository == 'justindevb/BetterReplay') &&
+          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') &&
+          (secrets.MODRINTH_PROJECT_ID != '') &&
+          (secrets.MODRINTH_TOKEN != '')
         uses: Kir-Antipov/mc-publish@v3.3
         with:
           modrinth-id: ${{ secrets.MODRINTH_PROJECT_ID }}
