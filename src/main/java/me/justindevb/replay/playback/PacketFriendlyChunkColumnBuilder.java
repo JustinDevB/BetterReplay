@@ -21,6 +21,9 @@ import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -51,7 +54,7 @@ final class PacketFriendlyChunkColumnBuilder {
     private Chunk_v1_18 buildSection(
             BinaryPacketFriendlyChunkPayloadCodec.SectionPayload section,
             ClientVersion clientVersion
-    ) {
+    ) throws IOException {
         DataPalette chunkData = DataPalette.createForChunk();
         DataPalette biomeData = DataPalette.createForBiome();
 
@@ -69,7 +72,7 @@ final class PacketFriendlyChunkColumnBuilder {
                     if (blockState.getGlobalId() != airId) {
                         blockCount++;
                     }
-                    if (blockState.isFluid()) {
+                    if (hasFluidState(blockStateString)) {
                         fluidCount++;
                     }
                 }
@@ -87,7 +90,7 @@ final class PacketFriendlyChunkColumnBuilder {
             }
         }
 
-        return new Chunk_v1_18(clientVersion, blockCount, fluidCount, chunkData, biomeData);
+        return createSectionChunk(clientVersion, blockCount, fluidCount, chunkData, biomeData);
     }
 
     private TileEntity[] buildTileEntities(
@@ -138,6 +141,122 @@ final class PacketFriendlyChunkColumnBuilder {
                 return compound;
             }
             throw new IOException("Block entity NBT payload must decode to a compound");
+        }
+    }
+
+    static boolean hasFluidState(String blockStateString) {
+        if (blockStateString == null || blockStateString.isBlank()) {
+            return false;
+        }
+
+        return blockStateString.startsWith("minecraft:water")
+                || blockStateString.startsWith("minecraft:lava")
+                || blockStateString.startsWith("minecraft:bubble_column")
+                || blockStateString.contains("waterlogged=true");
+    }
+
+    static Chunk_v1_18 createSectionChunk(
+            ClientVersion clientVersion,
+            int blockCount,
+            int fluidCount,
+            DataPalette chunkData,
+            DataPalette biomeData
+    ) throws IOException {
+        try {
+            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
+                    ClientVersion.class,
+                    int.class,
+                    int.class,
+                    DataPalette.class,
+                    DataPalette.class);
+            return constructor.newInstance(clientVersion, blockCount, fluidCount, chunkData, biomeData);
+        } catch (NoSuchMethodException ignored) {
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to instantiate chunk section", ex);
+        }
+
+        try {
+            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
+                    int.class,
+                    int.class,
+                    DataPalette.class,
+                    DataPalette.class);
+            return constructor.newInstance(blockCount, fluidCount, chunkData, biomeData);
+        } catch (NoSuchMethodException ignored) {
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to instantiate chunk section", ex);
+        }
+
+        try {
+            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
+                    ClientVersion.class,
+                    int.class,
+                    DataPalette.class,
+                    DataPalette.class);
+            Chunk_v1_18 chunk = constructor.newInstance(clientVersion, blockCount, chunkData, biomeData);
+            applyFluidCount(chunk, fluidCount);
+            return chunk;
+        } catch (NoSuchMethodException ignored) {
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to instantiate chunk section", ex);
+        }
+
+        try {
+            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
+                    int.class,
+                    DataPalette.class,
+                    DataPalette.class);
+            Chunk_v1_18 chunk = constructor.newInstance(blockCount, chunkData, biomeData);
+            applyFluidCount(chunk, fluidCount);
+            return chunk;
+        } catch (NoSuchMethodException ignored) {
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to instantiate chunk section", ex);
+        }
+
+        try {
+            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor();
+            Chunk_v1_18 chunk = constructor.newInstance();
+            applyBlockCount(chunk, blockCount);
+            applyFluidCount(chunk, fluidCount);
+            applyPalette(chunk, "setChunkData", chunkData);
+            applyPalette(chunk, "setBiomeData", biomeData);
+            return chunk;
+        } catch (NoSuchMethodException ignored) {
+        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to instantiate chunk section", ex);
+        }
+
+        throw new IOException("No compatible Chunk_v1_18 constructor was found at runtime");
+    }
+
+    private static void applyBlockCount(Chunk_v1_18 chunk, int blockCount) throws IOException {
+        try {
+            Method method = Chunk_v1_18.class.getMethod("setBlockCount", int.class);
+            method.invoke(chunk, blockCount);
+        } catch (NoSuchMethodException ignored) {
+        } catch (IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to set block count on chunk section", ex);
+        }
+    }
+
+    private static void applyFluidCount(Chunk_v1_18 chunk, int fluidCount) throws IOException {
+        try {
+            Method method = Chunk_v1_18.class.getMethod("setFluidCount", int.class);
+            method.invoke(chunk, fluidCount);
+        } catch (NoSuchMethodException ignored) {
+        } catch (IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to set fluid count on chunk section", ex);
+        }
+    }
+
+    private static void applyPalette(Chunk_v1_18 chunk, String methodName, DataPalette palette) throws IOException {
+        try {
+            Method method = Chunk_v1_18.class.getMethod(methodName, DataPalette.class);
+            method.invoke(chunk, palette);
+        } catch (NoSuchMethodException ignored) {
+        } catch (IllegalAccessException | InvocationTargetException ex) {
+            throw new IOException("Failed to set palette data on chunk section", ex);
         }
     }
 

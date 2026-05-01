@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Wrapped YAML pseudo-comment values now load correctly during idempotent config initialization (prevents parse failure on long comment lines)
 - Config rewrite now deduplicates managed header text and keeps `Config-Version` at the top for cleaner layout
 - Config migration no longer accumulates extra blank lines between `Config-Version` and subsequent root sections
+- BRCP chunk playback no longer hard-links `WrappedBlockState.isFluid()`, avoiding `NoSuchMethodError` on PacketEvents runtimes that do not expose that method
+- BRCP chunk playback now resolves `Chunk_v1_18` constructors reflectively, avoiding `NoSuchMethodError` on PacketEvents runtimes with different section-constructor signatures
 
 ### Changed
 - All commands routed through `ReplayManager` API (#25)
