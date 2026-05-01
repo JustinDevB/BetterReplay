@@ -7,7 +7,7 @@ import me.justindevb.replay.chunk.ChunkCaptureConfig;
 import me.justindevb.replay.chunk.ChunkCaptureCoordinator;
 import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import me.justindevb.replay.chunk.RadiusChunkInterestTracker;
-import me.justindevb.replay.chunk.WorldChunkBaselineCaptureService;
+import me.justindevb.replay.chunk.WorldChunkPacketFriendlyCaptureService;
 import me.justindevb.replay.recording.EntityTracker;
 import me.justindevb.replay.recording.RecordingEventHandler;
 import me.justindevb.replay.recording.RecordingPacketHandler;
@@ -18,7 +18,7 @@ import me.justindevb.replay.storage.binary.BinaryReplayAppendLogHeader;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogRecovery;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogReader;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogWriter;
-import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
+import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkTempRegionFileWriter;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
@@ -92,7 +92,7 @@ public class RecordingSession {
                     ? new ChunkCaptureCoordinator(
                             chunkCaptureConfig,
                             new RadiusChunkInterestTracker(),
-                            new WorldChunkBaselineCaptureService(new BinaryChunkPayloadCodec()),
+                            new WorldChunkPacketFriendlyCaptureService(new BinaryPacketFriendlyChunkPayloadCodec()),
                             new BinaryChunkTempRegionFileWriter(chunkCaptureDirectory.toPath()))
                     : null;
         } catch (IOException e) {

@@ -4,6 +4,8 @@ import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.storage.binary.BinaryChunkCompression;
 import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
+import me.justindevb.replay.storage.binary.BinaryChunkPayloadFormat;
+import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkRegionCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkRegionEntry;
 import me.justindevb.replay.storage.binary.BinaryReplayChunkMetadata;
@@ -22,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ReplayChunkPlaybackCacheTest {
 
     private final BinaryChunkPayloadCodec payloadCodec = new BinaryChunkPayloadCodec();
+    private final BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec = new BinaryPacketFriendlyChunkPayloadCodec();
     private final BinaryChunkRegionCodec regionCodec = new BinaryChunkRegionCodec();
 
     @Test
@@ -34,13 +37,14 @@ class ReplayChunkPlaybackCacheTest {
                 Map.of("chunks/world/r.0.0.brregion", regionBytes));
 
         ReplayChunkPlaybackCache cache = new ReplayChunkPlaybackCache(chunkData);
-        Optional<BinaryChunkPayloadCodec.DecodedChunkPayload> decoded = cache.loadChunk(new ChunkCoordinate("world", 0, 0));
+        Optional<ReplayChunkSnapshot> decoded = cache.loadChunk(new ChunkCoordinate("world", 0, 0));
 
         assertTrue(decoded.isPresent());
-        assertEquals(0, decoded.get().minY());
-        assertEquals(1, decoded.get().height());
-        assertEquals("minecraft:stone", decoded.get().palette().getFirst());
-        assertEquals(16 * 16, decoded.get().stateIndexes().length);
+        ReplayChunkSnapshot.LegacyBlockStateSnapshot snapshot = (ReplayChunkSnapshot.LegacyBlockStateSnapshot) decoded.get();
+        assertEquals(0, snapshot.payload().minY());
+        assertEquals(1, snapshot.payload().height());
+        assertEquals("minecraft:stone", snapshot.payload().palette().getFirst());
+        assertEquals(16 * 16, snapshot.payload().stateIndexes().length);
     }
 
     @Test
@@ -52,6 +56,37 @@ class ReplayChunkPlaybackCacheTest {
         ReplayChunkPlaybackCache cache = new ReplayChunkPlaybackCache(chunkData);
 
         assertFalse(cache.loadChunk(new ChunkCoordinate("world", 0, 0)).isPresent());
+    }
+
+    @Test
+        void loadChunk_decodesPacketFriendlySnapshotWhenArchiveUsesBrcp() throws Exception {
+        BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload =
+            new BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload(
+                0,
+                List.of(new BinaryPacketFriendlyChunkPayloadCodec.SectionPayload(
+                    List.of("minecraft:air", "minecraft:stone"),
+                        1,
+                        new long[64],
+                    List.of("minecraft:plains"),
+                    0,
+                    new long[0]
+                )),
+                List.of());
+        byte[] encodedPayload = packetFriendlyPayloadCodec.encode(payload);
+        byte[] compressedPayload = compress(encodedPayload);
+        byte[] regionBytes = regionCodec.encode(List.of(new BinaryChunkRegionEntry(0, 0, encodedPayload.length, BinaryChunkCompression.LZ4_FRAME, compressedPayload)));
+        ReplayChunkData chunkData = new ReplayChunkData(
+            BinaryReplayChunkMetadata.present(1, 1, "abcd", BinaryChunkPayloadFormat.BRCP),
+            Map.of("chunks/world/r.0.0.brregion", regionBytes));
+
+        ReplayChunkPlaybackCache cache = new ReplayChunkPlaybackCache(chunkData);
+        Optional<ReplayChunkSnapshot> decoded = cache.loadChunk(new ChunkCoordinate("world", 0, 0));
+
+        assertTrue(decoded.isPresent());
+        ReplayChunkSnapshot.PacketFriendlySnapshot snapshot = (ReplayChunkSnapshot.PacketFriendlySnapshot) decoded.get();
+        assertEquals(0, snapshot.payload().minSectionY());
+        assertEquals(1, snapshot.payload().sections().size());
+        assertEquals(List.of("minecraft:air", "minecraft:stone"), snapshot.payload().sections().getFirst().blockPalette());
     }
 
     private static byte[] compress(byte[] payload) throws Exception {

@@ -9,16 +9,32 @@ public record BinaryReplayManifest(
         int formatVersion,
         String recordedWithVersion,
         String minimumViewerVersion,
-    long recordingStartedAtEpochMillis,
+        long recordingStartedAtEpochMillis,
         String payloadChecksum,
-    String payloadChecksumAlgorithm,
-    boolean hasChunkData,
-    int chunkRegionEntryCount,
-    int chunkEntryCount,
-    String chunkCoordinateHash
+        String payloadChecksumAlgorithm,
+        boolean hasChunkData,
+        int chunkRegionEntryCount,
+        int chunkEntryCount,
+        String chunkCoordinateHash,
+        String chunkPayloadFormat,
+        int chunkPayloadVersion
 ) {
 
     public BinaryReplayManifest {
+        BinaryReplayChunkMetadata normalizedChunkMetadata = new BinaryReplayChunkMetadata(
+                hasChunkData,
+                chunkRegionEntryCount,
+                chunkEntryCount,
+                chunkCoordinateHash,
+                chunkPayloadFormat,
+                chunkPayloadVersion);
+        hasChunkData = normalizedChunkMetadata.hasChunkData();
+        chunkRegionEntryCount = normalizedChunkMetadata.chunkRegionEntryCount();
+        chunkEntryCount = normalizedChunkMetadata.chunkEntryCount();
+        chunkCoordinateHash = normalizedChunkMetadata.chunkCoordinateHash();
+        chunkPayloadFormat = normalizedChunkMetadata.chunkPayloadFormat();
+        chunkPayloadVersion = normalizedChunkMetadata.chunkPayloadVersion();
+
         if (formatVersion < 1) {
             throw new IllegalArgumentException("formatVersion must be positive");
         }
@@ -29,7 +45,13 @@ public record BinaryReplayManifest(
         }
         requireLowerHex(payloadChecksum, "payloadChecksum");
         requireNonBlank(payloadChecksumAlgorithm, "payloadChecksumAlgorithm");
-        BinaryReplayChunkMetadata.validate(hasChunkData, chunkRegionEntryCount, chunkEntryCount, chunkCoordinateHash);
+        BinaryReplayChunkMetadata.validate(
+            hasChunkData,
+            chunkRegionEntryCount,
+            chunkEntryCount,
+            chunkCoordinateHash,
+            chunkPayloadFormat,
+            chunkPayloadVersion);
     }
 
     public static BinaryReplayManifest createV1(
@@ -48,7 +70,9 @@ public record BinaryReplayManifest(
                 false,
                 0,
                 0,
-                null
+                null,
+                null,
+                0
         );
     }
 
@@ -70,12 +94,20 @@ public record BinaryReplayManifest(
                 chunkMetadata.hasChunkData(),
                 chunkMetadata.chunkRegionEntryCount(),
                 chunkMetadata.chunkEntryCount(),
-                chunkMetadata.chunkCoordinateHash()
+                chunkMetadata.chunkCoordinateHash(),
+                chunkMetadata.chunkPayloadFormat(),
+                chunkMetadata.chunkPayloadVersion()
         );
     }
 
     public BinaryReplayChunkMetadata chunkMetadata() {
-        return new BinaryReplayChunkMetadata(hasChunkData, chunkRegionEntryCount, chunkEntryCount, chunkCoordinateHash);
+        return new BinaryReplayChunkMetadata(
+                hasChunkData,
+                chunkRegionEntryCount,
+                chunkEntryCount,
+                chunkCoordinateHash,
+                chunkPayloadFormat,
+                chunkPayloadVersion);
     }
 
     private static void requireNonBlank(String value, String fieldName) {

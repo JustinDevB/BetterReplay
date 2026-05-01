@@ -3,6 +3,7 @@ package me.justindevb.replay.playback;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
+import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkRegionCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkRegionEntry;
 import me.justindevb.replay.storage.binary.BinaryReplayFormat;
@@ -22,25 +23,32 @@ public final class ReplayChunkPlaybackCache {
 
     private final ReplayChunkData chunkData;
     private final BinaryChunkRegionCodec regionCodec;
-    private final BinaryChunkPayloadCodec payloadCodec;
+    private final BinaryChunkPayloadCodec legacyPayloadCodec;
+    private final BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec;
     private final Map<String, BinaryChunkRegionCodec.DecodedBinaryChunkRegion> decodedRegions = new HashMap<>();
-    private final Map<ChunkCoordinate, Optional<BinaryChunkPayloadCodec.DecodedChunkPayload>> decodedChunks = new HashMap<>();
+    private final Map<ChunkCoordinate, Optional<ReplayChunkSnapshot>> decodedChunks = new HashMap<>();
 
     public ReplayChunkPlaybackCache(ReplayChunkData chunkData) {
-        this(chunkData, new BinaryChunkRegionCodec(), new BinaryChunkPayloadCodec());
+        this(chunkData, new BinaryChunkRegionCodec(), new BinaryChunkPayloadCodec(), new BinaryPacketFriendlyChunkPayloadCodec());
     }
 
     ReplayChunkPlaybackCache(
             ReplayChunkData chunkData,
             BinaryChunkRegionCodec regionCodec,
-            BinaryChunkPayloadCodec payloadCodec
+            BinaryChunkPayloadCodec legacyPayloadCodec,
+            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec
     ) {
         this.chunkData = Objects.requireNonNull(chunkData, "chunkData");
         this.regionCodec = Objects.requireNonNull(regionCodec, "regionCodec");
-        this.payloadCodec = Objects.requireNonNull(payloadCodec, "payloadCodec");
+        this.legacyPayloadCodec = Objects.requireNonNull(legacyPayloadCodec, "legacyPayloadCodec");
+        this.packetFriendlyPayloadCodec = Objects.requireNonNull(packetFriendlyPayloadCodec, "packetFriendlyPayloadCodec");
     }
 
-    public Optional<BinaryChunkPayloadCodec.DecodedChunkPayload> loadChunk(ChunkCoordinate coordinate) {
+    public ReplayChunkData chunkData() {
+        return chunkData;
+    }
+
+    public Optional<ReplayChunkSnapshot> loadChunk(ChunkCoordinate coordinate) {
         Objects.requireNonNull(coordinate, "coordinate");
         if (!chunkData.hasChunkData()) {
             return Optional.empty();
@@ -49,7 +57,7 @@ public final class ReplayChunkPlaybackCache {
         return decodedChunks.computeIfAbsent(coordinate, this::decodeChunk);
     }
 
-    private Optional<BinaryChunkPayloadCodec.DecodedChunkPayload> decodeChunk(ChunkCoordinate coordinate) {
+    private Optional<ReplayChunkSnapshot> decodeChunk(ChunkCoordinate coordinate) {
         try {
             String entryName = BinaryReplayFormat.RESERVED_CHUNKS_PREFIX
                     + me.justindevb.replay.storage.binary.BinaryChunkArchiveNaming.worldDirectory(coordinate.worldName())
@@ -73,7 +81,10 @@ public final class ReplayChunkPlaybackCache {
             for (BinaryChunkRegionEntry entry : decodedRegion.entries()) {
                 if (entry.localChunkX() == coordinate.localChunkX() && entry.localChunkZ() == coordinate.localChunkZ()) {
                     byte[] payload = decompress(entry.compressedPayload());
-                    return Optional.of(payloadCodec.decode(payload));
+                    return Optional.of(switch (chunkData.metadata().payloadFormat()) {
+                        case BRCS -> new ReplayChunkSnapshot.LegacyBlockStateSnapshot(legacyPayloadCodec.decode(payload));
+                        case BRCP -> new ReplayChunkSnapshot.PacketFriendlySnapshot(packetFriendlyPayloadCodec.decode(payload));
+                    });
                 }
             }
             return Optional.empty();

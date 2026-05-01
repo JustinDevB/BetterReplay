@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 6 on-demand playback chunk lookup and viewer block-state application around the replay spectator, with cached region decoding for chunk-enabled binary replays
 - Phase 7 replay teardown hardening so chunk-applied viewer block states are restored when playback chunks unload or the viewer disconnects mid-session
 - Phase 8 storage backend parity coverage, chunk capture documentation updates, and full test-suite hardening for the completed chunk-enabled binary replay flow
+- Chunk-specific replay inspection stats so `/replay debug info` reports region/chunk counts and compressed versus decompressed chunk payload bytes for chunk-enabled `.br` archives
+- `BRCP` packet-friendly chunk payload codec groundwork with manifest payload-format/version metadata and recording-artifact propagation through binary archive finalization
+- Current replay chunk baseline playback now detects non-`BRCS` chunk sidecars and soft-fails them cleanly instead of attempting legacy block-baseline decoding
+- `BRCP` chunk recordings now capture packet-friendly live chunk snapshots, include block-entity payloads when runtime NBT extraction is available, replay them with real chunk packets, reapply prior block mutations when chunks enter view mid-replay, and resend live chunks on unload or replay stop
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
@@ -58,6 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated to Java 26 runtime, Paper 26.1.2, and PacketEvents 2.12.1
 - Expanded Modrinth publishing to include Purpur, Spigot, and Bukkit loaders
 - Expanded supported Minecraft game versions in Modrinth publishing (1.21 through 26.1.2)
+- Chunk recording design/spec docs now distinguish the current `BRCS` block-state payload from the packet-friendly `BRCP` chunk snapshot contract, including manifest fields and chunk-sidecar fallback semantics for future chunk-packet playback
 
 ## [1.4.0] - 2026-04-10
 

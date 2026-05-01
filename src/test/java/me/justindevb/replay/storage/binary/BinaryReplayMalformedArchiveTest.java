@@ -161,7 +161,9 @@ class BinaryReplayMalformedArchiveTest {
                 manifest.hasChunkData(),
                 manifest.chunkRegionEntryCount(),
                 manifest.chunkEntryCount(),
-                manifest.chunkCoordinateHash());
+                manifest.chunkCoordinateHash(),
+                manifest.chunkPayloadFormat(),
+                manifest.chunkPayloadVersion());
         entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, GSON.toJson(updated).getBytes(StandardCharsets.UTF_8));
     }
 }

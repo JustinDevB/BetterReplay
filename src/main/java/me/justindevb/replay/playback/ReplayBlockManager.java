@@ -1,18 +1,26 @@
 package me.justindevb.replay.playback;
 
 import com.github.retrooper.packetevents.PacketEvents;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockBreakAnimation;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerChunkData;
 import com.github.retrooper.packetevents.util.Vector3i;
+import me.justindevb.replay.chunk.CapturedChunkBaseline;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ReplayChunkData;
+import me.justindevb.replay.chunk.WorldChunkPacketFriendlyCaptureService;
 import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
+import me.justindevb.replay.storage.binary.BinaryChunkPayloadFormat;
+import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.recording.TimelineEvent;
 
+import java.io.IOException;
 import java.util.*;
+import java.util.function.IntSupplier;
 
 /**
  * Manages block state desync/resync during replay playback.
@@ -26,6 +34,10 @@ public class ReplayBlockManager {
     private final Player viewer;
     private final Replay replay;
     private final ReplayChunkPlaybackCache chunkPlaybackCache;
+    private final BinaryChunkPayloadFormat chunkPayloadFormat;
+    private final BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec;
+    private final WorldChunkPacketFriendlyCaptureService liveChunkCaptureService;
+    private final ReplayChunkSnapshotSender replayChunkSnapshotSender;
 
     public record BlockKey(String world, int x, int y, int z) {}
 
@@ -36,11 +48,48 @@ public class ReplayBlockManager {
     private final Set<BlockKey> visibleBreakStages = new HashSet<>();
     private int blockBreakMutationEpoch = 0;
     private ChunkCoordinate currentChunkCenter;
+    private List<TimelineEvent> replayTimeline = List.of();
+    private IntSupplier currentTimelineIndexSupplier = () -> 0;
 
     public ReplayBlockManager(Player viewer, Replay replay, ReplayChunkData chunkData) {
+        ReplayChunkData replayChunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
+        BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec = new BinaryPacketFriendlyChunkPayloadCodec();
         this.viewer = viewer;
         this.replay = replay;
-        this.chunkPlaybackCache = new ReplayChunkPlaybackCache(chunkData != null ? chunkData : ReplayChunkData.NONE);
+        this.chunkPlaybackCache = new ReplayChunkPlaybackCache(replayChunkData);
+        this.chunkPayloadFormat = replayChunkData.metadata().payloadFormat();
+        this.packetFriendlyPayloadCodec = packetFriendlyPayloadCodec;
+        this.liveChunkCaptureService = new WorldChunkPacketFriendlyCaptureService(packetFriendlyPayloadCodec);
+        PacketFriendlyChunkColumnBuilder columnBuilder = new PacketFriendlyChunkColumnBuilder();
+        this.replayChunkSnapshotSender = (player, coordinate, payload) -> {
+            ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(player);
+            PacketEvents.getAPI().getPlayerManager().sendPacket(
+                    player,
+                    new WrapperPlayServerChunkData(columnBuilder.build(coordinate, payload, clientVersion)));
+        };
+    }
+
+    ReplayBlockManager(
+            Player viewer,
+            Replay replay,
+            ReplayChunkPlaybackCache chunkPlaybackCache,
+            BinaryChunkPayloadFormat chunkPayloadFormat,
+            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
+            WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
+            ReplayChunkSnapshotSender replayChunkSnapshotSender
+    ) {
+        this.viewer = viewer;
+        this.replay = replay;
+        this.chunkPlaybackCache = Objects.requireNonNull(chunkPlaybackCache, "chunkPlaybackCache");
+        this.chunkPayloadFormat = Objects.requireNonNull(chunkPayloadFormat, "chunkPayloadFormat");
+        this.packetFriendlyPayloadCodec = Objects.requireNonNull(packetFriendlyPayloadCodec, "packetFriendlyPayloadCodec");
+        this.liveChunkCaptureService = Objects.requireNonNull(liveChunkCaptureService, "liveChunkCaptureService");
+        this.replayChunkSnapshotSender = Objects.requireNonNull(replayChunkSnapshotSender, "replayChunkSnapshotSender");
+    }
+
+    public void configureChunkReplayContext(List<TimelineEvent> timeline, IntSupplier currentTimelineIndexSupplier) {
+        this.replayTimeline = List.copyOf(Objects.requireNonNull(timeline, "timeline"));
+        this.currentTimelineIndexSupplier = Objects.requireNonNull(currentTimelineIndexSupplier, "currentTimelineIndexSupplier");
     }
 
     public int getEpoch() {
@@ -245,6 +294,10 @@ public class ReplayBlockManager {
     }
 
     public void restoreSessionBaseline() {
+        for (ChunkCoordinate coordinate : new HashSet<>(renderedChunks)) {
+            restoreChunkBaseline(coordinate);
+        }
+
         for (BlockKey key : sessionBaseline.keySet()) {
             World world = Bukkit.getWorld(key.world());
             if (world == null) {
@@ -252,15 +305,6 @@ public class ReplayBlockManager {
             }
             String realBlockData = world.getBlockAt(key.x(), key.y(), key.z()).getBlockData().getAsString();
             sendBlockStateToViewer(world, key.x(), key.y(), key.z(), realBlockData);
-        }
-
-        for (Map.Entry<BlockKey, String> entry : chunkBaseline.entrySet()) {
-            BlockKey key = entry.getKey();
-            World world = Bukkit.getWorld(key.world());
-            if (world == null) {
-                continue;
-            }
-            sendBlockStateToViewer(world, key.x(), key.y(), key.z(), entry.getValue());
         }
         chunkBaseline.clear();
         chunkBlocksByCoordinate.clear();
@@ -465,17 +509,28 @@ public class ReplayBlockManager {
     }
 
     private void applyChunkBaseline(ChunkCoordinate coordinate) {
-        Optional<BinaryChunkPayloadCodec.DecodedChunkPayload> decodedChunk = chunkPlaybackCache.loadChunk(coordinate);
+        Optional<ReplayChunkSnapshot> decodedChunk = chunkPlaybackCache.loadChunk(coordinate);
         if (decodedChunk.isEmpty()) {
             return;
         }
 
+        switch (decodedChunk.get()) {
+            case ReplayChunkSnapshot.LegacyBlockStateSnapshot legacySnapshot -> applyLegacyChunkBaseline(coordinate, legacySnapshot.payload());
+            case ReplayChunkSnapshot.PacketFriendlySnapshot packetFriendlySnapshot -> applyPacketFriendlyChunkSnapshot(coordinate, packetFriendlySnapshot.payload());
+        }
+
+        reapplyHistoricalChunkMutations(coordinate);
+    }
+
+    private void applyLegacyChunkBaseline(
+            ChunkCoordinate coordinate,
+            BinaryChunkPayloadCodec.DecodedChunkPayload payload
+    ) {
         World world = Bukkit.getWorld(coordinate.worldName());
         if (world == null) {
             return;
         }
 
-        BinaryChunkPayloadCodec.DecodedChunkPayload payload = decodedChunk.get();
         Set<BlockKey> changedBlocks = new HashSet<>();
         short[] stateIndexes = payload.stateIndexes();
         int height = payload.height();
@@ -507,7 +562,46 @@ public class ReplayBlockManager {
         }
     }
 
+    private void applyPacketFriendlyChunkSnapshot(
+            ChunkCoordinate coordinate,
+            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload
+    ) {
+        try {
+            replayChunkSnapshotSender.send(viewer, coordinate, payload);
+            renderedChunks.add(coordinate);
+        } catch (IOException | RuntimeException ignored) {
+        }
+    }
+
+    private void reapplyHistoricalChunkMutations(ChunkCoordinate coordinate) {
+        if (replayTimeline.isEmpty()) {
+            return;
+        }
+
+        int end = Math.max(0, Math.min(currentTimelineIndexSupplier.getAsInt(), replayTimeline.size()));
+        for (int i = 0; i < end; i++) {
+            TimelineEvent event = replayTimeline.get(i);
+            if (event instanceof TimelineEvent.BlockPlace blockPlace && affectsChunk(coordinate, blockPlace.world(), blockPlace.x(), blockPlace.z())) {
+                applyReplayBlockChange(blockPlace, true);
+            } else if (event instanceof TimelineEvent.BlockBreak blockBreak && affectsChunk(coordinate, blockBreak.world(), blockBreak.x(), blockBreak.z())) {
+                applyReplayBlockChange(blockBreak, true);
+            }
+        }
+    }
+
+    private boolean affectsChunk(ChunkCoordinate coordinate, String worldName, int x, int z) {
+        return coordinate.worldName().equals(worldName)
+                && Math.floorDiv(x, 16) == coordinate.chunkX()
+                && Math.floorDiv(z, 16) == coordinate.chunkZ();
+    }
+
     private void restoreChunkBaseline(ChunkCoordinate coordinate) {
+        if (chunkPayloadFormat == BinaryChunkPayloadFormat.BRCP) {
+            restoreLiveChunkPacket(coordinate);
+            renderedChunks.remove(coordinate);
+            return;
+        }
+
         Set<BlockKey> changedBlocks = chunkBlocksByCoordinate.remove(coordinate);
         if (changedBlocks == null || changedBlocks.isEmpty()) {
             renderedChunks.remove(coordinate);
@@ -525,5 +619,14 @@ public class ReplayBlockManager {
             }
         }
         renderedChunks.remove(coordinate);
+    }
+
+    private void restoreLiveChunkPacket(ChunkCoordinate coordinate) {
+        try {
+            CapturedChunkBaseline liveChunk = liveChunkCaptureService.capture(coordinate);
+            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = packetFriendlyPayloadCodec.decode(liveChunk.payloadBytes());
+            replayChunkSnapshotSender.send(viewer, coordinate, payload);
+        } catch (IOException | RuntimeException ignored) {
+        }
     }
 }

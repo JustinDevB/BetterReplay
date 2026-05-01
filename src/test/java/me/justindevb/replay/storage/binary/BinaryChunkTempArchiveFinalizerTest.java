@@ -53,4 +53,19 @@ class BinaryChunkTempArchiveFinalizerTest {
         assertEquals(1, chunkData.metadata().chunkEntryCount());
         assertEquals(4, entry.uncompressedLength());
     }
+
+    @Test
+    void finalizeArtifacts_preservesChunkPayloadFormatInMetadata() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(
+                new ChunkCoordinate("world", 0, 0),
+                new byte[] { 1, 2, 3 },
+                BinaryChunkPayloadFormat.BRCP));
+
+        ReplayChunkData chunkData = finalizer.finalizeArtifacts(writer.snapshotArtifacts());
+
+        assertEquals(BinaryChunkPayloadFormat.BRCP, chunkData.metadata().payloadFormat());
+        assertEquals(BinaryChunkPayloadFormat.BRCP.manifestValue(), chunkData.metadata().chunkPayloadFormat());
+        assertEquals(1, chunkData.metadata().chunkPayloadVersion());
+    }
 }

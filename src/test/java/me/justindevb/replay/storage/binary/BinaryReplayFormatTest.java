@@ -1,5 +1,6 @@
 package me.justindevb.replay.storage.binary;
 
+import com.google.gson.Gson;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteOrder;
@@ -8,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BinaryReplayFormatTest {
+
+    private final Gson gson = new Gson();
 
     @Test
     void exposesFrozenArchiveAndPayloadConstants() {
@@ -115,22 +118,62 @@ class BinaryReplayFormatTest {
         assertEquals(2, manifest.chunkRegionEntryCount());
         assertEquals(17, manifest.chunkEntryCount());
         assertEquals("00ff11aa", manifest.chunkCoordinateHash());
+        assertEquals(BinaryChunkPayloadFormat.BRCS.manifestValue(), manifest.chunkPayloadFormat());
+        assertEquals(1, manifest.chunkPayloadVersion());
+    }
+
+    @Test
+    void createsChunkEnabledManifestWithPacketFriendlyMetadata() {
+        BinaryReplayManifest manifest = BinaryReplayManifest.createV1(
+                "1.4.0",
+                "1.4.0",
+                1_700_000_000_000L,
+                "7d8f8f2b",
+                BinaryReplayChunkMetadata.present(2, 17, "00ff11aa", BinaryChunkPayloadFormat.BRCP));
+
+        assertEquals(BinaryChunkPayloadFormat.BRCP.manifestValue(), manifest.chunkPayloadFormat());
+        assertEquals(1, manifest.chunkPayloadVersion());
+        assertEquals(BinaryChunkPayloadFormat.BRCP, manifest.chunkMetadata().payloadFormat());
+    }
+
+    @Test
+    void legacyChunkManifestJsonDefaultsToBrcsV1() {
+        BinaryReplayManifest manifest = gson.fromJson("""
+                {
+                  "formatVersion": 1,
+                  "recordedWithVersion": "1.4.0",
+                  "minimumViewerVersion": "1.4.0",
+                  "recordingStartedAtEpochMillis": 1700000000000,
+                  "payloadChecksum": "7d8f8f2b",
+                  "payloadChecksumAlgorithm": "CRC32C",
+                  "hasChunkData": true,
+                  "chunkRegionEntryCount": 2,
+                  "chunkEntryCount": 17,
+                  "chunkCoordinateHash": "00ff11aa"
+                }
+                """, BinaryReplayManifest.class);
+
+        assertEquals(BinaryChunkPayloadFormat.BRCS.manifestValue(), manifest.chunkPayloadFormat());
+        assertEquals(1, manifest.chunkPayloadVersion());
+        assertEquals(BinaryChunkPayloadFormat.BRCS, manifest.chunkMetadata().payloadFormat());
     }
 
     @Test
     void rejectsInvalidManifestFields() {
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(0, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 0, 0, null));
+            () -> new BinaryReplayManifest(0, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 0, 0, null, null, 0));
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(1, " ", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 0, 0, null));
+            () -> new BinaryReplayManifest(1, " ", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 0, 0, null, null, 0));
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 0, "7d8f8f2b", "CRC32C", false, 0, 0, null));
+            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 0, "7d8f8f2b", "CRC32C", false, 0, 0, null, null, 0));
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "NOT_HEX", "CRC32C", false, 0, 0, null));
+            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "NOT_HEX", "CRC32C", false, 0, 0, null, null, 0));
         assertThrows(IllegalArgumentException.class,
             () -> BinaryReplayChunkMetadata.present(0, 1, null));
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 1, 1, null));
+            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 1, 1, null, null, 0));
+        assertThrows(IllegalArgumentException.class,
+            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", true, 1, 1, null, "BRCP", 2));
     }
 
     @Test

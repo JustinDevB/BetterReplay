@@ -1,5 +1,7 @@
 package me.justindevb.replay.chunk;
 
+import me.justindevb.replay.storage.binary.BinaryChunkPayloadFormat;
+
 import java.nio.file.Path;
 
 /**
@@ -8,10 +10,15 @@ import java.nio.file.Path;
 public record ChunkRecordingArtifacts(
         Path rootDirectory,
         int capturedChunkCount,
-        int regionFileCount
+        int regionFileCount,
+        BinaryChunkPayloadFormat chunkPayloadFormat
 ) {
 
-    public static final ChunkRecordingArtifacts NONE = new ChunkRecordingArtifacts(null, 0, 0);
+    public static final ChunkRecordingArtifacts NONE = new ChunkRecordingArtifacts(null, 0, 0, null);
+
+    public ChunkRecordingArtifacts(Path rootDirectory, int capturedChunkCount, int regionFileCount) {
+        this(rootDirectory, capturedChunkCount, regionFileCount, rootDirectory == null ? null : BinaryChunkPayloadFormat.BRCS);
+    }
 
     public ChunkRecordingArtifacts {
         if (rootDirectory != null && rootDirectory.toString().isBlank()) {
@@ -25,6 +32,12 @@ public record ChunkRecordingArtifacts(
         }
         if (rootDirectory == null && (capturedChunkCount != 0 || regionFileCount != 0)) {
             throw new IllegalArgumentException("captured counts require a rootDirectory");
+        }
+        if (rootDirectory == null && chunkPayloadFormat != null) {
+            throw new IllegalArgumentException("chunkPayloadFormat requires a rootDirectory");
+        }
+        if (rootDirectory != null && chunkPayloadFormat == null) {
+            throw new IllegalArgumentException("chunkPayloadFormat must be present when rootDirectory is present");
         }
     }
 

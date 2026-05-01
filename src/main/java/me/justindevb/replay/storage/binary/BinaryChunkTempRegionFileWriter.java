@@ -28,6 +28,7 @@ public final class BinaryChunkTempRegionFileWriter implements ChunkTempRegionWri
     private final Set<ChunkRegionKey> regionFiles = new HashSet<>();
 
     private int capturedChunkCount;
+    private BinaryChunkPayloadFormat payloadFormat;
 
     public BinaryChunkTempRegionFileWriter(Path rootDirectory) throws IOException {
         this.rootDirectory = Objects.requireNonNull(rootDirectory, "rootDirectory");
@@ -37,6 +38,11 @@ public final class BinaryChunkTempRegionFileWriter implements ChunkTempRegionWri
     @Override
     public void append(CapturedChunkBaseline baseline) throws IOException {
         Objects.requireNonNull(baseline, "baseline");
+        if (payloadFormat == null) {
+            payloadFormat = baseline.payloadFormat();
+        } else if (payloadFormat != baseline.payloadFormat()) {
+            throw new IllegalArgumentException("chunk temp writer cannot mix chunk payload formats in one recording workspace");
+        }
         ChunkRegionKey regionKey = baseline.coordinate().regionKey();
         Path regionPath = resolveRegionPath(regionKey);
         Files.createDirectories(regionPath.getParent());
@@ -67,7 +73,11 @@ public final class BinaryChunkTempRegionFileWriter implements ChunkTempRegionWri
 
     @Override
     public ChunkRecordingArtifacts snapshotArtifacts() {
-        return new ChunkRecordingArtifacts(rootDirectory, capturedChunkCount, regionFiles.size());
+        return new ChunkRecordingArtifacts(
+                rootDirectory,
+                capturedChunkCount,
+                regionFiles.size(),
+                payloadFormat == null ? BinaryChunkPayloadFormat.BRCS : payloadFormat);
     }
 
     @Override

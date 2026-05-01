@@ -137,6 +137,7 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         validatePayloadHeader(payload);
         ParsedPayload parsedPayload = parsePayload(payload);
         LazyTimeline timeline = new LazyTimeline(payload, parsedPayload.events(), parsedPayload.stringTable(), parsedPayload.tickIndex());
+        InspectedChunkData inspectedChunkData = inspectChunkData(manifest, archiveEntries.chunkEntries());
 
         return ReplayInspectionBuilder.build(
                 replayName,
@@ -144,6 +145,10 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
                 storedBytes.length,
                 archiveEntries.replayBytes().length,
                 payload.length,
+            inspectedChunkData.chunkRegionEntryCount(),
+            inspectedChunkData.chunkEntryCount(),
+            inspectedChunkData.compressedChunkPayloadBytes(),
+            inspectedChunkData.decompressedChunkPayloadBytes(),
                 manifest.recordingStartedAtEpochMillis(),
                 manifest.recordedWithVersion(),
                 manifest.minimumViewerVersion(),
@@ -219,39 +224,55 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
     }
 
     private ReplayChunkData loadChunkData(BinaryReplayManifest manifest, Map<String, byte[]> chunkEntries) {
-        if (!manifest.hasChunkData()) {
-            return ReplayChunkData.NONE;
-        }
-
         try {
-            if (chunkEntries.size() != manifest.chunkRegionEntryCount()) {
-                return ReplayChunkData.NONE;
-            }
-
-            int chunkEntryCount = 0;
-            List<String> coordinateDigests = new ArrayList<>();
-            for (String entryName : chunkEntries.keySet().stream().sorted(CHUNK_ENTRY_ORDER).toList()) {
-                if (!entryName.endsWith(BinaryReplayFormat.CHUNK_REGION_FILE_EXTENSION)) {
-                    return ReplayChunkData.NONE;
-                }
-                BinaryChunkRegionCodec.DecodedBinaryChunkRegion decodedRegion = chunkRegionCodec.decode(chunkEntries.get(entryName));
-                chunkEntryCount += decodedRegion.entries().size();
-                for (BinaryChunkRegionEntry entry : decodedRegion.entries()) {
-                    coordinateDigests.add(entryName + ':' + entry.localChunkX() + ':' + entry.localChunkZ());
-                }
-            }
-
-            if (chunkEntryCount != manifest.chunkEntryCount()) {
-                return ReplayChunkData.NONE;
-            }
-            String coordinateHash = crc32cHex(coordinateDigests);
-            if (manifest.chunkCoordinateHash() != null && !manifest.chunkCoordinateHash().equals(coordinateHash)) {
-                return ReplayChunkData.NONE;
-            }
-            return new ReplayChunkData(manifest.chunkMetadata(), chunkEntries);
+            return inspectChunkData(manifest, chunkEntries).hasChunkData()
+                    ? new ReplayChunkData(manifest.chunkMetadata(), chunkEntries)
+                    : ReplayChunkData.NONE;
         } catch (IOException | RuntimeException ex) {
             return ReplayChunkData.NONE;
         }
+    }
+
+    private InspectedChunkData inspectChunkData(BinaryReplayManifest manifest, Map<String, byte[]> chunkEntries) throws IOException {
+        if (!manifest.hasChunkData()) {
+            return InspectedChunkData.NONE;
+        }
+        if (chunkEntries.size() != manifest.chunkRegionEntryCount()) {
+            return InspectedChunkData.NONE;
+        }
+
+        int chunkEntryCount = 0;
+        long compressedChunkPayloadBytes = 0;
+        long decompressedChunkPayloadBytes = 0;
+        List<String> coordinateDigests = new ArrayList<>();
+        for (String entryName : chunkEntries.keySet().stream().sorted(CHUNK_ENTRY_ORDER).toList()) {
+            if (!entryName.endsWith(BinaryReplayFormat.CHUNK_REGION_FILE_EXTENSION)) {
+                return InspectedChunkData.NONE;
+            }
+
+            BinaryChunkRegionCodec.DecodedBinaryChunkRegion decodedRegion = chunkRegionCodec.decode(chunkEntries.get(entryName));
+            chunkEntryCount += decodedRegion.entries().size();
+            for (BinaryChunkRegionIndexEntry indexEntry : decodedRegion.indexEntries()) {
+                compressedChunkPayloadBytes += indexEntry.compressedLength();
+                decompressedChunkPayloadBytes += indexEntry.uncompressedLength();
+                coordinateDigests.add(entryName + ':' + indexEntry.localChunkX() + ':' + indexEntry.localChunkZ());
+            }
+        }
+
+        if (chunkEntryCount != manifest.chunkEntryCount()) {
+            return InspectedChunkData.NONE;
+        }
+        String coordinateHash = crc32cHex(coordinateDigests);
+        if (manifest.chunkCoordinateHash() != null && !manifest.chunkCoordinateHash().equals(coordinateHash)) {
+            return InspectedChunkData.NONE;
+        }
+
+        return new InspectedChunkData(
+                true,
+                manifest.chunkRegionEntryCount(),
+                chunkEntryCount,
+                compressedChunkPayloadBytes,
+                decompressedChunkPayloadBytes);
     }
 
     private BinaryReplayManifest parseManifest(byte[] manifestBytes) throws IOException {
@@ -543,6 +564,16 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
     }
 
     private record ArchiveEntries(byte[] manifestBytes, byte[] replayBytes, Map<String, byte[]> chunkEntries) {
+    }
+
+    private record InspectedChunkData(
+            boolean hasChunkData,
+            int chunkRegionEntryCount,
+            int chunkEntryCount,
+            long compressedChunkPayloadBytes,
+            long decompressedChunkPayloadBytes
+    ) {
+        private static final InspectedChunkData NONE = new InspectedChunkData(false, 0, 0, 0, 0);
     }
 
     private record ParsedPayload(List<EventSlice> events, List<String> stringTable, List<BinaryTickIndexEntry> tickIndex, boolean indexLoaded) {

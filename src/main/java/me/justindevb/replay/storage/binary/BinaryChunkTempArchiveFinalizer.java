@@ -82,7 +82,8 @@ public final class BinaryChunkTempArchiveFinalizer implements ChunkArchiveFinali
         BinaryReplayChunkMetadata metadata = BinaryReplayChunkMetadata.present(
                 regionEntries.size(),
                 chunkEntryCount,
-                crc32cHex(coordinateDigests));
+            crc32cHex(coordinateDigests),
+            artifacts.chunkPayloadFormat());
         return new ReplayChunkData(metadata, regionEntries);
     }
 

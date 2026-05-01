@@ -106,6 +106,7 @@ public class ReplaySession implements Listener, PacketListener {
         ReplaySession existingSession = ReplayRegistry.getSessionForViewer(viewer);
         ReplayRegistry.add(this);
         timeline = blockManager.enrichBlockBreakStageTimeline(timeline);
+        blockManager.configureChunkReplayContext(timeline, () -> tick);
         if (existingSession != null) {
             inventoryUI.transferSavedInventory(existingSession.getInventoryUI());
         } else {
