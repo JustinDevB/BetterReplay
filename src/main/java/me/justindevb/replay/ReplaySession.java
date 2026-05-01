@@ -152,8 +152,8 @@ public class ReplaySession implements Listener, PacketListener {
 
             if (viewer == null || !viewer.isOnline()) {
                 task.cancel();
-                recordedEntities.values().forEach(RecordedEntity::destroy);
-                recordedEntities.clear();
+                replayTask = null;
+                stop();
                 return;
             }
 
