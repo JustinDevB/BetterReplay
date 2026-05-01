@@ -136,6 +136,18 @@ Implementation tasks:
   - `chunkCoordinateHash` if retained
 - Decide default failure policy for corrupt region entries or chunk payloads.
 
+Frozen v1 decisions:
+
+- Finalized region entries use magic `BRRG`, version `1`, a 16-byte header, and 16-byte fixed-width index rows.
+- Region index rows are ordered lexicographically by `(localChunkX, localChunkZ)`.
+- Region `payloadOffset` values are relative to the start of the region payload area, not the file start.
+- Temp region files use magic `BRTC`, version `1`, an 8-byte file header, and 16-byte record headers followed by payload bytes.
+- Temp append records store CRC32C of the compressed payload bytes for tail corruption detection.
+- v1 chunk payload codec ID `0x01` is `LZ4_FRAME`.
+- Archive entry names use `chunks/<worldSegment>/r.<regionX>.<regionZ>.brregion`, where `worldSegment` percent-encodes UTF-8 bytes outside `[A-Za-z0-9._-]` using uppercase `%HH` escapes.
+- Manifest chunk metadata remains additive on top of `formatVersion = 1`; omitted fields default to `hasChunkData = false`, zero counts, and no coordinate hash.
+- Default corruption handling is soft-fail to entity-only playback for affected chunk overlays; strict hard-fail remains opt-in for later phases.
+
 Exit criteria:
 
 - A developer can implement the temp writer, finalizer, and playback reader without format guesses.

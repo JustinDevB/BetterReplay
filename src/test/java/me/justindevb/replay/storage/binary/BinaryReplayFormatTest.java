@@ -16,6 +16,7 @@ class BinaryReplayFormatTest {
         assertEquals("replay.bin", BinaryReplayFormat.REPLAY_ENTRY_NAME);
         assertEquals("chunks/", BinaryReplayFormat.RESERVED_CHUNKS_PREFIX);
         assertEquals("meta/", BinaryReplayFormat.RESERVED_META_PREFIX);
+        assertEquals(".brregion", BinaryReplayFormat.CHUNK_REGION_FILE_EXTENSION);
         assertEquals(1, BinaryReplayFormat.FORMAT_VERSION);
         assertEquals("CRC32C", BinaryReplayFormat.PAYLOAD_CHECKSUM_ALGORITHM);
         assertArrayEquals(new byte[] {'B', 'R', 'A', 'L'}, BinaryReplayFormat.appendLogMagicBytes());
@@ -23,6 +24,12 @@ class BinaryReplayFormatTest {
         assertArrayEquals(new byte[] {'B', 'R', 'P', 'L'}, BinaryReplayFormat.payloadMagicBytes());
         assertEquals("4252504c", BinaryReplayFormat.payloadMagicHex());
         assertEquals(8, BinaryReplayFormat.PAYLOAD_HEADER_SIZE);
+        assertArrayEquals(new byte[] {'B', 'R', 'R', 'G'}, BinaryReplayFormat.chunkRegionMagicBytes());
+        assertEquals(16, BinaryReplayFormat.CHUNK_REGION_HEADER_SIZE);
+        assertEquals(16, BinaryReplayFormat.CHUNK_REGION_INDEX_ENTRY_BYTES);
+        assertArrayEquals(new byte[] {'B', 'R', 'T', 'C'}, BinaryReplayFormat.chunkTempRegionMagicBytes());
+        assertEquals(8, BinaryReplayFormat.CHUNK_TEMP_REGION_HEADER_SIZE);
+        assertEquals(16, BinaryReplayFormat.CHUNK_TEMP_REGION_RECORD_HEADER_BYTES);
     }
 
     @Test
@@ -92,17 +99,42 @@ class BinaryReplayFormatTest {
         assertEquals("1.4.0", manifest.minimumViewerVersion());
         assertEquals(1_700_000_000_000L, manifest.recordingStartedAtEpochMillis());
         assertEquals("7d8f8f2b", manifest.payloadChecksum());
+        assertEquals(BinaryReplayChunkMetadata.none(), manifest.chunkMetadata());
+    }
+
+    @Test
+    void createsChunkEnabledManifestWithExplicitMetadata() {
+        BinaryReplayManifest manifest = BinaryReplayManifest.createV1(
+                "1.4.0",
+                "1.4.0",
+                1_700_000_000_000L,
+                "7d8f8f2b",
+                BinaryReplayChunkMetadata.present(2, 17, "00ff11aa"));
+
+        assertTrue(manifest.hasChunkData());
+        assertEquals(2, manifest.chunkRegionEntryCount());
+        assertEquals(17, manifest.chunkEntryCount());
+        assertEquals("00ff11aa", manifest.chunkCoordinateHash());
     }
 
     @Test
     void rejectsInvalidManifestFields() {
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(0, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C"));
+            () -> new BinaryReplayManifest(0, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 0, 0, null));
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(1, " ", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C"));
+            () -> new BinaryReplayManifest(1, " ", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 0, 0, null));
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 0, "7d8f8f2b", "CRC32C"));
+            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 0, "7d8f8f2b", "CRC32C", false, 0, 0, null));
         assertThrows(IllegalArgumentException.class,
-            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "NOT_HEX", "CRC32C"));
+            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "NOT_HEX", "CRC32C", false, 0, 0, null));
+        assertThrows(IllegalArgumentException.class,
+            () -> BinaryReplayChunkMetadata.present(0, 1, null));
+        assertThrows(IllegalArgumentException.class,
+            () -> new BinaryReplayManifest(1, "1.4.0", "1.4.0", 1_700_000_000_000L, "7d8f8f2b", "CRC32C", false, 1, 1, null));
+    }
+
+    @Test
+    void freezesDefaultChunkCorruptionPolicy() {
+        assertEquals(BinaryChunkFailurePolicy.SOFT_FAIL_ENTITY_ONLY, BinaryChunkFailurePolicy.defaultPolicy());
     }
 }

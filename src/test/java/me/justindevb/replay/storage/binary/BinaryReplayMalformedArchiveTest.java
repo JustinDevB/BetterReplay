@@ -155,9 +155,13 @@ class BinaryReplayMalformedArchiveTest {
                 manifest.formatVersion(),
                 manifest.recordedWithVersion(),
                 manifest.minimumViewerVersion(),
-            manifest.recordingStartedAtEpochMillis(),
+                manifest.recordingStartedAtEpochMillis(),
                 "%08x".formatted(crc32c.getValue()),
-                manifest.payloadChecksumAlgorithm());
+                manifest.payloadChecksumAlgorithm(),
+                manifest.hasChunkData(),
+                manifest.chunkRegionEntryCount(),
+                manifest.chunkEntryCount(),
+                manifest.chunkCoordinateHash());
         entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, GSON.toJson(updated).getBytes(StandardCharsets.UTF_8));
     }
 }

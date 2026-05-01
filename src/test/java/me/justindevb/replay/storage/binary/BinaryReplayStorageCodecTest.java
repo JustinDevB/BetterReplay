@@ -61,7 +61,11 @@ class BinaryReplayStorageCodecTest {
                 "9.0.0",
                 manifest.recordingStartedAtEpochMillis(),
                 manifest.payloadChecksum(),
-                manifest.payloadChecksumAlgorithm())).getBytes(StandardCharsets.UTF_8));
+            manifest.payloadChecksumAlgorithm(),
+            manifest.hasChunkData(),
+            manifest.chunkRegionEntryCount(),
+            manifest.chunkEntryCount(),
+            manifest.chunkCoordinateHash())).getBytes(StandardCharsets.UTF_8));
 
         byte[] mutatedArchive = writeArchive(entries);
 
@@ -188,9 +192,13 @@ class BinaryReplayStorageCodecTest {
                 manifest.formatVersion(),
                 manifest.recordedWithVersion(),
                 manifest.minimumViewerVersion(),
-            manifest.recordingStartedAtEpochMillis(),
+                manifest.recordingStartedAtEpochMillis(),
                 "%08x".formatted(crc32c.getValue()),
-                manifest.payloadChecksumAlgorithm());
+                manifest.payloadChecksumAlgorithm(),
+                manifest.hasChunkData(),
+                manifest.chunkRegionEntryCount(),
+                manifest.chunkEntryCount(),
+                manifest.chunkCoordinateHash());
         entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(updated).getBytes(StandardCharsets.UTF_8));
     }
 }
