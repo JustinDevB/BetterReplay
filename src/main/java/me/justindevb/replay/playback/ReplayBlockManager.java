@@ -3,6 +3,9 @@ package me.justindevb.replay.playback;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockBreakAnimation;
 import com.github.retrooper.packetevents.util.Vector3i;
+import me.justindevb.replay.chunk.ChunkCoordinate;
+import me.justindevb.replay.chunk.ReplayChunkData;
+import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 
@@ -18,18 +21,26 @@ import java.util.*;
  */
 public class ReplayBlockManager {
 
+    private static final int CHUNK_PLAYBACK_RADIUS = 1;
+
     private final Player viewer;
     private final Replay replay;
+    private final ReplayChunkPlaybackCache chunkPlaybackCache;
 
     public record BlockKey(String world, int x, int y, int z) {}
 
     private final Map<BlockKey, String> sessionBaseline = new HashMap<>();
+    private final Map<BlockKey, String> chunkBaseline = new HashMap<>();
+    private final Map<ChunkCoordinate, Set<BlockKey>> chunkBlocksByCoordinate = new HashMap<>();
+    private final Set<ChunkCoordinate> renderedChunks = new HashSet<>();
     private final Set<BlockKey> visibleBreakStages = new HashSet<>();
     private int blockBreakMutationEpoch = 0;
+    private ChunkCoordinate currentChunkCenter;
 
-    public ReplayBlockManager(Player viewer, Replay replay) {
+    public ReplayBlockManager(Player viewer, Replay replay, ReplayChunkData chunkData) {
         this.viewer = viewer;
         this.replay = replay;
+        this.chunkPlaybackCache = new ReplayChunkPlaybackCache(chunkData != null ? chunkData : ReplayChunkData.NONE);
     }
 
     public int getEpoch() {
@@ -242,6 +253,54 @@ public class ReplayBlockManager {
             String realBlockData = world.getBlockAt(key.x(), key.y(), key.z()).getBlockData().getAsString();
             sendBlockStateToViewer(world, key.x(), key.y(), key.z(), realBlockData);
         }
+
+        for (Map.Entry<BlockKey, String> entry : chunkBaseline.entrySet()) {
+            BlockKey key = entry.getKey();
+            World world = Bukkit.getWorld(key.world());
+            if (world == null) {
+                continue;
+            }
+            sendBlockStateToViewer(world, key.x(), key.y(), key.z(), entry.getValue());
+        }
+        chunkBaseline.clear();
+        chunkBlocksByCoordinate.clear();
+        renderedChunks.clear();
+        currentChunkCenter = null;
+    }
+
+    public void refreshVisibleChunkBaselines() {
+        if (viewer == null || !viewer.isOnline() || viewer.getWorld() == null) {
+            return;
+        }
+
+        Location location = viewer.getLocation();
+        ChunkCoordinate center = new ChunkCoordinate(
+                viewer.getWorld().getName(),
+                Math.floorDiv(location.getBlockX(), 16),
+                Math.floorDiv(location.getBlockZ(), 16));
+        if (center.equals(currentChunkCenter)) {
+            return;
+        }
+        currentChunkCenter = center;
+
+        Set<ChunkCoordinate> desiredChunks = new HashSet<>();
+        for (int deltaX = -CHUNK_PLAYBACK_RADIUS; deltaX <= CHUNK_PLAYBACK_RADIUS; deltaX++) {
+            for (int deltaZ = -CHUNK_PLAYBACK_RADIUS; deltaZ <= CHUNK_PLAYBACK_RADIUS; deltaZ++) {
+                desiredChunks.add(new ChunkCoordinate(center.worldName(), center.chunkX() + deltaX, center.chunkZ() + deltaZ));
+            }
+        }
+
+        Set<ChunkCoordinate> toUnload = new HashSet<>(renderedChunks);
+        toUnload.removeAll(desiredChunks);
+        for (ChunkCoordinate coordinate : toUnload) {
+            restoreChunkBaseline(coordinate);
+        }
+
+        Set<ChunkCoordinate> toLoad = new HashSet<>(desiredChunks);
+        toLoad.removeAll(renderedChunks);
+        for (ChunkCoordinate coordinate : toLoad) {
+            applyChunkBaseline(coordinate);
+        }
     }
 
     public void showGlobalBlockBreakStage(TimelineEvent.BlockBreakStage event) {
@@ -403,5 +462,68 @@ public class ReplayBlockManager {
 
     public static String asString(Object obj) {
         return obj instanceof String s ? String.valueOf(s) : null;
+    }
+
+    private void applyChunkBaseline(ChunkCoordinate coordinate) {
+        Optional<BinaryChunkPayloadCodec.DecodedChunkPayload> decodedChunk = chunkPlaybackCache.loadChunk(coordinate);
+        if (decodedChunk.isEmpty()) {
+            return;
+        }
+
+        World world = Bukkit.getWorld(coordinate.worldName());
+        if (world == null) {
+            return;
+        }
+
+        BinaryChunkPayloadCodec.DecodedChunkPayload payload = decodedChunk.get();
+        Set<BlockKey> changedBlocks = new HashSet<>();
+        short[] stateIndexes = payload.stateIndexes();
+        int height = payload.height();
+        int index = 0;
+        int baseX = coordinate.chunkX() << 4;
+        int baseZ = coordinate.chunkZ() << 4;
+        for (int yOffset = 0; yOffset < height; yOffset++) {
+            int y = payload.minY() + yOffset;
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
+                    String replayBlockData = payload.palette().get(stateIndexes[index++] & 0xFFFF);
+                    int worldX = baseX + x;
+                    int worldZ = baseZ + z;
+                    String liveBlockData = world.getBlockAt(worldX, y, worldZ).getBlockData().getAsString();
+                    if (replayBlockData.equals(liveBlockData)) {
+                        continue;
+                    }
+                    BlockKey key = new BlockKey(coordinate.worldName(), worldX, y, worldZ);
+                    chunkBaseline.putIfAbsent(key, liveBlockData);
+                    changedBlocks.add(key);
+                    sendBlockStateToViewer(world, worldX, y, worldZ, replayBlockData);
+                }
+            }
+        }
+
+        if (!changedBlocks.isEmpty()) {
+            chunkBlocksByCoordinate.put(coordinate, changedBlocks);
+            renderedChunks.add(coordinate);
+        }
+    }
+
+    private void restoreChunkBaseline(ChunkCoordinate coordinate) {
+        Set<BlockKey> changedBlocks = chunkBlocksByCoordinate.remove(coordinate);
+        if (changedBlocks == null || changedBlocks.isEmpty()) {
+            renderedChunks.remove(coordinate);
+            return;
+        }
+
+        for (BlockKey key : changedBlocks) {
+            String liveBlockData = chunkBaseline.remove(key);
+            if (liveBlockData == null) {
+                continue;
+            }
+            World world = Bukkit.getWorld(key.world());
+            if (world != null) {
+                sendBlockStateToViewer(world, key.x(), key.y(), key.z(), liveBlockData);
+            }
+        }
+        renderedChunks.remove(coordinate);
     }
 }

@@ -75,7 +75,7 @@ public class ReplaySession implements Listener, PacketListener {
         this.maxSpeed = Math.max(1.0D, replay.getConfig().getDouble("Playback.Max-Speed", 1.0D));
         this.playbackSpeed = 1.0D;
 
-        this.blockManager = new ReplayBlockManager(viewer, replay);
+        this.blockManager = new ReplayBlockManager(viewer, replay, chunkData);
         this.playbackEngine = new PlaybackEngine(viewer, replay, trackedEntityIds, deadEntities, recordedEntities, blockManager);
         this.inventoryUI = new ReplayInventoryUI(viewer, () -> recordedEntities, new ReplayInventoryUI.SessionControl() {
             @Override public void togglePause() {
@@ -138,6 +138,7 @@ public class ReplaySession implements Listener, PacketListener {
 
         replay.getFoliaLib().getScheduler().runTimer(task -> {
             if (paused) {
+                blockManager.refreshVisibleChunkBaselines();
                 sendActionBar();
                 return;
             }
@@ -155,6 +156,8 @@ public class ReplaySession implements Listener, PacketListener {
                 recordedEntities.clear();
                 return;
             }
+
+            blockManager.refreshVisibleChunkBaselines();
 
             accumulatedTicks += playbackSpeed;
             int tickGroupsToProcess = (int) accumulatedTicks;
