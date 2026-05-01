@@ -1,5 +1,6 @@
 package me.justindevb.replay.recording;
 
+import me.justindevb.replay.chunk.ChunkCoordinate;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -81,5 +82,24 @@ public class EntityTracker {
         }
 
         return false;
+    }
+
+    public Set<ChunkCoordinate> collectTrackedPlayerChunks() {
+        Set<ChunkCoordinate> trackedChunks = new HashSet<>();
+        for (UUID uuid : Set.copyOf(trackedPlayers)) {
+            Player tracked = Bukkit.getPlayer(uuid);
+            if (tracked == null || !tracked.isOnline()) {
+                continue;
+            }
+            Location location = tracked.getLocation();
+            if (location == null || location.getWorld() == null) {
+                continue;
+            }
+            trackedChunks.add(new ChunkCoordinate(
+                    location.getWorld().getName(),
+                    Math.floorDiv(location.getBlockX(), 16),
+                    Math.floorDiv(location.getBlockZ(), 16)));
+        }
+        return trackedChunks;
     }
 }

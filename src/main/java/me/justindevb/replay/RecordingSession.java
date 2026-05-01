@@ -3,6 +3,10 @@ package me.justindevb.replay;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListenerCommon;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import me.justindevb.replay.chunk.ChunkCaptureConfig;
+import me.justindevb.replay.chunk.ChunkCaptureCoordinator;
+import me.justindevb.replay.chunk.RadiusChunkInterestTracker;
+import me.justindevb.replay.chunk.WorldChunkBaselineCaptureService;
 import me.justindevb.replay.recording.EntityTracker;
 import me.justindevb.replay.recording.RecordingEventHandler;
 import me.justindevb.replay.recording.RecordingPacketHandler;
@@ -13,6 +17,8 @@ import me.justindevb.replay.storage.binary.BinaryReplayAppendLogHeader;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogRecovery;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogReader;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogWriter;
+import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
+import me.justindevb.replay.storage.binary.BinaryChunkTempRegionFileWriter;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
@@ -20,10 +26,13 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.HandlerList;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.configuration.file.FileConfiguration;
 
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import static me.justindevb.replay.util.io.ItemStackSerializer.serializeItem;
 
@@ -38,6 +47,7 @@ public class RecordingSession {
     private final Replay replay;
     private final String name;
     private final File appendLogFile;
+    private final File chunkCaptureDirectory;
     private final long recordingStartedAtEpochMillis;
 
     private final EntityTracker tracker;
@@ -46,6 +56,8 @@ public class RecordingSession {
     private final BinaryReplayAppendLogReader appendLogReader;
     private final RecordingEventHandler eventHandler;
     private final RecordingPacketHandler packetHandler;
+    private final ChunkCaptureConfig chunkCaptureConfig;
+    private final ChunkCaptureCoordinator chunkCaptureCoordinator;
     private PacketListenerCommon packetListenerHandle;
 
     private static final int INVENTORY_CHECK_INTERVAL = 5;
@@ -53,6 +65,7 @@ public class RecordingSession {
     private int tick = 0;
     private int durationTicks = -1;
     private boolean stopped = false;
+    private boolean chunkCaptureFailed = false;
 
     public RecordingSession(String name, File folder, Collection<Player> players, int durationSeconds) {
         this.name = name;
@@ -60,7 +73,10 @@ public class RecordingSession {
         this.replay = Replay.getInstance();
         this.recordingStartedAtEpochMillis = System.currentTimeMillis();
         this.appendLogFile = new File(folder, "replays/.tmp/" + name + ".appendlog");
+        this.chunkCaptureDirectory = new File(folder, "replays/.tmp/chunks/" + name);
         this.appendLogReader = new BinaryReplayAppendLogReader();
+        FileConfiguration config = replay.getConfig();
+        this.chunkCaptureConfig = config != null ? ChunkCaptureConfig.from(config) : ChunkCaptureConfig.disabled();
 
         try {
             this.appendLogWriter = new BinaryReplayAppendLogWriter(
@@ -68,6 +84,18 @@ public class RecordingSession {
                     new BinaryReplayAppendLogHeader(recordingStartedAtEpochMillis));
         } catch (IOException e) {
             throw new RuntimeException("Failed to create recording append-log for " + name, e);
+        }
+
+        try {
+            this.chunkCaptureCoordinator = chunkCaptureConfig.enabled()
+                    ? new ChunkCaptureCoordinator(
+                            chunkCaptureConfig,
+                            new RadiusChunkInterestTracker(),
+                            new WorldChunkBaselineCaptureService(new BinaryChunkPayloadCodec()),
+                            new BinaryChunkTempRegionFileWriter(chunkCaptureDirectory.toPath()))
+                    : null;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to create chunk capture workspace for " + name, e);
         }
 
         this.tracker = new EntityTracker(players);
@@ -137,6 +165,12 @@ public class RecordingSession {
             tickInventoryCheck();
         }
 
+        if (!chunkCaptureFailed
+                && chunkCaptureCoordinator != null
+                && tick % chunkCaptureConfig.captureIntervalTicks() == 0) {
+            captureChunkBaselines();
+        }
+
         if ((tick + 1) % APPEND_LOG_FLUSH_INTERVAL_TICKS == 0) {
             flushAppendLog();
         }
@@ -180,9 +214,11 @@ public class RecordingSession {
         tracker.clearPlayers();
 
         closeAppendLog();
+        closeChunkCapture();
 
         if (!save) {
             deleteAppendLog();
+            deleteChunkCaptureDirectory();
             return;
         }
 
@@ -263,7 +299,7 @@ public class RecordingSession {
         try {
             appendLogWriter.close();
         } catch (IOException e) {
-            replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to close recording temp log: " + name, e);
+            resolveLogger().log(Level.SEVERE, "Failed to close recording temp log: " + name, e);
         }
     }
 
@@ -271,5 +307,49 @@ public class RecordingSession {
         if (appendLogFile.exists()) {
             appendLogFile.delete();
         }
+    }
+
+    private void captureChunkBaselines() {
+        try {
+            chunkCaptureCoordinator.captureTrackedChunks(tracker.collectTrackedPlayerChunks());
+        } catch (IOException | RuntimeException e) {
+            chunkCaptureFailed = true;
+            resolveLogger().log(Level.SEVERE, "Failed to capture chunk baselines for recording: " + name, e);
+            closeChunkCapture();
+        }
+    }
+
+    private void closeChunkCapture() {
+        if (chunkCaptureCoordinator == null) {
+            return;
+        }
+        try {
+            chunkCaptureCoordinator.close();
+        } catch (IOException e) {
+            resolveLogger().log(Level.SEVERE, "Failed to close chunk capture temp files: " + name, e);
+        }
+    }
+
+    private void deleteChunkCaptureDirectory() {
+        if (!chunkCaptureDirectory.exists()) {
+            return;
+        }
+        try (java.util.stream.Stream<java.nio.file.Path> walk = java.nio.file.Files.walk(chunkCaptureDirectory.toPath())) {
+            walk.sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            java.nio.file.Files.deleteIfExists(path);
+                        } catch (IOException e) {
+                            resolveLogger().log(Level.WARNING, "Failed to delete chunk capture temp path: " + path, e);
+                        }
+                    });
+        } catch (IOException e) {
+            resolveLogger().log(Level.WARNING, "Failed to enumerate chunk capture temp directory: " + chunkCaptureDirectory, e);
+        }
+    }
+
+    private Logger resolveLogger() {
+        Logger logger = replay.getLogger();
+        return logger != null ? logger : Logger.getLogger(RecordingSession.class.getName());
     }
 }
