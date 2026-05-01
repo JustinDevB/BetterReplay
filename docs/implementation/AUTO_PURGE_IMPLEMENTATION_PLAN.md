@@ -2,7 +2,7 @@
 
 This document converts the retention and protected-recording design into an implementation sequence for BetterReplay.
 
-It assumes the higher-level decisions already captured in `AUTO_PURGE_RETENTION_PLAN.md` and resolves the remaining implementation choices needed before coding.
+It assumes the higher-level decisions already captured in [AUTO_PURGE_RETENTION_PLAN.md](../planning/AUTO_PURGE_RETENTION_PLAN.md) and resolves the remaining implementation choices needed before coding.
 
 ## Goal
 

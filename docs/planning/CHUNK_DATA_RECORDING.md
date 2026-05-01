@@ -35,6 +35,8 @@ This plan uses those reserved prefixes for region-grouped chunk storage rather t
 
 This document describes how chunk capture should extend that baseline safely.
 
+For the concrete delivery sequence, see [CHUNK_DATA_RECORDING_IMPLEMENTATION_PLAN.md](../implementation/CHUNK_DATA_RECORDING_IMPLEMENTATION_PLAN.md).
+
 ## Goals
 
 - Add a config option to enable or disable chunk data recording.
