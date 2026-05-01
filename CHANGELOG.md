@@ -40,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All commands routed through `ReplayManager` API (#25)
 - `RecordingStopEvent` now fires synchronously to fix async AntiCheatReplay compatibility
 - All `printStackTrace()` calls replaced with proper logger calls
-- CI actions bumped to v4 for Node.js 24 compatibility
+- CI GitHub Actions upgraded to Node.js 24-ready major versions (`actions/checkout@v6`, `actions/setup-java@v5`, `actions/upload-artifact@v7`)
 - Config settings ownership moved out of `Replay` into a dedicated comment-preserving config manager
 - Replay sessions now always start at `1.0x` speed; `Playback.Max-Speed` is enforced to a minimum of `1.0`
 - Generated config output now inserts blank lines between root-level keys/sections for readability
