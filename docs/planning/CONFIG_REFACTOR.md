@@ -38,7 +38,7 @@ private void initGeneralConfigSettings() {
 | `Replay.java` | `General.Storage-Type` | *(none — relies on addDefault)* |
 | `FileReplayStorage.java` | `General.Compress-Replays` | `true` |
 | `MySQLReplayStorage.java` | `General.Compress-Replays` | `true` |
-| `ReplayCommand.java` | `list-page-size` | `10` |
+| `ReplayCommand.java` | `List.Page-Size` | `10` |
 
 ### Problems
 

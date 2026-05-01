@@ -1,6 +1,7 @@
 package me.justindevb.replay.util;
 
 import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.storage.ReplayDeleteResult;
 import me.justindevb.replay.storage.ReplayStorage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,11 +83,11 @@ class ReplayObjectTest {
     @Test
     void delete_delegatesToStorage() {
         when(storage.deleteReplay("test-replay"))
-                .thenReturn(CompletableFuture.completedFuture(true));
+            .thenReturn(CompletableFuture.completedFuture(ReplayDeleteResult.DELETED));
 
-        boolean result = replayObject.delete().join();
+        ReplayDeleteResult result = replayObject.delete().join();
 
-        assertTrue(result);
+        assertEquals(ReplayDeleteResult.DELETED, result);
         verify(storage).deleteReplay("test-replay");
     }
 

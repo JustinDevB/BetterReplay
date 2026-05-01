@@ -2,10 +2,8 @@ package me.justindevb.replay.storage;
 
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.api.ReplayExportQuery;
-import me.justindevb.replay.storage.ReplayInspection;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
-import org.bukkit.configuration.file.FileConfiguration;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -20,6 +18,7 @@ import org.mockito.quality.Strictness;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
@@ -150,14 +149,81 @@ class FileReplayStorageTest {
     void deleteReplay_existing_returnsTrue() throws ExecutionException, InterruptedException {
         storage.saveReplay("todelete", sampleTimeline()).get();
 
-        assertTrue(storage.deleteReplay("todelete").get());
+        assertEquals(ReplayDeleteResult.DELETED, storage.deleteReplay("todelete").get());
 
         assertNull(storage.loadReplay("todelete").get());
     }
 
     @Test
     void deleteReplay_nonExistent_returnsFalse() throws ExecutionException, InterruptedException {
-        assertFalse(storage.deleteReplay("nope").get());
+        assertEquals(ReplayDeleteResult.NOT_FOUND, storage.deleteReplay("nope").get());
+    }
+
+    @Test
+    void protectReplay_existing_writesMetadataFile() throws Exception {
+        storage.saveReplay("protected-demo", sampleTimeline()).get();
+
+        ReplayProtectionResult result = storage.protectReplay("protected-demo", Instant.parse("2026-04-29T17:00:00Z"), "console").get();
+
+        assertEquals(ReplayProtectionResult.UPDATED, result);
+        File metadataFile = new File(tempDir, "replays-meta/protected-demo.json");
+        assertTrue(metadataFile.isFile());
+        String metadataJson = Files.readString(metadataFile.toPath());
+        assertTrue(metadataJson.contains("\"protectedFromDeletion\": true"));
+        assertTrue(metadataJson.contains("\"protectedAt\": \"2026-04-29T17:00:00Z\""));
+        assertTrue(metadataJson.contains("\"protectedBy\": \"console\""));
+    }
+
+    @Test
+    void deleteReplay_protected_returnsProtected() throws Exception {
+        storage.saveReplay("protected-delete", sampleTimeline()).get();
+        storage.protectReplay("protected-delete", Instant.parse("2026-04-29T17:00:00Z"), "console").get();
+
+        assertEquals(ReplayDeleteResult.PROTECTED, storage.deleteReplay("protected-delete").get());
+        assertNotNull(storage.loadReplay("protected-delete").get());
+    }
+
+    @Test
+    void unprotectReplay_preservesAuditFields() throws Exception {
+        storage.saveReplay("preserve-audit", sampleTimeline()).get();
+        storage.protectReplay("preserve-audit", Instant.parse("2026-04-29T17:00:00Z"), "console").get();
+
+        ReplayProtectionResult result = storage.unprotectReplay("preserve-audit").get();
+        ReplaySummary summary = storage.listReplaySummaries().get().stream()
+                .filter(item -> item.name().equals("preserve-audit"))
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(ReplayProtectionResult.UPDATED, result);
+        assertFalse(summary.protectedFromDeletion());
+        assertEquals(Instant.parse("2026-04-29T17:00:00Z"), summary.protectedAt());
+        assertEquals("console", summary.protectedBy());
+    }
+
+    @Test
+    void deleteReplay_removesMetadataAfterReplayDeletion() throws Exception {
+        storage.saveReplay("delete-metadata", sampleTimeline()).get();
+        storage.protectReplay("delete-metadata", Instant.parse("2026-04-29T17:00:00Z"), "console").get();
+        storage.unprotectReplay("delete-metadata").get();
+
+        assertEquals(ReplayDeleteResult.DELETED, storage.deleteReplay("delete-metadata").get());
+        assertFalse(new File(tempDir, "replays-meta/delete-metadata.json").exists());
+    }
+
+    @Test
+    void listReplaySummaries_includesProtectionFields() throws Exception {
+        storage.saveReplay("summary-protected", sampleTimeline()).get();
+        storage.protectReplay("summary-protected", Instant.parse("2026-04-29T17:00:00Z"), "console").get();
+
+        ReplaySummary summary = storage.listReplaySummaries().get().stream()
+                .filter(item -> item.name().equals("summary-protected"))
+                .findFirst()
+                .orElseThrow();
+
+        assertTrue(summary.protectedFromDeletion());
+        assertEquals(Instant.parse("2026-04-29T17:00:00Z"), summary.protectedAt());
+        assertEquals("console", summary.protectedBy());
+        assertEquals(ReplayStorageType.FILE, summary.storageType());
     }
 
     // ── replayExists ──────────────────────────────────────────

@@ -131,7 +131,7 @@ class FileReplayStorageEdgeCaseTest {
 
         @Test
         void deleteReplay_nonExistent_returnsFalse() throws Exception {
-            assertFalse(storage.deleteReplay("does-not-exist").get());
+            assertEquals(ReplayDeleteResult.NOT_FOUND, storage.deleteReplay("does-not-exist").get());
         }
 
         @Test
@@ -164,6 +164,20 @@ class FileReplayStorageEdgeCaseTest {
             List<TimelineEvent> loaded = storage.loadReplay("overwrite-test").get();
             assertNotNull(loaded);
             assertEquals(2, loaded.size());
+        }
+
+        @Test
+        void listReplaySummaries_withoutMetadata_defaultsToUnprotected() throws Exception {
+            storage.saveReplay("summary-default", List.of(new TimelineEvent.PlayerQuit(0, "u1"))).get();
+
+            ReplaySummary summary = storage.listReplaySummaries().get().stream()
+                    .filter(item -> item.name().equals("summary-default"))
+                    .findFirst()
+                    .orElseThrow();
+
+            assertFalse(summary.protectedFromDeletion());
+            assertNull(summary.protectedAt());
+            assertNull(summary.protectedBy());
         }
     }
 

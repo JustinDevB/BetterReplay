@@ -10,8 +10,10 @@ import me.justindevb.replay.util.io.ReplayCompressor;
 import javax.sql.DataSource;
 import java.io.*;
 import java.sql.*;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 public class MySQLReplayStorage implements ReplayStorage {
@@ -63,16 +65,47 @@ public class MySQLReplayStorage implements ReplayStorage {
                     CREATE TABLE IF NOT EXISTS replays (
                         name VARCHAR(64) PRIMARY KEY,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        is_protected BOOLEAN NOT NULL DEFAULT FALSE,
+                        protected_at TIMESTAMP NULL,
+                        protected_by VARCHAR(64) NULL,
                         data LONGBLOB NOT NULL
                     )
                 """);
 
+                ensureColumnExists(conn, stmt, "is_protected", "BOOLEAN NOT NULL DEFAULT FALSE");
+                ensureColumnExists(conn, stmt, "protected_at", "TIMESTAMP NULL");
+                ensureColumnExists(conn, stmt, "protected_by", "VARCHAR(64) NULL");
                 stmt.executeUpdate("ALTER TABLE replays MODIFY COLUMN data LONGBLOB NOT NULL");
 
             } catch (SQLException e) {
                 replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to init replay table", e);
             }
         });
+    }
+
+    private void ensureColumnExists(Connection conn, Statement stmt, String columnName, String definition) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement("SHOW COLUMNS FROM replays LIKE ?")) {
+            ps.setString(1, columnName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    stmt.executeUpdate("ALTER TABLE replays ADD COLUMN " + columnName + " " + definition);
+                }
+            }
+        }
+    }
+
+    private Optional<Boolean> getProtectionState(Connection conn, String name) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+                "SELECT is_protected FROM replays WHERE name=? LIMIT 1"
+        )) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(rs.getBoolean("is_protected"));
+            }
+        }
     }
 
 
@@ -151,19 +184,110 @@ public class MySQLReplayStorage implements ReplayStorage {
 
 
     @Override
-    public CompletableFuture<Boolean> deleteReplay(String name) {
+    public CompletableFuture<ReplayDeleteResult> deleteReplay(String name) {
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
                          "DELETE FROM replays WHERE name=?"
                  )) {
 
+                Optional<Boolean> protectionState = getProtectionState(conn, name);
+                if (protectionState.isEmpty()) {
+                    return ReplayDeleteResult.NOT_FOUND;
+                }
+                if (protectionState.get()) {
+                    return ReplayDeleteResult.PROTECTED;
+                }
+
                 ps.setString(1, name);
                 int affected = ps.executeUpdate();
-                return affected > 0;
+                return affected > 0 ? ReplayDeleteResult.DELETED : ReplayDeleteResult.NOT_FOUND;
 
             } catch (Exception e) {
                 throw new RuntimeException("Failed to delete replay: " + name, e);
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<ReplaySummary>> listReplaySummaries() {
+        return CompletableFuture.supplyAsync(() -> {
+            List<ReplaySummary> summaries = new ArrayList<>();
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement ps = conn.prepareStatement(
+                 "SELECT name, created_at, OCTET_LENGTH(data) AS data_size, is_protected, protected_at, protected_by "
+                     + "FROM replays ORDER BY created_at DESC"
+                 );
+                 ResultSet rs = ps.executeQuery()) {
+
+                while (rs.next()) {
+                    Timestamp createdAt = rs.getTimestamp("created_at");
+                Timestamp protectedAt = rs.getTimestamp("protected_at");
+                    summaries.add(new ReplaySummary(
+                            rs.getString("name"),
+                            createdAt != null ? createdAt.toInstant() : Instant.EPOCH,
+                            rs.getLong("data_size"),
+                    rs.getBoolean("is_protected"),
+                    protectedAt != null ? protectedAt.toInstant() : null,
+                    rs.getString("protected_by"),
+                            ReplayStorageType.MYSQL));
+                }
+                return summaries;
+
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to list replay summaries", e);
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<ReplayProtectionResult> protectReplay(String name, Instant protectedAt, String protectedBy) {
+        return CompletableFuture.supplyAsync(() -> {
+            try (Connection conn = dataSource.getConnection()) {
+                Optional<Boolean> protectionState = getProtectionState(conn, name);
+                if (protectionState.isEmpty()) {
+                    return ReplayProtectionResult.NOT_FOUND;
+                }
+                if (protectionState.get()) {
+                    return ReplayProtectionResult.ALREADY_PROTECTED;
+                }
+
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE replays SET is_protected = TRUE, protected_at = ?, protected_by = ? WHERE name=?"
+                )) {
+                    ps.setTimestamp(1, Timestamp.from(protectedAt));
+                    ps.setString(2, protectedBy);
+                    ps.setString(3, name);
+                    ps.executeUpdate();
+                    return ReplayProtectionResult.UPDATED;
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to protect replay: " + name, e);
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<ReplayProtectionResult> unprotectReplay(String name) {
+        return CompletableFuture.supplyAsync(() -> {
+            try (Connection conn = dataSource.getConnection()) {
+                Optional<Boolean> protectionState = getProtectionState(conn, name);
+                if (protectionState.isEmpty()) {
+                    return ReplayProtectionResult.NOT_FOUND;
+                }
+                if (!protectionState.get()) {
+                    return ReplayProtectionResult.ALREADY_UNPROTECTED;
+                }
+
+                try (PreparedStatement ps = conn.prepareStatement(
+                        "UPDATE replays SET is_protected = FALSE WHERE name=?"
+                )) {
+                    ps.setString(1, name);
+                    ps.executeUpdate();
+                    return ReplayProtectionResult.UPDATED;
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to unprotect replay: " + name, e);
             }
         });
     }

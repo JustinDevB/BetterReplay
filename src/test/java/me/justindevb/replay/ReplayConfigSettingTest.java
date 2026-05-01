@@ -40,12 +40,22 @@ class ReplayConfigSettingTest {
 
     @Test
     void getInt_usesExpectedKeyAndDefault() {
-        when(config.getInt("list-page-size", 10)).thenReturn(25);
+        when(config.getInt("List.Page-Size", 10)).thenReturn(25);
 
         int value = ReplayConfigSetting.LIST_PAGE_SIZE.getInt(config);
 
         assertEquals(25, value);
-        verify(config).getInt("list-page-size", 10);
+        verify(config).getInt("List.Page-Size", 10);
+    }
+
+    @Test
+    void protectedReplayHighlightColor_usesExpectedKeyAndDefault() {
+        when(config.getString("List.Protected-Highlight-Color", "&6")).thenReturn("&c");
+
+        String value = ReplayConfigSetting.LIST_PROTECTED_HIGHLIGHT_COLOR.getString(config);
+
+        assertEquals("&c", value);
+        verify(config).getString("List.Protected-Highlight-Color", "&6");
     }
 
     @Test

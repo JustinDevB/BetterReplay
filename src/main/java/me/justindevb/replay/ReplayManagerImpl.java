@@ -2,12 +2,16 @@ package me.justindevb.replay;
 
 import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.api.ReplayManager;
+import me.justindevb.replay.storage.ReplayDeleteResult;
+import me.justindevb.replay.storage.ReplayProtectionResult;
+import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.util.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.io.File;
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -133,25 +137,75 @@ public class ReplayManagerImpl implements ReplayManager {
     }
 
     @Override
-    public CompletableFuture<Boolean> deleteSavedReplay(String name) {
+    public CompletableFuture<List<ReplaySummary>> listSavedReplaySummaries() {
+        ReplayStorage storage = replay.getReplayStorage();
+        if (storage == null) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return storage.listReplaySummaries();
+    }
+
+    @Override
+    public CompletableFuture<ReplayDeleteResult> deleteSavedReplay(String name) {
         if (name == null || name.isBlank()) {
-            return CompletableFuture.completedFuture(false);
+            return CompletableFuture.completedFuture(ReplayDeleteResult.NOT_FOUND);
         }
 
         ReplayStorage storage = replay.getReplayStorage();
         if (storage == null) {
-            return CompletableFuture.completedFuture(false);
+            return CompletableFuture.completedFuture(ReplayDeleteResult.NOT_FOUND);
         }
 
         return storage.deleteReplay(name)
-                .thenCompose(deleted -> storage.listReplays()
-                        .thenApply(names -> {
-                            replay.getReplayCache().setReplays(names);
-                            return deleted;
-                        }))
+                .thenCompose(result -> {
+                    if (result != ReplayDeleteResult.DELETED) {
+                        return CompletableFuture.completedFuture(result);
+                    }
+                    return storage.listReplays()
+                            .thenApply(names -> {
+                                replay.getReplayCache().setReplays(names);
+                                return result;
+                            });
+                })
                 .exceptionally(ex -> {
                     replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to delete replay: " + name, ex);
-                    return false;
+                    return ReplayDeleteResult.NOT_FOUND;
+                });
+    }
+
+    @Override
+    public CompletableFuture<ReplayProtectionResult> protectSavedReplay(String name, String protectedBy) {
+        if (name == null || name.isBlank() || protectedBy == null || protectedBy.isBlank()) {
+            return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
+        }
+
+        ReplayStorage storage = replay.getReplayStorage();
+        if (storage == null) {
+            return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
+        }
+
+        return storage.protectReplay(name, Instant.now(), protectedBy)
+                .exceptionally(ex -> {
+                    replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to protect replay: " + name, ex);
+                    return ReplayProtectionResult.NOT_FOUND;
+                });
+    }
+
+    @Override
+    public CompletableFuture<ReplayProtectionResult> unprotectSavedReplay(String name) {
+        if (name == null || name.isBlank()) {
+            return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
+        }
+
+        ReplayStorage storage = replay.getReplayStorage();
+        if (storage == null) {
+            return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
+        }
+
+        return storage.unprotectReplay(name)
+                .exceptionally(ex -> {
+                    replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to unprotect replay: " + name, ex);
+                    return ReplayProtectionResult.NOT_FOUND;
                 });
     }
 

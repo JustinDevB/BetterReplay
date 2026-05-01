@@ -1,6 +1,9 @@
 package me.justindevb.replay.api;
 
 import me.justindevb.replay.ReplaySession;
+import me.justindevb.replay.storage.ReplayDeleteResult;
+import me.justindevb.replay.storage.ReplayProtectionResult;
+import me.justindevb.replay.storage.ReplaySummary;
 import org.bukkit.entity.Player;
 
 import java.io.File;
@@ -62,12 +65,36 @@ public interface ReplayManager {
     CompletableFuture<List<String>> listSavedReplays();
 
     /**
+     * List metadata for all saved replays.
+     *
+     * @return replay summaries for administrative and retention flows
+     */
+    CompletableFuture<List<ReplaySummary>> listSavedReplaySummaries();
+
+    /**
      * Delete a saved replay.
      *
      * @param name replay name
-     * @return true if deleted, false if replay did not exist or delete failed
+     * @return explicit delete result
      */
-    CompletableFuture<Boolean> deleteSavedReplay(String name);
+    CompletableFuture<ReplayDeleteResult> deleteSavedReplay(String name);
+
+    /**
+     * Protect a saved replay from deletion.
+     *
+     * @param name replay name
+     * @param protectedBy actor who enabled protection
+     * @return explicit protection update result
+     */
+    CompletableFuture<ReplayProtectionResult> protectSavedReplay(String name, String protectedBy);
+
+    /**
+     * Remove deletion protection from a saved replay.
+     *
+     * @param name replay name
+     * @return explicit protection update result
+     */
+    CompletableFuture<ReplayProtectionResult> unprotectSavedReplay(String name);
 
     /**
      * Get a cached snapshot of saved replay names for synchronous access

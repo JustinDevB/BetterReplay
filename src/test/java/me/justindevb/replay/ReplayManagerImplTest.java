@@ -1,7 +1,11 @@
 package me.justindevb.replay;
 
 import me.justindevb.replay.api.ReplayExportQuery;
+import me.justindevb.replay.storage.ReplayDeleteResult;
+import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplayStorage;
+import me.justindevb.replay.storage.ReplayStorageType;
+import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.util.ReplayCache;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.BeforeEach;
@@ -101,34 +105,74 @@ class ReplayManagerImplTest {
     }
 
     @Test
-    void deleteSavedReplay_null_returnsFalse() {
-        boolean result = manager.deleteSavedReplay(null).join();
-        assertFalse(result);
+    void listSavedReplaySummaries_delegatesToStorage() {
+        ReplaySummary summary = new ReplaySummary("r1", java.time.Instant.now(), 1L, false, null, null, ReplayStorageType.FILE);
+        when(storage.listReplaySummaries()).thenReturn(CompletableFuture.completedFuture(List.of(summary)));
+
+        List<ReplaySummary> result = manager.listSavedReplaySummaries().join();
+
+        assertEquals(List.of(summary), result);
     }
 
     @Test
-    void deleteSavedReplay_blank_returnsFalse() {
-        boolean result = manager.deleteSavedReplay("  ").join();
-        assertFalse(result);
+    void deleteSavedReplay_null_returnsNotFound() {
+        ReplayDeleteResult result = manager.deleteSavedReplay(null).join();
+        assertEquals(ReplayDeleteResult.NOT_FOUND, result);
     }
 
     @Test
-    void deleteSavedReplay_nullStorage_returnsFalse() {
+    void deleteSavedReplay_blank_returnsNotFound() {
+        ReplayDeleteResult result = manager.deleteSavedReplay("  ").join();
+        assertEquals(ReplayDeleteResult.NOT_FOUND, result);
+    }
+
+    @Test
+    void deleteSavedReplay_nullStorage_returnsNotFound() {
         when(plugin.getReplayStorage()).thenReturn(null);
         manager = new ReplayManagerImpl(plugin, recorderManager);
 
-        boolean result = manager.deleteSavedReplay("test").join();
-        assertFalse(result);
+        ReplayDeleteResult result = manager.deleteSavedReplay("test").join();
+        assertEquals(ReplayDeleteResult.NOT_FOUND, result);
     }
 
     @Test
     void deleteSavedReplay_existing_deletesAndRefreshesCache() {
-        when(storage.deleteReplay("test")).thenReturn(CompletableFuture.completedFuture(true));
+        when(storage.deleteReplay("test")).thenReturn(CompletableFuture.completedFuture(ReplayDeleteResult.DELETED));
         when(storage.listReplays()).thenReturn(CompletableFuture.completedFuture(List.of()));
 
-        boolean result = manager.deleteSavedReplay("test").join();
-        assertTrue(result);
+        ReplayDeleteResult result = manager.deleteSavedReplay("test").join();
+        assertEquals(ReplayDeleteResult.DELETED, result);
         verify(replayCache).setReplays(List.of());
+    }
+
+    @Test
+    void deleteSavedReplay_protected_doesNotRefreshCache() {
+        when(storage.deleteReplay("test")).thenReturn(CompletableFuture.completedFuture(ReplayDeleteResult.PROTECTED));
+
+        ReplayDeleteResult result = manager.deleteSavedReplay("test").join();
+
+        assertEquals(ReplayDeleteResult.PROTECTED, result);
+        verify(replayCache, never()).setReplays(anyList());
+    }
+
+    @Test
+    void protectSavedReplay_delegatesToStorage() {
+        when(storage.protectReplay(eq("test"), any(), eq("console")))
+                .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+
+        ReplayProtectionResult result = manager.protectSavedReplay("test", "console").join();
+
+        assertEquals(ReplayProtectionResult.UPDATED, result);
+    }
+
+    @Test
+    void unprotectSavedReplay_delegatesToStorage() {
+        when(storage.unprotectReplay("test"))
+                .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+
+        ReplayProtectionResult result = manager.unprotectSavedReplay("test").join();
+
+        assertEquals(ReplayProtectionResult.UPDATED, result);
     }
 
     @Test

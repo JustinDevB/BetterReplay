@@ -40,6 +40,7 @@ class ReplayConfigManagerTest {
                     user: username
                     password: password
                 list-page-size: 10
+                list-protected-highlight-color: '&c'
                 """, StandardCharsets.UTF_8);
 
         when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
@@ -51,15 +52,25 @@ class ReplayConfigManagerTest {
         String nl = System.lineSeparator();
         assertTrue(migrated.startsWith("# ==========================================="));
         assertTrue(migrated.contains("# Internal config migration version. Do not edit unless instructed."));
-        assertTrue(migrated.contains("Config-Version: 2"));
+        assertTrue(migrated.contains("Config-Version: 3"));
         assertFalse(migrated.contains("Compress-Replays:"));
         assertTrue(migrated.contains("# Check for plugin updates on startup."));
+        assertTrue(migrated.contains("# Enable automatic deletion of old replays."));
+        assertTrue(migrated.contains("Retention:"));
+        assertTrue(migrated.contains("List:"));
+        assertTrue(migrated.contains("Page-Size: 10"));
+        assertTrue(migrated.contains("Protected-Highlight-Color:"));
+        assertTrue(migrated.contains("&c"));
+        assertFalse(migrated.contains("list-page-size:"));
+        assertFalse(migrated.contains("list-protected-highlight-color:"));
+        assertFalse(migrated.contains("list:"));
+        assertFalse(migrated.contains("list.protected-highlight-color"));
         assertFalse(migrated.contains("Enable-Benchmark-Command:"));
         assertTrue(migrated.contains("# Number of replay names shown per /replay list page."));
         assertTrue(migrated.indexOf("# MySQL host name or IP address.") < migrated.indexOf("host:"));
         assertTrue(migrated.indexOf("# Check for plugin updates on startup.") < migrated.indexOf("Check-Update:"));
-        assertTrue(migrated.indexOf("Config-Version: 2") < migrated.indexOf("General:"));
-        assertTrue(migrated.contains("Config-Version: 2" + nl + nl + "General:"));
+        assertTrue(migrated.indexOf("Config-Version: 3") < migrated.indexOf("General:"));
+        assertTrue(migrated.contains("Config-Version: 3" + nl + nl + "General:"));
         assertTrue(migrated.indexOf("password: password") < migrated.indexOf("# Number of replay names shown per /replay list page."));
 
         verify(plugin).reloadConfig();
@@ -80,6 +91,7 @@ class ReplayConfigManagerTest {
                     user: username
                     password: password
                 list-page-size: 10
+                list-protected-highlight-color: '&c'
                 """, StandardCharsets.UTF_8);
 
         when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
@@ -95,9 +107,12 @@ class ReplayConfigManagerTest {
         assertEquals(1, occurrencesOf(migrated, checkUpdateComment));
         assertEquals(1, occurrencesOf(migrated, "#         BetterReplay Configuration"));
         assertFalse(migrated.contains("Compress-Replays:"));
-        assertTrue(migrated.indexOf("Config-Version: 2") < migrated.indexOf("General:"));
-        assertTrue(migrated.contains("Config-Version: 2" + nl + nl + "General:"));
-        assertFalse(migrated.contains("Config-Version: 2" + nl + nl + nl + "General:"));
+        assertFalse(migrated.contains("list-page-size:"));
+        assertFalse(migrated.contains("list-protected-highlight-color:"));
+        assertFalse(migrated.contains("list:"));
+        assertTrue(migrated.indexOf("Config-Version: 3") < migrated.indexOf("General:"));
+        assertTrue(migrated.contains("Config-Version: 3" + nl + nl + "General:"));
+        assertFalse(migrated.contains("Config-Version: 3" + nl + nl + nl + "General:"));
     }
 
     @Test
@@ -115,6 +130,27 @@ class ReplayConfigManagerTest {
 
         String migrated = Files.readString(configFile, StandardCharsets.UTF_8);
         assertTrue(migrated.contains("Max-Speed: 1.0"));
+    }
+
+    @Test
+    void initialize_migratesLowercaseGroupedListConfig_withoutLeavingEmptyLegacyRoot() throws IOException {
+        Path configFile = tempDir.resolve("config.yml");
+        Files.writeString(configFile, """
+                list:
+                  page-size: 11
+                  protected-highlight-color: '&6'
+                """, StandardCharsets.UTF_8);
+
+        when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
+        when(plugin.getName()).thenReturn("BetterReplay");
+
+        new ReplayConfigManager(plugin).initialize();
+
+        String migrated = Files.readString(configFile, StandardCharsets.UTF_8);
+        assertFalse(migrated.contains("list:" + System.lineSeparator()));
+        assertTrue(migrated.contains("List:"));
+        assertTrue(migrated.contains("Page-Size: 11"));
+        assertTrue(migrated.contains("Protected-Highlight-Color:"));
     }
 
     private int occurrencesOf(String haystack, String needle) {
