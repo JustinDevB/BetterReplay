@@ -5,6 +5,7 @@ import com.github.retrooper.packetevents.event.PacketListenerCommon;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
 import me.justindevb.replay.chunk.ChunkCaptureConfig;
 import me.justindevb.replay.chunk.ChunkCaptureCoordinator;
+import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import me.justindevb.replay.chunk.RadiusChunkInterestTracker;
 import me.justindevb.replay.chunk.WorldChunkBaselineCaptureService;
 import me.justindevb.replay.recording.EntityTracker;
@@ -214,7 +215,7 @@ public class RecordingSession {
         tracker.clearPlayers();
 
         closeAppendLog();
-        closeChunkCapture();
+        ChunkRecordingArtifacts chunkArtifacts = closeChunkCapture();
 
         if (!save) {
             deleteAppendLog();
@@ -233,17 +234,17 @@ public class RecordingSession {
             return;
         }
 
-        deleteAppendLog();
-
         long recoveredStart = recovery.header().recordingStartedAtEpochMillis() > 0
             ? recovery.header().recordingStartedAtEpochMillis()
             : recordingStartedAtEpochMillis;
 
-        replay.getReplayStorage().saveReplay(name, new ReplaySaveRequest(recovery.timeline(), recoveredStart))
+        replay.getReplayStorage().saveReplay(name, new ReplaySaveRequest(recovery.timeline(), recoveredStart, chunkArtifacts))
                 .thenCompose(v ->
                         replay.getReplayStorage().listReplays()
                 )
                 .thenAccept(replays -> {
+                    deleteAppendLog();
+                    deleteChunkCaptureDirectory();
                     replay.getReplayCache().setReplays(replays);
                     replay.getLogger().info("Recording " + name + " saved!");
                 })
@@ -319,14 +320,16 @@ public class RecordingSession {
         }
     }
 
-    private void closeChunkCapture() {
+    private ChunkRecordingArtifacts closeChunkCapture() {
         if (chunkCaptureCoordinator == null) {
-            return;
+            return ChunkRecordingArtifacts.NONE;
         }
         try {
             chunkCaptureCoordinator.close();
+            return chunkCaptureCoordinator.snapshotArtifacts();
         } catch (IOException e) {
             resolveLogger().log(Level.SEVERE, "Failed to close chunk capture temp files: " + name, e);
+            return ChunkRecordingArtifacts.NONE;
         }
     }
 

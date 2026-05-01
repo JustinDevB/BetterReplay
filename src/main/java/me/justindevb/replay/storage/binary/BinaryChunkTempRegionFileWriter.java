@@ -21,7 +21,7 @@ import java.util.Set;
  */
 public final class BinaryChunkTempRegionFileWriter implements ChunkTempRegionWriter {
 
-    private static final String TEMP_REGION_EXTENSION = ".brtmpregion";
+    public static final String TEMP_REGION_EXTENSION = ".brtmpregion";
 
     private final Path rootDirectory;
     private final BinaryChunkTempRegionFormat format = new BinaryChunkTempRegionFormat();

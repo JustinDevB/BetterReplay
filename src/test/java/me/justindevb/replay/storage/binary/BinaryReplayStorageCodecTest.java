@@ -1,11 +1,16 @@
 package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
+import me.justindevb.replay.chunk.CapturedChunkBaseline;
+import me.justindevb.replay.chunk.ChunkCoordinate;
+import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.storage.ReplaySaveRequest;
 import me.justindevb.replay.util.VersionUtil;
 import net.jpountz.lz4.LZ4FrameInputStream;
 import net.jpountz.lz4.LZ4FrameOutputStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -35,6 +40,9 @@ class BinaryReplayStorageCodecTest {
 
     private final BinaryReplayStorageCodec codec = new BinaryReplayStorageCodec();
     private final Gson gson = new Gson();
+
+    @TempDir
+    java.nio.file.Path tempDir;
 
     @Test
     void loadsValidBinaryReplayArchive() throws Exception {
@@ -126,6 +134,27 @@ class BinaryReplayStorageCodecTest {
         assertThrows(IOException.class, () -> codec.decodeTimeline(writeArchive(entries), "1.4.0"));
     }
 
+    @Test
+    void finalizeReplay_withChunkArtifacts_includesChunkEntriesInArchive() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+        ChunkRecordingArtifacts chunkArtifacts = writer.snapshotArtifacts();
+
+        byte[] archive = codec.finalizeReplay(
+                "with-chunks",
+                new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, chunkArtifacts),
+                "1.4.0");
+
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+                BinaryReplayManifest.class);
+
+        assertTrue(manifest.hasChunkData());
+        assertEquals(1, manifest.chunkRegionEntryCount());
+        assertEquals(1, manifest.chunkEntryCount());
+        assertTrue(entries.containsKey("chunks/world/r.0.0.brregion"));
+    }
+
     private static List<TimelineEvent> sampleTimeline() {
         return List.of(
                 new TimelineEvent.PlayerMove(0, "uuid-1", "Steve", "world", 1, 64, 3, 0, 0, "STANDING"),
@@ -151,6 +180,13 @@ class BinaryReplayStorageCodecTest {
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
             writeStoredEntry(zip, BinaryReplayFormat.MANIFEST_ENTRY_NAME, entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME));
             writeStoredEntry(zip, BinaryReplayFormat.REPLAY_ENTRY_NAME, entries.get(BinaryReplayFormat.REPLAY_ENTRY_NAME));
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                if (BinaryReplayFormat.MANIFEST_ENTRY_NAME.equals(entry.getKey())
+                        || BinaryReplayFormat.REPLAY_ENTRY_NAME.equals(entry.getKey())) {
+                    continue;
+                }
+                writeStoredEntry(zip, entry.getKey(), entry.getValue());
+            }
         }
         return out.toByteArray();
     }

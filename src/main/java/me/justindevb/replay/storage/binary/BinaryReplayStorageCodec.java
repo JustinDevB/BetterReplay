@@ -1,6 +1,7 @@
 package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
+import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayFormat;
@@ -8,6 +9,7 @@ import me.justindevb.replay.storage.ReplayInspection;
 import me.justindevb.replay.storage.ReplayInspectionBuilder;
 import me.justindevb.replay.storage.ReplayIndexedTimeline;
 import me.justindevb.replay.storage.ReplayPlaybackData;
+import me.justindevb.replay.storage.ReplaySaveRequest;
 import me.justindevb.replay.storage.ReplayStorageCodec;
 import me.justindevb.replay.util.VersionUtil;
 import net.jpountz.lz4.LZ4FrameInputStream;
@@ -35,14 +37,16 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
 
     private final Gson gson;
     private final BinaryReplayArchiveFinalizer finalizer;
+    private final BinaryChunkTempArchiveFinalizer chunkArchiveFinalizer;
 
     public BinaryReplayStorageCodec() {
-        this(new Gson(), new BinaryReplayArchiveFinalizer());
+        this(new Gson(), new BinaryReplayArchiveFinalizer(), new BinaryChunkTempArchiveFinalizer());
     }
 
-    BinaryReplayStorageCodec(Gson gson, BinaryReplayArchiveFinalizer finalizer) {
+    BinaryReplayStorageCodec(Gson gson, BinaryReplayArchiveFinalizer finalizer, BinaryChunkTempArchiveFinalizer chunkArchiveFinalizer) {
         this.gson = Objects.requireNonNull(gson, "gson");
         this.finalizer = Objects.requireNonNull(finalizer, "finalizer");
+        this.chunkArchiveFinalizer = Objects.requireNonNull(chunkArchiveFinalizer, "chunkArchiveFinalizer");
     }
 
     @Override
@@ -91,6 +95,15 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
             return finalizer.finalizeReplay(replayName, timeline, pluginVersion);
         }
         return finalizer.finalizeReplay(replayName, timeline, pluginVersion, recordingStartedAtEpochMillis);
+    }
+
+    @Override
+    public byte[] finalizeReplay(String replayName, ReplaySaveRequest request, String pluginVersion) throws IOException {
+        ReplayChunkData chunkData = resolveChunkData(request);
+        long recordingStartedAtEpochMillis = request.recordingStartedAtEpochMillis() != null
+                ? request.recordingStartedAtEpochMillis()
+                : System.currentTimeMillis();
+        return finalizer.finalizeReplay(replayName, request.timeline(), pluginVersion, recordingStartedAtEpochMillis, chunkData);
     }
 
     @Override
@@ -148,6 +161,19 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         ParsedPayload parsedPayload = parsePayload(payload);
         LazyTimeline timeline = new LazyTimeline(payload, parsedPayload.events(), parsedPayload.stringTable(), parsedPayload.tickIndex());
         return new ParsedBinaryReplay(manifest, timeline, parsedPayload.tickIndex(), parsedPayload.stringTable(), parsedPayload.indexLoaded(), ReplayChunkData.NONE);
+    }
+
+    private ReplayChunkData resolveChunkData(ReplaySaveRequest request) throws IOException {
+        ReplayChunkData chunkData = request.chunkData();
+        if (chunkData != null && chunkData.hasChunkData()) {
+            return chunkData;
+        }
+
+        ChunkRecordingArtifacts chunkArtifacts = request.chunkArtifacts();
+        if (chunkArtifacts == null || !chunkArtifacts.isPresent()) {
+            return ReplayChunkData.NONE;
+        }
+        return chunkArchiveFinalizer.finalizeArtifacts(chunkArtifacts);
     }
 
     private ArchiveEntries readArchiveEntries(byte[] storedBytes) throws IOException {

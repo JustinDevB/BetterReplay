@@ -1,5 +1,6 @@
 package me.justindevb.replay;
 
+import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import me.justindevb.replay.api.events.RecordingStartEvent;
 import me.justindevb.replay.api.events.RecordingStopEvent;
@@ -11,10 +12,13 @@ import org.bukkit.entity.Player;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
+import java.util.stream.Stream;
 
 public class RecorderManager {
     private static final String APPEND_LOG_EXTENSION = ".appendlog";
@@ -121,14 +125,19 @@ public class RecorderManager {
         long recoveredStart = recovery.header().recordingStartedAtEpochMillis() > 0
                 ? recovery.header().recordingStartedAtEpochMillis()
                 : System.currentTimeMillis();
+        File chunkTempDirectory = new File(replay.getDataFolder(), "replays/.tmp/chunks/" + replayName);
+        ChunkRecordingArtifacts chunkArtifacts = chunkTempDirectory.isDirectory()
+                ? new ChunkRecordingArtifacts(chunkTempDirectory.toPath(), 0, 0)
+                : ChunkRecordingArtifacts.NONE;
 
-        replay.getReplayStorage().saveReplay(replayName, new ReplaySaveRequest(recovery.timeline(), recoveredStart))
+        replay.getReplayStorage().saveReplay(replayName, new ReplaySaveRequest(recovery.timeline(), recoveredStart, chunkArtifacts))
                 .thenCompose(v -> refreshReplayCache().thenApply(ignored -> v))
                 .thenAccept(v -> {
                     if (appendLogFile.exists() && !appendLogFile.delete()) {
                         replay.getLogger().warning("Recovered replay " + replayName + " but failed to delete temp log " + appendLogFile.getName());
                         return;
                     }
+                    deleteChunkTempDirectory(chunkTempDirectory.toPath());
                     replay.getLogger().info("Recovered replay from temp log: " + replayName);
                 })
                 .exceptionally(ex -> {
@@ -139,6 +148,23 @@ public class RecorderManager {
 
     private CompletableFuture<Void> refreshReplayCache() {
         return replay.getReplayStorage().listReplays().thenAccept(replays -> replay.getReplayCache().setReplays(replays));
+    }
+
+    private void deleteChunkTempDirectory(Path chunkTempDirectory) {
+        if (!Files.exists(chunkTempDirectory)) {
+            return;
+        }
+        try (Stream<Path> walk = Files.walk(chunkTempDirectory)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(path -> {
+                try {
+                    Files.deleteIfExists(path);
+                } catch (IOException e) {
+                    replay.getLogger().log(Level.WARNING, "Failed to delete recovered chunk temp path: " + path, e);
+                }
+            });
+        } catch (IOException e) {
+            replay.getLogger().log(Level.WARNING, "Failed to enumerate recovered chunk temp directory: " + chunkTempDirectory, e);
+        }
     }
 
     @Deprecated

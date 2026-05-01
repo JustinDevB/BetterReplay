@@ -1,7 +1,6 @@
 package me.justindevb.replay.chunk;
 
 import java.nio.file.Path;
-import java.util.Objects;
 
 /**
  * Recording-time temp workspace for captured chunk baselines.

@@ -37,7 +37,17 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
             String pluginVersion,
             long recordingStartedAtEpochMillis
     ) throws IOException {
-        return finalizeRecoveredReplay(replayName, buildRecovery(timeline, recordingStartedAtEpochMillis), pluginVersion, ReplayChunkData.NONE);
+        return finalizeReplay(replayName, timeline, pluginVersion, recordingStartedAtEpochMillis, ReplayChunkData.NONE);
+        }
+
+        public byte[] finalizeReplay(
+            String replayName,
+            List<TimelineEvent> timeline,
+            String pluginVersion,
+            long recordingStartedAtEpochMillis,
+            ReplayChunkData chunkData
+        ) throws IOException {
+            return finalizeRecoveredReplay(replayName, buildRecovery(timeline, recordingStartedAtEpochMillis), pluginVersion, chunkData);
     }
 
     public byte[] finalizeRecoveredReplay(
@@ -46,14 +56,14 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
             String pluginVersion
     ) throws IOException {
         return finalizeRecoveredReplay(replayName, recovery, pluginVersion, ReplayChunkData.NONE);
-        }
+    }
 
-        public byte[] finalizeRecoveredReplay(
+    public byte[] finalizeRecoveredReplay(
             String replayName,
             BinaryReplayAppendLogRecovery recovery,
             String pluginVersion,
             ReplayChunkData chunkData
-        ) throws IOException {
+    ) throws IOException {
         byte[] finalizedPayload = buildFinalizedPayload(recovery.records(), recovery.timeline(), recovery.stringTable());
         byte[] compressedPayload = compress(finalizedPayload);
         ReplayChunkData effectiveChunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
@@ -61,8 +71,8 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
                 pluginVersion,
                 pluginVersion,
                 resolveRecordingStartedAtEpochMillis(recovery),
-            crc32cHex(compressedPayload),
-            effectiveChunkData.metadata());
+                crc32cHex(compressedPayload),
+                effectiveChunkData.metadata());
         byte[] manifestBytes = gson.toJson(manifest).getBytes(StandardCharsets.UTF_8);
         return buildArchive(manifestBytes, compressedPayload, effectiveChunkData);
     }

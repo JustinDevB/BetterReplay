@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 1 chunk archive contract implementation covering additive manifest metadata, canonical `chunks/` entry naming, finalized `.brregion` and temp-region binary layouts, LZ4 chunk codec IDs, and regression tests
 - Phase 2 chunk capture scaffolding with typed recording config keys, shared chunk abstractions, replay playback payload loading, and optional chunk archive injection into binary finalization
 - Phase 3 recording-time chunk discovery with player-radius interest tracking, deduplicated baseline capture, bounded unique-chunk caps, and temp-region persistence during active recordings
+- Phase 4 chunk archive finalization from temp-region artifacts during save and recovery, including delayed temp cleanup after successful persistence and `.brregion` archive emission
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
