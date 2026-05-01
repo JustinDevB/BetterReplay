@@ -156,8 +156,9 @@ General:
 Additional key used by command pagination:
 
 ```yaml
-list-page-size: 10
-list-protected-highlight-color: "&6"
+List:
+  Page-Size: 10
+  Protected-Highlight-Color: "&6"
 ```
 
 Retention cleanup keys:
@@ -177,7 +178,7 @@ Notes:
 - Binary `.br` payloads require the replay data column to be `LONGBLOB`; the plugin now widens `data` automatically during storage initialization.
 - Protected replays are skipped by both retention cleanup and manual delete commands until they are explicitly unprotected.
 - Protection stores required audit metadata: `protectedAt` and `protectedBy`.
-- Protected replays are highlighted in `/replay list` using `list-protected-highlight-color`; the default is gold (`&6`).
+- Protected replays are highlighted in `/replay list` using `List.Protected-Highlight-Color`; the default is gold (`&6`).
 - Retention durations accept `s`, `m`, `h`, and `d` suffixes.
 - Legacy JSON replay support is temporary compatibility only and is planned for removal in a later version; new recordings should stay on `.br`.
 - The hidden `/replay benchmark` command is now always available to senders with `replay.benchmark`, and `General.Enable-Benchmark-Command` has been removed from config

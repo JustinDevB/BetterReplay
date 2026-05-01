@@ -16,6 +16,10 @@ public class ReplayConfigManager {
     private static final int CURRENT_CONFIG_VERSION = 3;
     private static final String OBSOLETE_COMPRESS_REPLAYS_KEY = "General.Compress-Replays";
     private static final String OBSOLETE_COMPRESS_REPLAYS_COMMENT = "GZIP compress replay data to save disk space.";
+    private static final String LEGACY_LIST_PAGE_SIZE_KEY = "list-page-size";
+    private static final String LEGACY_LIST_PROTECTED_HIGHLIGHT_COLOR_KEY = "list-protected-highlight-color";
+    private static final String LEGACY_LOWERCASE_LIST_PAGE_SIZE_KEY = "list.page-size";
+    private static final String LEGACY_LOWERCASE_LIST_PROTECTED_HIGHLIGHT_COLOR_KEY = "list.protected-highlight-color";
 
     private static final String[] HEADER = new String[] {
             "===========================================",
@@ -45,6 +49,8 @@ public class ReplayConfigManager {
         } else if (needsCommentBackfill) {
             changed |= commented.addHeaderCommentsIfMissing(HEADER);
         }
+
+        changed |= migrateLegacyListSettings(commented);
 
         for (ReplayConfigSetting setting : ReplayConfigSetting.values()) {
             changed |= commented.setIfNotExists(setting);
@@ -98,6 +104,11 @@ public class ReplayConfigManager {
         }
 
         removeKeyLine(cleaned, OBSOLETE_COMPRESS_REPLAYS_KEY);
+        removeKeyLine(cleaned, LEGACY_LIST_PAGE_SIZE_KEY);
+        removeKeyLine(cleaned, LEGACY_LIST_PROTECTED_HIGHLIGHT_COLOR_KEY);
+        removeKeyLine(cleaned, LEGACY_LOWERCASE_LIST_PAGE_SIZE_KEY);
+        removeKeyLine(cleaned, LEGACY_LOWERCASE_LIST_PROTECTED_HIGHLIGHT_COLOR_KEY);
+        removeEmptyRootSection(cleaned, "list");
 
         while (!cleaned.isEmpty() && cleaned.get(0).trim().isEmpty()) {
             cleaned.remove(0);
@@ -138,6 +149,28 @@ public class ReplayConfigManager {
         } catch (IOException e) {
             throw new RuntimeException("Failed to rewrite managed comments", e);
         }
+    }
+
+    private boolean migrateLegacyListSettings(CommentedFileConfiguration commented) {
+        boolean changed = false;
+        changed |= migrateKeyIfPresent(commented, LEGACY_LIST_PAGE_SIZE_KEY, ReplayConfigSetting.LIST_PAGE_SIZE.getKey());
+        changed |= migrateKeyIfPresent(commented, LEGACY_LOWERCASE_LIST_PAGE_SIZE_KEY, ReplayConfigSetting.LIST_PAGE_SIZE.getKey());
+        changed |= migrateKeyIfPresent(commented, LEGACY_LIST_PROTECTED_HIGHLIGHT_COLOR_KEY,
+                ReplayConfigSetting.LIST_PROTECTED_HIGHLIGHT_COLOR.getKey());
+        changed |= migrateKeyIfPresent(commented, LEGACY_LOWERCASE_LIST_PROTECTED_HIGHLIGHT_COLOR_KEY,
+            ReplayConfigSetting.LIST_PROTECTED_HIGHLIGHT_COLOR.getKey());
+        return changed;
+    }
+
+    private boolean migrateKeyIfPresent(CommentedFileConfiguration commented, String legacyKey, String newKey) {
+        if (!commented.contains(legacyKey)) {
+            return false;
+        }
+        if (!commented.contains(newKey)) {
+            commented.set(newKey, commented.get(legacyKey));
+        }
+        commented.set(legacyKey, null);
+        return true;
     }
 
     private int findKeyLineIndex(List<String> lines, String dottedPath) {
@@ -197,6 +230,30 @@ public class ReplayConfigManager {
         int lineIndex = findKeyLineIndex(lines, dottedPath);
         if (lineIndex < 0) {
             return;
+        }
+
+        lines.remove(lineIndex);
+        while (lineIndex < lines.size() && lines.get(lineIndex).trim().isEmpty()) {
+            lines.remove(lineIndex);
+        }
+    }
+
+    private void removeEmptyRootSection(List<String> lines, String rootKey) {
+        int lineIndex = findKeyLineIndex(lines, rootKey);
+        if (lineIndex < 0) {
+            return;
+        }
+
+        for (int i = lineIndex + 1; i < lines.size(); i++) {
+            String line = lines.get(i);
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("#")) {
+                continue;
+            }
+            if (countLeadingSpaces(line) > 0) {
+                return;
+            }
+            break;
         }
 
         lines.remove(lineIndex);

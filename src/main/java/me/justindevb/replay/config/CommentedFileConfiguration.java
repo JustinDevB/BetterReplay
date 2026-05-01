@@ -110,6 +110,18 @@ public class CommentedFileConfiguration {
         return yaml.getDouble(path, defaultValue);
     }
 
+    public boolean contains(String path) {
+        return yaml.contains(path);
+    }
+
+    public Object get(String path) {
+        return yaml.get(path);
+    }
+
+    public void set(String path, Object value) {
+        yaml.set(path, value);
+    }
+
     public boolean setIfDifferent(String path, Object value) {
         Object current = yaml.get(path);
         if (Objects.equals(current, value)) {

@@ -550,8 +550,8 @@ class ReplayCommandTest {
 
     private org.bukkit.configuration.file.FileConfiguration configWithProtectedReplayColor(String color) {
         org.bukkit.configuration.file.YamlConfiguration config = new org.bukkit.configuration.file.YamlConfiguration();
-        config.set("list-page-size", 10);
-        config.set("list-protected-highlight-color", color);
+        config.set("List.Page-Size", 10);
+        config.set("List.Protected-Highlight-Color", color);
         return config;
     }
 }

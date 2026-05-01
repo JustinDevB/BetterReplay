@@ -33,10 +33,10 @@ public enum ReplayConfigSetting {
             "Whether retention should continue deleting other expired replays after one delete fails."),
     RETENTION_LOG_DELETIONS("Retention.Log-Deletions", true,
             "Whether successful retention deletions are logged individually."),
-    LIST_PAGE_SIZE("list-page-size", 10,
+    LIST_PAGE_SIZE("List.Page-Size", 10,
             "Number of replay names shown per /replay list page."),
-    LIST_PROTECTED_HIGHLIGHT_COLOR("list-protected-highlight-color", "&6",
-            "Legacy chat color code used to highlight protected replays in /replay list (for example &6). ");
+    LIST_PROTECTED_HIGHLIGHT_COLOR("List.Protected-Highlight-Color", "&6",
+            "Chat color code used to highlight protected replays in /replay list (for example &6).");
 
     private final String key;
     private final Object defaultValue;
