@@ -73,7 +73,11 @@ public class RecordingSession {
         this.tracker = new EntityTracker(players);
         this.builder = new TimelineBuilder(appendLogWriter, false);
         this.eventHandler = new RecordingEventHandler(tracker, builder, this::getTick);
-        this.packetHandler = new RecordingPacketHandler(tracker, builder, this::getTick);
+        this.packetHandler = new RecordingPacketHandler(
+            tracker,
+            builder,
+            this::getTick,
+            runnable -> replay.getFoliaLib().getScheduler().runNextTick(task -> runnable.run()));
     }
 
     public void start() {
