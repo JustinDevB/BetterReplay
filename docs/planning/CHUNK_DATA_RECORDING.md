@@ -31,6 +31,8 @@ Reserved but not required in v1:
 - `chunks/` archive prefix
 - `meta/` archive prefix
 
+This plan uses those reserved prefixes for region-grouped chunk storage rather than one archive entry per chunk.
+
 This document describes how chunk capture should extend that baseline safely.
 
 ## Goals
@@ -65,7 +67,7 @@ Recording:
 
 - `Recording.Chunk-Capture.Enabled`
   - `false`: write standard `.br` archive with `manifest.json` + `replay.bin` only.
-  - `true`: write `.br` archive that also includes `chunks/` entries.
+  - `true`: write `.br` archive that also includes region-grouped `chunks/` entries.
 - `Recording.Chunk-Capture.Radius`
   - Radius in chunk units around each tracked player.
   - Default is `1` to minimize file size and bandwidth.
@@ -93,6 +95,14 @@ Capture chunk data once per unique `(worldId, chunkX, chunkZ)`:
 - Store baseline payload for first observation only.
 - If chunk leaves and re-enters range, reuse existing baseline.
 - Do not write chunk deltas into the chunk section.
+
+Captured chunk baselines are grouped by Minecraft region coordinate (`regionX`, `regionZ`, 32 x 32 chunks) rather than stored as one standalone archive file per chunk.
+
+Inside each finalized region payload:
+
+- each chunk remains independently addressable
+- each chunk payload is compressed independently
+- a region-local index maps chunk coordinates to payload offset, compressed length, uncompressed length, and codec
 
 All world modifications after baseline are reconstructed from timeline events (`BlockPlace`, `BlockBreak`, `BlockBreakStage`, and related events) in tick order.
 
@@ -124,25 +134,58 @@ Required entries (unchanged):
 
 Chunk-enabled additions:
 
-3. `chunks/` entry set (optional; one entry per captured chunk baseline)
+3. `chunks/` entry set (optional; one finalized entry per region that contains captured chunks)
 4. `meta/` chunk index hints (optional)
 
 This preserves backward compatibility with the current loader flow and schema.
 
 Suggested chunk entry naming:
 
-- `chunks/<world>/<chunkX>_<chunkZ>.nbt`
+- `chunks/<world>/r.<regionX>.<regionZ>.brregion`
 
 Example:
 
-- `chunks/world/0_0.nbt`
-- `chunks/world_nether/5_-3.nbt`
+- `chunks/world/r.0.0.brregion`
+- `chunks/world_nether/r.0.-1.brregion`
+
+### Region entry structure
+
+Each finalized region entry should contain:
+
+1. region header
+2. region-local chunk index
+3. concatenated chunk payload area
+
+Each index row stores at minimum:
+
+- local chunk X within region (`0-31`)
+- local chunk Z within region (`0-31`)
+- payload offset
+- compressed length
+- uncompressed length
+- codec identifier
+
+This keeps the archive entry count low while still allowing a single requested chunk to be loaded and decompressed without decoding unrelated chunks in the same region.
+
+### Recording-time temp layout
+
+During recording, chunk data should not be written directly into the final playback-optimized region entry format.
+
+Instead:
+
+- use append-friendly temp region files under the recording temp workspace
+- append newly discovered chunk baselines one at a time
+- track region/chunk metadata in memory or a side index during recording
+- finalize temp region files into clean `.brregion` entries when the replay archive is built
+
+This matches the existing timeline design philosophy: append-friendly writes during recording, playback-optimized structure at finalize time.
 
 ### Compression
 
 - Keep `replay.bin` compression exactly as defined in the current spec (single LZ4 payload in v1).
-- Chunk entries should be stored as independently loadable archive entries.
-- For chunk entries, prefer storing already-compressed payloads without second compression when possible.
+- Chunk region entries should be independently loadable archive entries.
+- Inside a region entry, each chunk payload should be compressed independently.
+- LZ4 does not provide chunk-level random access automatically inside one large compressed region blob; the per-chunk index and per-chunk compression boundary provide that behavior.
 - Chunk loading remains on-demand by watcher window; do not load all chunk entries at replay start.
 
 ### Logical internal view
@@ -151,7 +194,7 @@ Example:
 MyReplay.br
   manifest.json
   replay.bin
-  chunks/... (optional)
+  chunks/... (optional region entries)
   meta/...   (optional)
 ```
 
@@ -178,13 +221,14 @@ The current manifest schema does not yet require chunk metadata. For chunk suppo
 Proposed additive fields:
 
 - `hasChunkData` (boolean)
+- `chunkRegionEntryCount` (integer)
 - `chunkEntryCount` (integer)
 - `chunkCoordinateHash` (string, optional integrity/debug helper)
 
 Validation expectations for chunk-enabled archives:
 
 1. Standard manifest + `replay.bin` validation still runs first.
-2. If `hasChunkData` is true, loader validates chunk entry presence and basic entry integrity.
+2. If `hasChunkData` is true, loader validates region entry presence and basic entry integrity.
 3. Missing/corrupt chunk entries degrade to entity-only playback (or hard-fail if strict mode is enabled).
 
 ## Playback Behavior
@@ -194,7 +238,7 @@ Validation expectations for chunk-enabled archives:
 When replay data includes chunk payloads:
 
 1. Perform normal `.br` manifest and `replay.bin` validation/load.
-2. Build an in-memory chunk-entry lookup from `chunks/` (and `meta/` if present).
+2. Build an in-memory region and chunk lookup from `chunks/` (and `meta/` if present).
 3. For the replay viewer(s), send only chunks inside the current watcher window.
 4. Start/continue timeline playback while loading additional chunks on demand.
 
@@ -209,7 +253,7 @@ Captured chunks in a chunk-enabled `.br` recording are treated as **available da
 
 - If multiple recorded players are far apart (for example 1000+ blocks), chunks for all areas can exist in the recording.
 - During playback, the watcher only receives chunks inside their current playback window.
-- Chunks outside that window remain indexed and available, but are not decompressed or sent yet.
+- Chunks outside that window remain indexed and available, but their containing region entries are not opened and their per-chunk payloads are not decompressed yet.
 - If the watcher moves to a distant recorded area later, those chunks are then loaded on demand and sent.
 
 In short: capture scope determines what can be shown; watcher position determines what is loaded now.
@@ -227,7 +271,7 @@ This guarantees viewers return to live world state after replay completion.
 ## Failure and Safety Considerations
 
 - If manifest or `replay.bin` validation fails, replay load is a hard failure (existing behavior).
-- If optional chunk entries are missing/corrupt, warn and fall back to entity-only playback for affected areas.
+- If optional region entries or indexed chunk payloads are missing/corrupt, warn and fall back to entity-only playback for affected areas.
 - Enforce maximum chunk count and total directory size limits to prevent runaway storage.
 - Keep cross-thread chunk loading and packet operations on server-thread-safe scheduling (FoliaLib dispatch as needed).
 - Validate NBT format when loading chunks; skip malformed chunks with a warning.
@@ -237,21 +281,23 @@ This guarantees viewers return to live world state after replay completion.
 1. Config and feature flag scaffolding.
 2. Chunk interest tracker and movement-driven chunk window updates.
 3. Baseline chunk capture and NBT export from Paper's chunk API.
-4. Archive writer integration: include `chunks/` entries in `.br` when chunk capture is enabled.
-5. Manifest/schema update: add chunk presence/count fields and validation rules.
-6. Storage backend integration: file backend stores `.br`; MySQL stores `.br` blob.
-7. Playback: chunk lookup, on-demand loading, and packet dispatch by watcher window.
-8. Replay teardown: restore live chunks for all viewers.
-9. Validation tools and tests.
+4. Recording-time temp region writer: append newly discovered chunk baselines into temp region files.
+5. Finalization step: build indexed `.brregion` archive entries from temp region files.
+6. Manifest/schema update: add chunk presence/count fields and validation rules.
+7. Storage backend integration: file backend stores `.br`; MySQL stores `.br` blob.
+8. Playback: region lookup, per-chunk index lookup, on-demand chunk decode, and packet dispatch by watcher window.
+9. Replay teardown: restore live chunks for all viewers.
+10. Validation tools and tests.
 
 ## Testing Plan
 
 - Unit tests for chunk interest set union/diff logic.
 - Unit tests for deduplication across many tracked players.
-- Integration test: chunk capture and chunk-enabled `.br` archive output on recording stop.
+- Integration test: chunk capture and region-grouped chunk-enabled `.br` archive output on recording stop.
+- Integration test: temp region append-log finalizes into stable indexed region entries.
 - Playback test: baseline chunks + timeline block events reconstruct expected world state at arbitrary ticks.
 - Validation test: manifest + `replay.bin` hard-fail remains unchanged when chunk feature is enabled.
-- Validation test: corrupt/missing chunk entry degrades chunk overlay behavior per policy.
+- Validation test: corrupt/missing region entry or indexed chunk payload degrades chunk overlay behavior per policy.
 - Regression test: replay end restores live chunks for all viewers.
 - Stress test with synthetic 50-player movement across large areas.
 
