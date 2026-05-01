@@ -13,6 +13,26 @@ That creates gaps:
 - A replay played later on the same server may no longer match original world state.
 - Fast-moving players can cross many chunks, making world divergence more visible.
 
+## Current Format Baseline (Already Implemented)
+
+The chunk-data plan must build on the implemented binary/archive stack, not replace it.
+
+Implemented today:
+
+- Replay artifact is a `.br` archive.
+- Archive required entries are `manifest.json` and `replay.bin`.
+- `manifest.json` follows [ARCHIVE_MANIFEST_SCHEMA.md](../ARCHIVE_MANIFEST_SCHEMA.md).
+- `replay.bin` follows [BINARY_FORMAT_SPEC.md](../BINARY_FORMAT_SPEC.md).
+- `replay.bin` is currently stored as a single LZ4 payload that is fully decompressed into memory on load.
+- Archive-level integrity is validated via manifest checksum (`payloadChecksum` + `payloadChecksumAlgorithm`).
+
+Reserved but not required in v1:
+
+- `chunks/` archive prefix
+- `meta/` archive prefix
+
+This document describes how chunk capture should extend that baseline safely.
+
 ## Goals
 
 - Add a config option to enable or disable chunk data recording.
@@ -28,6 +48,7 @@ That creates gaps:
 - Replacing the server's world files on disk.
 - Supporting random third-party chunk formats in v1.
 - Storing chunk delta streams in the chunk section (timeline events remain the source of block changes).
+- Replacing the current required archive entries (`manifest.json` + `replay.bin`) in the first chunk-enabled phase.
 
 ## Configuration Proposal
 
@@ -43,8 +64,8 @@ Recording:
 ### Key behavior
 
 - `Recording.Chunk-Capture.Enabled`
-  - `false`: write `.br` (no chunk baseline section).
-  - `true`: write `.brc` (includes chunk baseline section).
+  - `false`: write standard `.br` archive with `manifest.json` + `replay.bin` only.
+  - `true`: write `.br` archive that also includes `chunks/` entries.
 - `Recording.Chunk-Capture.Radius`
   - Radius in chunk units around each tracked player.
   - Default is `1` to minimize file size and bandwidth.
@@ -85,48 +106,62 @@ Use one shared per-recording chunk registry:
 
 ## Storage Plan
 
-Adopt one canonical binary BetterReplay container for all future replays. Both file and MySQL backends store this same container payload.
+Adopt one canonical `.br` archive format with additive chunk support. Both file and MySQL backends store the same archive bytes.
+
+The chunk feature extends the existing archive contract instead of introducing a second artifact type.
 
 ### File extensions
 
-- `.br`: BetterReplay container without chunk baseline section.
-- `.brc`: BetterReplay container with chunk baseline section.
-
-The extension indicates features; the core container family is shared and versioned.
+- Keep `.br` as the canonical replay extension.
+- Presence of chunk data is detected by archive entries and manifest metadata, not by extension.
 
 ### Container layout
 
-1. Header (magic, format version, feature flags).
-2. Timeline section (binary timeline blocks).
-3. Chunk section (optional; present for `.brc`).
-4. Section index (offset, length, codec, lookup metadata).
-5. Footer/checksum.
+Required entries (unchanged):
+
+1. `manifest.json`
+2. `replay.bin`
+
+Chunk-enabled additions:
+
+3. `chunks/` entry set (optional; one entry per captured chunk baseline)
+4. `meta/` chunk index hints (optional)
+
+This preserves backward compatibility with the current loader flow and schema.
+
+Suggested chunk entry naming:
+
+- `chunks/<world>/<chunkX>_<chunkZ>.nbt`
+
+Example:
+
+- `chunks/world/0_0.nbt`
+- `chunks/world_nether/5_-3.nbt`
 
 ### Compression
 
-- Default: LZ4 block compression for timeline and chunk section blocks.
-- Timeline and chunk entries are independently addressable.
-- Reader decompresses only needed blocks/entries on demand.
-- Already-compressed payloads may be stored without recompression if that is smaller/faster.
+- Keep `replay.bin` compression exactly as defined in the current spec (single LZ4 payload in v1).
+- Chunk entries should be stored as independently loadable archive entries.
+- For chunk entries, prefer storing already-compressed payloads without second compression when possible.
+- Chunk loading remains on-demand by watcher window; do not load all chunk entries at replay start.
 
 ### Logical internal view
 
 ```
-MyReplay.brc
-  header
-  timeline_blocks
-  chunk_entries
-  section_index
-  footer
+MyReplay.br
+  manifest.json
+  replay.bin
+  chunks/... (optional)
+  meta/...   (optional)
 ```
 
-This is an internal container layout, not a set of separate files on disk.
+This is the archive entry model. The binary timeline internals remain defined by `replay.bin` format spec.
 
 ### Backend mapping
 
 File backend:
 
-- One file per replay: `name.br` or `name.brc`.
+- One file per replay: `name.br`.
 - Delete operation is a single file remove.
 
 MySQL backend:
@@ -134,7 +169,23 @@ MySQL backend:
 - One row per replay with one container blob column.
 - Delete operation is a single row remove.
 
-No separate chunk table is required.
+No separate chunk table is required when MySQL stores the full `.br` bytes as one blob.
+
+### Manifest additions for chunk-enabled replays
+
+The current manifest schema does not yet require chunk metadata. For chunk support, add explicit fields in a schema bump.
+
+Proposed additive fields:
+
+- `hasChunkData` (boolean)
+- `chunkEntryCount` (integer)
+- `chunkCoordinateHash` (string, optional integrity/debug helper)
+
+Validation expectations for chunk-enabled archives:
+
+1. Standard manifest + `replay.bin` validation still runs first.
+2. If `hasChunkData` is true, loader validates chunk entry presence and basic entry integrity.
+3. Missing/corrupt chunk entries degrade to entity-only playback (or hard-fail if strict mode is enabled).
 
 ## Playback Behavior
 
@@ -142,9 +193,10 @@ No separate chunk table is required.
 
 When replay data includes chunk payloads:
 
-1. Load or map chunk index for requested replay segment.
-2. For the replay viewer(s), send chunk data packets from the recording source.
-3. Start timeline playback after required chunk baseline is available.
+1. Perform normal `.br` manifest and `replay.bin` validation/load.
+2. Build an in-memory chunk-entry lookup from `chunks/` (and `meta/` if present).
+3. For the replay viewer(s), send only chunks inside the current watcher window.
+4. Start/continue timeline playback while loading additional chunks on demand.
 
 ### During replay
 
@@ -153,7 +205,7 @@ When replay data includes chunk payloads:
 
 ### Chunk availability vs active loading
 
-Captured chunks in a `.brc` recording are treated as **available data**, not always-loaded data.
+Captured chunks in a chunk-enabled `.br` recording are treated as **available data**, not always-loaded data.
 
 - If multiple recorded players are far apart (for example 1000+ blocks), chunks for all areas can exist in the recording.
 - During playback, the watcher only receives chunks inside their current playback window.
@@ -174,7 +226,8 @@ This guarantees viewers return to live world state after replay completion.
 
 ## Failure and Safety Considerations
 
-- If chunk entries are missing/corrupt, warn and fall back to entity-only playback (no chunk overlay).
+- If manifest or `replay.bin` validation fails, replay load is a hard failure (existing behavior).
+- If optional chunk entries are missing/corrupt, warn and fall back to entity-only playback for affected areas.
 - Enforce maximum chunk count and total directory size limits to prevent runaway storage.
 - Keep cross-thread chunk loading and packet operations on server-thread-safe scheduling (FoliaLib dispatch as needed).
 - Validate NBT format when loading chunks; skip malformed chunks with a warning.
@@ -184,21 +237,25 @@ This guarantees viewers return to live world state after replay completion.
 1. Config and feature flag scaffolding.
 2. Chunk interest tracker and movement-driven chunk window updates.
 3. Baseline chunk capture and NBT export from Paper's chunk API.
-4. Implement `.br`/`.brc` binary container writer/reader with section index and LZ4 blocks.
-5. Storage backend integration: file backend stores container files, MySQL stores container blob.
-6. Playback: chunk loading and packet dispatch to viewers.
-7. Replay teardown: restore live chunks for all viewers.
-8. Validation tools and tests.
+4. Archive writer integration: include `chunks/` entries in `.br` when chunk capture is enabled.
+5. Manifest/schema update: add chunk presence/count fields and validation rules.
+6. Storage backend integration: file backend stores `.br`; MySQL stores `.br` blob.
+7. Playback: chunk lookup, on-demand loading, and packet dispatch by watcher window.
+8. Replay teardown: restore live chunks for all viewers.
+9. Validation tools and tests.
 
 ## Testing Plan
 
 - Unit tests for chunk interest set union/diff logic.
 - Unit tests for deduplication across many tracked players.
-- Integration test: chunk capture and `.brc` container output on recording stop.
+- Integration test: chunk capture and chunk-enabled `.br` archive output on recording stop.
 - Playback test: baseline chunks + timeline block events reconstruct expected world state at arbitrary ticks.
+- Validation test: manifest + `replay.bin` hard-fail remains unchanged when chunk feature is enabled.
+- Validation test: corrupt/missing chunk entry degrades chunk overlay behavior per policy.
 - Regression test: replay end restores live chunks for all viewers.
 - Stress test with synthetic 50-player movement across large areas.
 
 ## Open Questions
 
-- What timeline block size should be default for LZ4 (for example 256 KB vs 1 MB)?
+- Should replay payload evolve from single-frame LZ4 to block-indexed LZ4 in a future format version?
+- Should chunk entry corruption be a soft-fail (recommended) or strict hard-fail policy by default?
