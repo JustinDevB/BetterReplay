@@ -36,6 +36,23 @@ final class PacketFriendlyChunkColumnBuilder {
     private static final String PLAINS_BIOME = "minecraft:plains";
     private static final byte[][] EMPTY_LIGHT_ARRAYS = new byte[0][];
 
+    record PreparedChunkPacket(Column column, LightData lightData) {
+        PreparedChunkPacket {
+            Objects.requireNonNull(column, "column");
+            Objects.requireNonNull(lightData, "lightData");
+        }
+    }
+
+    PreparedChunkPacket prepare(
+            ChunkCoordinate coordinate,
+            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload,
+            ClientVersion clientVersion
+    ) throws IOException {
+        return new PreparedChunkPacket(
+                build(coordinate, payload, clientVersion),
+                buildLightData(payload));
+    }
+
     Column build(
             ChunkCoordinate coordinate,
             BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload,

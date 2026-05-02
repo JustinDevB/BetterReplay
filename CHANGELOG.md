@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BRCP` packet-friendly chunk payload codec groundwork with manifest payload-format/version metadata and recording-artifact propagation through binary archive finalization
 - Current replay chunk baseline playback now detects non-`BRCS` chunk sidecars and soft-fails them cleanly instead of attempting legacy block-baseline decoding
 - `BRCP` chunk recordings now capture packet-friendly live chunk snapshots, include block-entity payloads when runtime NBT extraction is available, replay them with real chunk packets, reapply prior block mutations when chunks enter view mid-replay, and resend live chunks on unload or replay stop
+- Separate `Playback.Chunk-View-Radius` config for replay viewers, defaulting to `3`, plus center-first replay chunk prioritization and bounded in-flight chunk preparation windows
+- Optional `Playback.Chunk-Timing-Diagnostics` runtime logging for per-stage replay chunk timing measurements during playback profiling
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
@@ -52,6 +54,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - BRCP chunk playback now resolves `Chunk_v1_18` constructors reflectively, avoiding `NoSuchMethodError` on PacketEvents runtimes with different section-constructor signatures
 - BRCP chunk playback and chunk-baseline loading no longer fail silently; packet send and decode errors are now logged with chunk coordinates so missing chunk rendering can be diagnosed from server logs
 - BRCP chunk playback now supplies a non-null PacketEvents `LightData` payload when sending chunk snapshots, avoiding `NullPointerException` during chunk packet serialization on PacketEvents 2.12.1
+- Replay chunk entry now offloads BRCP archive decode and packet-column preparation off the main thread, replays block mutations from a chunk-indexed lookup instead of rescanning the whole timeline, and restores live chunks without the extra encode/decode round trip on unload
+- BRCP chunk teardown no longer marks queued live restores as already unloaded before the real restore packet is sent, reducing premature replay-chunk teardown during movement; startup now also prewarms PacketEvents chunk mappings to avoid the first replay-load cold start
+- Replay stop cleanup now deduplicates BRCP chunk restores across rendered and queued state, and reuses already-prepared live restore packets when available to reduce end-of-replay cleanup spikes
 
 ### Changed
 - All commands routed through `ReplayManager` API (#25)

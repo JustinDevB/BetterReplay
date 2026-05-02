@@ -11,6 +11,6 @@ interface ReplayChunkSnapshotSender {
     void send(
             Player viewer,
             ChunkCoordinate coordinate,
-            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload
+            PacketFriendlyChunkColumnBuilder.PreparedChunkPacket preparedChunk
     ) throws IOException;
 }

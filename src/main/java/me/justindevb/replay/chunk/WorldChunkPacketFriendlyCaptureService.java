@@ -33,6 +33,14 @@ public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaseli
 
     @Override
     public CapturedChunkBaseline capture(ChunkCoordinate coordinate) throws IOException {
+        BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = capturePayload(coordinate);
+        return new CapturedChunkBaseline(
+                coordinate,
+                payloadCodec.encode(payload),
+                BinaryChunkPayloadFormat.BRCP);
+    }
+
+    public BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload capturePayload(ChunkCoordinate coordinate) throws IOException {
         World world = Bukkit.getWorld(coordinate.worldName());
         if (world == null) {
             throw new IOException("World is not available for chunk capture: " + coordinate.worldName());
@@ -56,13 +64,7 @@ public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaseli
 
         List<BinaryPacketFriendlyChunkPayloadCodec.BlockEntityPayload> blockEntities = captureBlockEntities(chunk, minSectionY);
 
-        BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload =
-            new BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload(minSectionY, sections, blockEntities);
-
-        return new CapturedChunkBaseline(
-                coordinate,
-                payloadCodec.encode(payload),
-                BinaryChunkPayloadFormat.BRCP);
+        return new BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload(minSectionY, sections, blockEntities);
     }
 
     private static List<BinaryPacketFriendlyChunkPayloadCodec.BlockEntityPayload> captureBlockEntities(Chunk chunk, int minSectionY) {

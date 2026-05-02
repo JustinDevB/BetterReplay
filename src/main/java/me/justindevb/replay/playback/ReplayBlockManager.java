@@ -5,10 +5,10 @@ import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerBlockBreakAnimation;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerChunkData;
 import com.github.retrooper.packetevents.util.Vector3i;
-import me.justindevb.replay.chunk.CapturedChunkBaseline;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.chunk.WorldChunkPacketFriendlyCaptureService;
+import me.justindevb.replay.config.ReplayConfigSetting;
 import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkPayloadFormat;
 import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
@@ -19,7 +19,13 @@ import me.justindevb.replay.Replay;
 import me.justindevb.replay.recording.TimelineEvent;
 
 import java.io.IOException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.*;
+import java.util.function.Function;
 import java.util.function.IntSupplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -31,7 +37,9 @@ import java.util.logging.Logger;
  */
 public class ReplayBlockManager {
 
-    private static final int CHUNK_PLAYBACK_RADIUS = 1;
+    private static final int DEFAULT_PLAYBACK_CHUNK_VIEW_RADIUS = 3;
+    private static final int MAX_BRCP_CHUNK_APPLIES_PER_REFRESH = 1;
+    private static final int MAX_BRCP_CHUNK_RESTORES_PER_REFRESH = 1;
 
     private final Player viewer;
     private final Replay replay;
@@ -40,6 +48,13 @@ public class ReplayBlockManager {
     private final BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec;
     private final WorldChunkPacketFriendlyCaptureService liveChunkCaptureService;
     private final ReplayChunkSnapshotSender replayChunkSnapshotSender;
+    private final ReplayChunkPacketPreparer replayChunkPacketPreparer;
+    private final Executor replayChunkPreparationExecutor;
+    private final Function<Player, ClientVersion> clientVersionResolver;
+    private final int chunkPlaybackRadius;
+    private final int maxReplayChunkPreparesInFlight;
+    private final int maxLiveChunkRestorePreparesInFlight;
+    private final boolean chunkTimingDiagnosticsEnabled;
     private final Logger logger;
 
     public record BlockKey(String world, int x, int y, int z) {}
@@ -47,12 +62,23 @@ public class ReplayBlockManager {
     private final Map<BlockKey, String> sessionBaseline = new HashMap<>();
     private final Map<BlockKey, String> chunkBaseline = new HashMap<>();
     private final Map<ChunkCoordinate, Set<BlockKey>> chunkBlocksByCoordinate = new HashMap<>();
+    private final Set<ChunkCoordinate> queuedLiveChunkRestores = new LinkedHashSet<>();
     private final Set<ChunkCoordinate> renderedChunks = new HashSet<>();
     private final Set<BlockKey> visibleBreakStages = new HashSet<>();
+    private final Map<ChunkCoordinate, CompletableFuture<PreparedReplayChunk>> pendingReplayChunkPrepares = new ConcurrentHashMap<>();
+    private final Map<ChunkCoordinate, CompletableFuture<PreparedReplayChunk>> pendingLiveChunkRestorePrepares = new ConcurrentHashMap<>();
+    private final Set<ChunkCoordinate> unavailableReplayChunks = ConcurrentHashMap.newKeySet();
     private int blockBreakMutationEpoch = 0;
     private ChunkCoordinate currentChunkCenter;
     private List<TimelineEvent> replayTimeline = List.of();
+    private Map<ChunkCoordinate, List<IndexedReplayMutation>> replayMutationsByChunk = Map.of();
     private IntSupplier currentTimelineIndexSupplier = () -> 0;
+
+    private record IndexedReplayMutation(int index, TimelineEvent event) {
+    }
+
+    private record PreparedReplayChunk(PacketFriendlyChunkColumnBuilder.PreparedChunkPacket packet) {
+    }
 
     public ReplayBlockManager(Player viewer, Replay replay, ReplayChunkData chunkData) {
         ReplayChunkData replayChunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
@@ -66,15 +92,28 @@ public class ReplayBlockManager {
         this.chunkPayloadFormat = replayChunkData.metadata().payloadFormat();
         this.packetFriendlyPayloadCodec = packetFriendlyPayloadCodec;
         this.liveChunkCaptureService = new WorldChunkPacketFriendlyCaptureService(packetFriendlyPayloadCodec);
+        PacketFriendlyChunkColumnBuilder chunkColumnBuilder = new PacketFriendlyChunkColumnBuilder();
+        this.replayChunkPacketPreparer = chunkColumnBuilder::prepare;
+        this.replayChunkPreparationExecutor = replay != null && replay.getFoliaLib() != null
+            ? runnable -> replay.getFoliaLib().getScheduler().runAsync(task -> runnable.run())
+            : command -> CompletableFuture.runAsync(command);
+        this.clientVersionResolver = player -> PacketEvents.getAPI().getPlayerManager().getClientVersion(player);
+        this.chunkPlaybackRadius = replay != null
+            && replay.getConfig() != null
+            ? Math.max(0, ReplayConfigSetting.PLAYBACK_CHUNK_VIEW_RADIUS.getInt(replay.getConfig()))
+            : DEFAULT_PLAYBACK_CHUNK_VIEW_RADIUS;
+        this.maxReplayChunkPreparesInFlight = computeMaxReplayChunkPreparesInFlight(this.chunkPlaybackRadius);
+        this.maxLiveChunkRestorePreparesInFlight = computeMaxLiveChunkRestorePreparesInFlight(this.chunkPlaybackRadius);
+        this.chunkTimingDiagnosticsEnabled = replay != null
+            && replay.getConfig() != null
+            && ReplayConfigSetting.PLAYBACK_CHUNK_TIMING_DIAGNOSTICS.getBoolean(replay.getConfig());
         this.logger = logger;
-        PacketFriendlyChunkColumnBuilder columnBuilder = new PacketFriendlyChunkColumnBuilder();
-        this.replayChunkSnapshotSender = (player, coordinate, payload) -> {
-            ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(player);
+        this.replayChunkSnapshotSender = (player, coordinate, preparedChunk) -> {
             PacketEvents.getAPI().getPlayerManager().sendPacket(
                     player,
                     new WrapperPlayServerChunkData(
-                            columnBuilder.build(coordinate, payload, clientVersion),
-                            columnBuilder.buildLightData(payload),
+                    preparedChunk.column(),
+                    preparedChunk.lightData(),
                             false));
         };
     }
@@ -96,6 +135,12 @@ public class ReplayBlockManager {
                 packetFriendlyPayloadCodec,
                 liveChunkCaptureService,
                 replayChunkSnapshotSender,
+                new PacketFriendlyChunkColumnBuilder()::prepare,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                1,
+                computeMaxReplayChunkPreparesInFlight(1),
+                computeMaxLiveChunkRestorePreparesInFlight(1),
                 Logger.getLogger(ReplayBlockManager.class.getName()));
     }
 
@@ -108,6 +153,39 @@ public class ReplayBlockManager {
             WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
             ReplayChunkSnapshotSender replayChunkSnapshotSender,
             Logger logger
+        ) {
+        this(
+            viewer,
+            replay,
+            chunkPlaybackCache,
+            chunkPayloadFormat,
+            packetFriendlyPayloadCodec,
+            liveChunkCaptureService,
+            replayChunkSnapshotSender,
+                new PacketFriendlyChunkColumnBuilder()::prepare,
+            Runnable::run,
+            player -> ClientVersion.V_1_21_11,
+            1,
+            computeMaxReplayChunkPreparesInFlight(1),
+            computeMaxLiveChunkRestorePreparesInFlight(1),
+            logger);
+        }
+
+        ReplayBlockManager(
+            Player viewer,
+            Replay replay,
+            ReplayChunkPlaybackCache chunkPlaybackCache,
+            BinaryChunkPayloadFormat chunkPayloadFormat,
+            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
+            WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
+            ReplayChunkSnapshotSender replayChunkSnapshotSender,
+            ReplayChunkPacketPreparer replayChunkPacketPreparer,
+            Executor replayChunkPreparationExecutor,
+            Function<Player, ClientVersion> clientVersionResolver,
+            int chunkPlaybackRadius,
+            int maxReplayChunkPreparesInFlight,
+            int maxLiveChunkRestorePreparesInFlight,
+            Logger logger
     ) {
         this.viewer = viewer;
         this.replay = replay;
@@ -116,11 +194,19 @@ public class ReplayBlockManager {
         this.packetFriendlyPayloadCodec = Objects.requireNonNull(packetFriendlyPayloadCodec, "packetFriendlyPayloadCodec");
         this.liveChunkCaptureService = Objects.requireNonNull(liveChunkCaptureService, "liveChunkCaptureService");
         this.replayChunkSnapshotSender = Objects.requireNonNull(replayChunkSnapshotSender, "replayChunkSnapshotSender");
+        this.replayChunkPacketPreparer = Objects.requireNonNull(replayChunkPacketPreparer, "replayChunkPacketPreparer");
+        this.replayChunkPreparationExecutor = Objects.requireNonNull(replayChunkPreparationExecutor, "replayChunkPreparationExecutor");
+        this.clientVersionResolver = Objects.requireNonNull(clientVersionResolver, "clientVersionResolver");
+        this.chunkPlaybackRadius = Math.max(0, chunkPlaybackRadius);
+        this.maxReplayChunkPreparesInFlight = Math.max(1, maxReplayChunkPreparesInFlight);
+        this.maxLiveChunkRestorePreparesInFlight = Math.max(1, maxLiveChunkRestorePreparesInFlight);
+        this.chunkTimingDiagnosticsEnabled = false;
         this.logger = Objects.requireNonNull(logger, "logger");
     }
 
     public void configureChunkReplayContext(List<TimelineEvent> timeline, IntSupplier currentTimelineIndexSupplier) {
         this.replayTimeline = List.copyOf(Objects.requireNonNull(timeline, "timeline"));
+        this.replayMutationsByChunk = indexReplayMutations(this.replayTimeline);
         this.currentTimelineIndexSupplier = Objects.requireNonNull(currentTimelineIndexSupplier, "currentTimelineIndexSupplier");
     }
 
@@ -326,7 +412,11 @@ public class ReplayBlockManager {
     }
 
     public void restoreSessionBaseline() {
-        for (ChunkCoordinate coordinate : new HashSet<>(renderedChunks)) {
+        Set<ChunkCoordinate> chunksToRestore = new LinkedHashSet<>(renderedChunks);
+        chunksToRestore.addAll(queuedLiveChunkRestores);
+        chunksToRestore.addAll(pendingLiveChunkRestorePrepares.keySet());
+        queuedLiveChunkRestores.clear();
+        for (ChunkCoordinate coordinate : chunksToRestore) {
             restoreChunkBaseline(coordinate);
         }
 
@@ -349,34 +439,110 @@ public class ReplayBlockManager {
             return;
         }
 
+        long refreshStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+        long unloadQueueNanos = 0L;
+        long enqueueLoadNanos = 0L;
+        long applyLoadNanos = 0L;
+        long restoreNanos = 0L;
+        int queuedUnloadCount = 0;
+        int appliedLoadCount = 0;
+        int restoredChunkCount = 0;
+
         Location location = viewer.getLocation();
         ChunkCoordinate center = new ChunkCoordinate(
                 viewer.getWorld().getName(),
                 Math.floorDiv(location.getBlockX(), 16),
                 Math.floorDiv(location.getBlockZ(), 16));
-        if (center.equals(currentChunkCenter)) {
+        List<ChunkCoordinate> desiredChunkOrder = desiredChunks(center);
+        Set<ChunkCoordinate> desiredChunks = new LinkedHashSet<>(desiredChunkOrder);
+        boolean centerChanged = !center.equals(currentChunkCenter);
+        if (centerChanged) {
+            currentChunkCenter = center;
+
+            Set<ChunkCoordinate> toUnload = new HashSet<>(renderedChunks);
+            toUnload.removeAll(desiredChunks);
+            long unloadStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+            for (ChunkCoordinate coordinate : toUnload) {
+                if (chunkPayloadFormat == BinaryChunkPayloadFormat.BRCP) {
+                    queueLiveChunkRestore(coordinate);
+                } else {
+                    restoreChunkBaseline(coordinate);
+                }
+            }
+            queuedUnloadCount = toUnload.size();
+            unloadQueueNanos = elapsedNanos(unloadStartedAt);
+
+            cancelStalePreparedChunks(desiredChunks);
+        }
+
+        if (chunkPayloadFormat == BinaryChunkPayloadFormat.BRCP) {
+            cancelQueuedLiveChunkRestores(desiredChunks);
+            long enqueueStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+            enqueuePreparedPacketFriendlyChunkBaselines(desiredChunkOrder);
+            enqueueLoadNanos = elapsedNanos(enqueueStartedAt);
+
+            long applyStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+            appliedLoadCount = applyReadyPreparedPacketFriendlyChunkBaselines(desiredChunkOrder, MAX_BRCP_CHUNK_APPLIES_PER_REFRESH);
+            applyLoadNanos = elapsedNanos(applyStartedAt);
+
+            if (!centerChanged && appliedLoadCount == 0) {
+                long restoreStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+                restoredChunkCount = processQueuedLiveChunkRestores(MAX_BRCP_CHUNK_RESTORES_PER_REFRESH);
+                restoreNanos = elapsedNanos(restoreStartedAt);
+            }
+
+            logChunkRefreshTimings(center, centerChanged, queuedUnloadCount, appliedLoadCount, restoredChunkCount,
+                    unloadQueueNanos, enqueueLoadNanos, applyLoadNanos, restoreNanos, refreshStartedAt);
             return;
         }
-        currentChunkCenter = center;
 
-        Set<ChunkCoordinate> desiredChunks = new HashSet<>();
-        for (int deltaX = -CHUNK_PLAYBACK_RADIUS; deltaX <= CHUNK_PLAYBACK_RADIUS; deltaX++) {
-            for (int deltaZ = -CHUNK_PLAYBACK_RADIUS; deltaZ <= CHUNK_PLAYBACK_RADIUS; deltaZ++) {
+        if (!centerChanged) {
+            return;
+        }
+
+        for (ChunkCoordinate coordinate : desiredChunkOrder) {
+            if (renderedChunks.contains(coordinate)) {
+                continue;
+            }
+            applyChunkBaseline(coordinate);
+        }
+    }
+
+    private List<ChunkCoordinate> desiredChunks(ChunkCoordinate center) {
+        List<ChunkCoordinate> desiredChunks = new ArrayList<>((chunkPlaybackRadius * 2 + 1) * (chunkPlaybackRadius * 2 + 1));
+        for (int deltaX = -chunkPlaybackRadius; deltaX <= chunkPlaybackRadius; deltaX++) {
+            for (int deltaZ = -chunkPlaybackRadius; deltaZ <= chunkPlaybackRadius; deltaZ++) {
                 desiredChunks.add(new ChunkCoordinate(center.worldName(), center.chunkX() + deltaX, center.chunkZ() + deltaZ));
             }
         }
+        desiredChunks.sort(chunkPriorityComparator(center));
+        return List.copyOf(desiredChunks);
+    }
 
-        Set<ChunkCoordinate> toUnload = new HashSet<>(renderedChunks);
-        toUnload.removeAll(desiredChunks);
-        for (ChunkCoordinate coordinate : toUnload) {
-            restoreChunkBaseline(coordinate);
-        }
+    private Comparator<ChunkCoordinate> chunkPriorityComparator(ChunkCoordinate center) {
+        return Comparator
+                .comparingInt((ChunkCoordinate coordinate) -> squaredChunkDistance(center, coordinate))
+                .thenComparingInt(coordinate -> chebyshevChunkDistance(center, coordinate))
+                .thenComparingInt(coordinate -> manhattanChunkDistance(center, coordinate))
+                .thenComparingInt(ChunkCoordinate::chunkX)
+                .thenComparingInt(ChunkCoordinate::chunkZ);
+    }
 
-        Set<ChunkCoordinate> toLoad = new HashSet<>(desiredChunks);
-        toLoad.removeAll(renderedChunks);
-        for (ChunkCoordinate coordinate : toLoad) {
-            applyChunkBaseline(coordinate);
-        }
+    private int squaredChunkDistance(ChunkCoordinate center, ChunkCoordinate coordinate) {
+        int deltaX = center.chunkX() - coordinate.chunkX();
+        int deltaZ = center.chunkZ() - coordinate.chunkZ();
+        return deltaX * deltaX + deltaZ * deltaZ;
+    }
+
+    private int chebyshevChunkDistance(ChunkCoordinate center, ChunkCoordinate coordinate) {
+        return Math.max(
+                Math.abs(center.chunkX() - coordinate.chunkX()),
+                Math.abs(center.chunkZ() - coordinate.chunkZ()));
+    }
+
+    private int manhattanChunkDistance(ChunkCoordinate center, ChunkCoordinate coordinate) {
+        return Math.abs(center.chunkX() - coordinate.chunkX())
+                + Math.abs(center.chunkZ() - coordinate.chunkZ());
     }
 
     public void showGlobalBlockBreakStage(TimelineEvent.BlockBreakStage event) {
@@ -554,6 +720,123 @@ public class ReplayBlockManager {
         reapplyHistoricalChunkMutations(coordinate);
     }
 
+    private void applyPreparedPacketFriendlyChunkBaseline(ChunkCoordinate coordinate) {
+        if (unavailableReplayChunks.contains(coordinate)) {
+            return;
+        }
+
+        CompletableFuture<PreparedReplayChunk> future = pendingReplayChunkPrepares.computeIfAbsent(
+                coordinate,
+                this::prepareReplayChunkAsync);
+        if (!future.isDone()) {
+            return;
+        }
+
+        pendingReplayChunkPrepares.remove(coordinate, future);
+        PreparedReplayChunk preparedChunk;
+        try {
+            preparedChunk = future.join();
+        } catch (CompletionException ex) {
+            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+            logger.log(Level.WARNING, "Failed to prepare replay chunk snapshot for " + coordinate, cause);
+            unavailableReplayChunks.add(coordinate);
+            return;
+        }
+        if (preparedChunk == null) {
+            unavailableReplayChunks.add(coordinate);
+            return;
+        }
+
+        applyPreparedReplayChunk(coordinate, preparedChunk);
+    }
+
+    private void enqueuePreparedPacketFriendlyChunkBaselines(List<ChunkCoordinate> desiredChunks) {
+        int availableSlots = Math.max(0, maxReplayChunkPreparesInFlight - pendingReplayChunkPrepares.size());
+        if (availableSlots == 0) {
+            return;
+        }
+
+        for (ChunkCoordinate coordinate : desiredChunks) {
+            if (availableSlots == 0) {
+                break;
+            }
+            if (renderedChunks.contains(coordinate)
+                    || queuedLiveChunkRestores.contains(coordinate)
+                    || unavailableReplayChunks.contains(coordinate)
+                    || pendingReplayChunkPrepares.containsKey(coordinate)) {
+                continue;
+            }
+            pendingReplayChunkPrepares.put(coordinate, prepareReplayChunkAsync(coordinate));
+            availableSlots--;
+        }
+    }
+
+    private int applyReadyPreparedPacketFriendlyChunkBaselines(List<ChunkCoordinate> desiredChunks, int maxApplies) {
+        int applied = 0;
+        for (ChunkCoordinate coordinate : desiredChunks) {
+            if (applied >= maxApplies) {
+                break;
+            }
+            if (renderedChunks.contains(coordinate)) {
+                continue;
+            }
+
+            CompletableFuture<PreparedReplayChunk> future = pendingReplayChunkPrepares.get(coordinate);
+            if (future == null || !future.isDone()) {
+                continue;
+            }
+
+            applyPreparedPacketFriendlyChunkBaseline(coordinate);
+            if (renderedChunks.contains(coordinate)) {
+                applied++;
+            }
+        }
+        return applied;
+    }
+
+    private CompletableFuture<PreparedReplayChunk> prepareReplayChunkAsync(ChunkCoordinate coordinate) {
+        ClientVersion clientVersion = clientVersionResolver.apply(viewer);
+        return CompletableFuture.supplyAsync(() -> prepareReplayChunk(coordinate, clientVersion), replayChunkPreparationExecutor);
+    }
+
+    private PreparedReplayChunk prepareReplayChunk(ChunkCoordinate coordinate, ClientVersion clientVersion) {
+        long prepareStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+        try {
+            Optional<ReplayChunkSnapshot> decodedChunk;
+            synchronized (chunkPlaybackCache) {
+                decodedChunk = chunkPlaybackCache.loadChunk(coordinate);
+            }
+            if (decodedChunk.isEmpty()) {
+                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), false);
+                return null;
+            }
+            if (!(decodedChunk.get() instanceof ReplayChunkSnapshot.PacketFriendlySnapshot packetFriendlySnapshot)) {
+                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), false);
+                return null;
+            }
+
+            PreparedReplayChunk preparedChunk = new PreparedReplayChunk(
+                    replayChunkPacketPreparer.prepare(coordinate, packetFriendlySnapshot.payload(), clientVersion));
+            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), true);
+            return preparedChunk;
+        } catch (IOException | RuntimeException ex) {
+            throw new CompletionException(ex);
+        }
+    }
+
+    private void applyPreparedReplayChunk(ChunkCoordinate coordinate, PreparedReplayChunk preparedChunk) {
+        try {
+            replayChunkSnapshotSender.send(viewer, coordinate, preparedChunk.packet());
+            renderedChunks.add(coordinate);
+        } catch (IOException | RuntimeException ex) {
+            logger.log(Level.WARNING,
+                    "Failed to send replay chunk snapshot for " + coordinate,
+                    ex);
+        }
+
+        reapplyHistoricalChunkMutations(coordinate);
+    }
+
     private void applyLegacyChunkBaseline(
             ChunkCoordinate coordinate,
             BinaryChunkPayloadCodec.DecodedChunkPayload payload
@@ -599,7 +882,10 @@ public class ReplayBlockManager {
             BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload
     ) {
         try {
-            replayChunkSnapshotSender.send(viewer, coordinate, payload);
+            replayChunkSnapshotSender.send(
+                    viewer,
+                    coordinate,
+                    replayChunkPacketPreparer.prepare(coordinate, payload, clientVersionResolver.apply(viewer)));
             renderedChunks.add(coordinate);
         } catch (IOException | RuntimeException ex) {
             logger.log(Level.WARNING,
@@ -609,30 +895,85 @@ public class ReplayBlockManager {
     }
 
     private void reapplyHistoricalChunkMutations(ChunkCoordinate coordinate) {
-        if (replayTimeline.isEmpty()) {
+        List<IndexedReplayMutation> chunkMutations = replayMutationsByChunk.get(coordinate);
+        if (chunkMutations == null || chunkMutations.isEmpty()) {
             return;
         }
 
         int end = Math.max(0, Math.min(currentTimelineIndexSupplier.getAsInt(), replayTimeline.size()));
-        for (int i = 0; i < end; i++) {
-            TimelineEvent event = replayTimeline.get(i);
-            if (event instanceof TimelineEvent.BlockPlace blockPlace && affectsChunk(coordinate, blockPlace.world(), blockPlace.x(), blockPlace.z())) {
+        for (IndexedReplayMutation indexedMutation : chunkMutations) {
+            if (indexedMutation.index() >= end) {
+                break;
+            }
+
+            TimelineEvent event = indexedMutation.event();
+            if (event instanceof TimelineEvent.BlockPlace blockPlace) {
                 applyReplayBlockChange(blockPlace, true);
-            } else if (event instanceof TimelineEvent.BlockBreak blockBreak && affectsChunk(coordinate, blockBreak.world(), blockBreak.x(), blockBreak.z())) {
+            } else if (event instanceof TimelineEvent.BlockBreak blockBreak) {
                 applyReplayBlockChange(blockBreak, true);
             }
         }
     }
 
-    private boolean affectsChunk(ChunkCoordinate coordinate, String worldName, int x, int z) {
-        return coordinate.worldName().equals(worldName)
-                && Math.floorDiv(x, 16) == coordinate.chunkX()
-                && Math.floorDiv(z, 16) == coordinate.chunkZ();
+    private Map<ChunkCoordinate, List<IndexedReplayMutation>> indexReplayMutations(List<TimelineEvent> timeline) {
+        if (timeline.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<ChunkCoordinate, List<IndexedReplayMutation>> indexedMutations = new HashMap<>();
+        for (int index = 0; index < timeline.size(); index++) {
+            TimelineEvent event = timeline.get(index);
+            ChunkCoordinate coordinate = switch (event) {
+                case TimelineEvent.BlockPlace blockPlace when blockPlace.world() != null ->
+                        new ChunkCoordinate(blockPlace.world(), Math.floorDiv(blockPlace.x(), 16), Math.floorDiv(blockPlace.z(), 16));
+                case TimelineEvent.BlockBreak blockBreak when blockBreak.world() != null ->
+                        new ChunkCoordinate(blockBreak.world(), Math.floorDiv(blockBreak.x(), 16), Math.floorDiv(blockBreak.z(), 16));
+                default -> null;
+            };
+            if (coordinate == null) {
+                continue;
+            }
+
+            indexedMutations.computeIfAbsent(coordinate, ignored -> new ArrayList<>())
+                    .add(new IndexedReplayMutation(index, event));
+        }
+
+        Map<ChunkCoordinate, List<IndexedReplayMutation>> immutableIndex = new HashMap<>();
+        for (Map.Entry<ChunkCoordinate, List<IndexedReplayMutation>> entry : indexedMutations.entrySet()) {
+            immutableIndex.put(entry.getKey(), List.copyOf(entry.getValue()));
+        }
+        return Map.copyOf(immutableIndex);
     }
 
     private void restoreChunkBaseline(ChunkCoordinate coordinate) {
         if (chunkPayloadFormat == BinaryChunkPayloadFormat.BRCP) {
-            restoreLiveChunkPacket(coordinate);
+            CompletableFuture<PreparedReplayChunk> pendingRestore = pendingLiveChunkRestorePrepares.remove(coordinate);
+            if (pendingRestore != null && pendingRestore.isDone()) {
+                try {
+                    PreparedReplayChunk preparedChunk = pendingRestore.join();
+                    if (preparedChunk != null) {
+                        replayChunkSnapshotSender.send(viewer, coordinate, preparedChunk.packet());
+                    }
+                } catch (CompletionException | CancellationException ex) {
+                    logger.log(Level.WARNING,
+                            "Failed to restore live chunk snapshot for " + coordinate,
+                            ex.getCause() != null ? ex.getCause() : ex);
+                } catch (IOException | RuntimeException ex) {
+                    logger.log(Level.WARNING,
+                            "Failed to restore live chunk snapshot for " + coordinate,
+                            ex);
+                }
+            } else if (pendingRestore != null) {
+                pendingRestore.cancel(false);
+                restoreLiveChunkPacket(coordinate);
+            } else {
+                restoreLiveChunkPacket(coordinate);
+            }
+            CompletableFuture<PreparedReplayChunk> pending = pendingReplayChunkPrepares.remove(coordinate);
+            if (pending != null) {
+                pending.cancel(false);
+            }
+            queuedLiveChunkRestores.remove(coordinate);
             renderedChunks.remove(coordinate);
             return;
         }
@@ -658,13 +999,199 @@ public class ReplayBlockManager {
 
     private void restoreLiveChunkPacket(ChunkCoordinate coordinate) {
         try {
-            CapturedChunkBaseline liveChunk = liveChunkCaptureService.capture(coordinate);
-            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = packetFriendlyPayloadCodec.decode(liveChunk.payloadBytes());
-            replayChunkSnapshotSender.send(viewer, coordinate, payload);
+            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = liveChunkCaptureService.capturePayload(coordinate);
+            replayChunkSnapshotSender.send(
+                    viewer,
+                    coordinate,
+                    replayChunkPacketPreparer.prepare(coordinate, payload, clientVersionResolver.apply(viewer)));
         } catch (IOException | RuntimeException ex) {
             logger.log(Level.WARNING,
                     "Failed to restore live chunk snapshot for " + coordinate,
                     ex);
         }
+    }
+
+    private void queueLiveChunkRestore(ChunkCoordinate coordinate) {
+        CompletableFuture<PreparedReplayChunk> pending = pendingReplayChunkPrepares.remove(coordinate);
+        if (pending != null) {
+            pending.cancel(false);
+        }
+        queuedLiveChunkRestores.add(coordinate);
+    }
+
+    private void cancelQueuedLiveChunkRestores(Set<ChunkCoordinate> desiredChunks) {
+        queuedLiveChunkRestores.removeIf(desiredChunks::contains);
+        for (ChunkCoordinate coordinate : desiredChunks) {
+            CompletableFuture<PreparedReplayChunk> pending = pendingLiveChunkRestorePrepares.remove(coordinate);
+            if (pending != null) {
+                pending.cancel(false);
+            }
+        }
+    }
+
+    private int processQueuedLiveChunkRestores(int maxRestores) {
+        if (queuedLiveChunkRestores.isEmpty() || maxRestores <= 0) {
+            return 0;
+        }
+
+        int restored = 0;
+        int availablePrepareSlots = Math.max(0, maxLiveChunkRestorePreparesInFlight - pendingLiveChunkRestorePrepares.size());
+        ClientVersion clientVersion = null;
+        Iterator<ChunkCoordinate> iterator = queuedLiveChunkRestores.iterator();
+        while (iterator.hasNext() && restored < maxRestores) {
+            ChunkCoordinate coordinate = iterator.next();
+            CompletableFuture<PreparedReplayChunk> pending = pendingLiveChunkRestorePrepares.get(coordinate);
+            if (pending == null) {
+                if (availablePrepareSlots == 0) {
+                    continue;
+                }
+                try {
+                    BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = liveChunkCaptureService.capturePayload(coordinate);
+                    if (clientVersion == null) {
+                        clientVersion = clientVersionResolver.apply(viewer);
+                    }
+                    pendingLiveChunkRestorePrepares.put(
+                            coordinate,
+                            prepareLiveChunkRestoreAsync(coordinate, payload, clientVersion));
+                    availablePrepareSlots--;
+                } catch (IOException | RuntimeException ex) {
+                    iterator.remove();
+                    logger.log(Level.WARNING,
+                            "Failed to capture live chunk snapshot for " + coordinate,
+                            ex);
+                }
+                continue;
+            }
+            if (!pending.isDone()) {
+                continue;
+            }
+
+            iterator.remove();
+            pendingLiveChunkRestorePrepares.remove(coordinate);
+            try {
+                PreparedReplayChunk preparedChunk = pending.join();
+                if (preparedChunk != null) {
+                    replayChunkSnapshotSender.send(viewer, coordinate, preparedChunk.packet());
+                    renderedChunks.remove(coordinate);
+                }
+                restored++;
+            } catch (CompletionException | CancellationException ex) {
+                logger.log(Level.WARNING,
+                        "Failed to restore live chunk snapshot for " + coordinate,
+                        ex.getCause() != null ? ex.getCause() : ex);
+            } catch (IOException | RuntimeException ex) {
+                logger.log(Level.WARNING,
+                        "Failed to restore live chunk snapshot for " + coordinate,
+                        ex);
+            }
+        }
+        return restored;
+    }
+
+    private CompletableFuture<PreparedReplayChunk> prepareLiveChunkRestoreAsync(
+            ChunkCoordinate coordinate,
+            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload,
+            ClientVersion clientVersion
+    ) {
+        return CompletableFuture.supplyAsync(
+                () -> prepareLiveChunkRestore(coordinate, payload, clientVersion),
+                replayChunkPreparationExecutor);
+    }
+
+    private PreparedReplayChunk prepareLiveChunkRestore(
+            ChunkCoordinate coordinate,
+            BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload,
+            ClientVersion clientVersion
+    ) {
+        long prepareStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+        try {
+            PreparedReplayChunk preparedChunk = new PreparedReplayChunk(
+                    replayChunkPacketPreparer.prepare(coordinate, payload, clientVersion));
+            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), true);
+            return preparedChunk;
+        } catch (IOException | RuntimeException ex) {
+            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), false);
+            throw new CompletionException(ex);
+        }
+    }
+
+    private long elapsedNanos(long startedAt) {
+        if (!chunkTimingDiagnosticsEnabled || startedAt == 0L) {
+            return 0L;
+        }
+        return System.nanoTime() - startedAt;
+    }
+
+    private void logPreparedChunkTiming(ChunkCoordinate coordinate, long elapsedNanos, boolean prepared) {
+        logPreparedChunkTiming("replay-load", coordinate, elapsedNanos, prepared);
+    }
+
+    private void logPreparedChunkTiming(String phase, ChunkCoordinate coordinate, long elapsedNanos, boolean prepared) {
+        if (!chunkTimingDiagnosticsEnabled) {
+            return;
+        }
+        logger.log(Level.INFO,
+                String.format(Locale.ROOT,
+                        "Replay chunk async prepare phase=%s %s prepared=%s duration=%.3fms",
+                        phase,
+                        coordinate,
+                        prepared,
+                        elapsedNanos / 1_000_000.0));
+    }
+
+    private void logChunkRefreshTimings(
+            ChunkCoordinate center,
+            boolean centerChanged,
+            int queuedUnloadCount,
+            int appliedLoadCount,
+            int restoredChunkCount,
+            long unloadQueueNanos,
+            long enqueueLoadNanos,
+            long applyLoadNanos,
+            long restoreNanos,
+            long refreshStartedAt
+    ) {
+        if (!chunkTimingDiagnosticsEnabled) {
+            return;
+        }
+        if (!centerChanged && appliedLoadCount == 0 && restoredChunkCount == 0) {
+            return;
+        }
+
+        logger.log(Level.INFO,
+                String.format(Locale.ROOT,
+                        "Replay chunk refresh center=%s changed=%s loadsApplied=%d restoresApplied=%d unloadsQueued=%d pendingPrepares=%d pendingRestores=%d durations[queueUnload=%.3fms, enqueueLoads=%.3fms, applyLoads=%.3fms, processRestores=%.3fms, total=%.3fms]",
+                        center,
+                        centerChanged,
+                        appliedLoadCount,
+                        restoredChunkCount,
+                        queuedUnloadCount,
+                        pendingReplayChunkPrepares.size(),
+                        queuedLiveChunkRestores.size(),
+                        unloadQueueNanos / 1_000_000.0,
+                        enqueueLoadNanos / 1_000_000.0,
+                        applyLoadNanos / 1_000_000.0,
+                        restoreNanos / 1_000_000.0,
+                        elapsedNanos(refreshStartedAt) / 1_000_000.0));
+    }
+
+    private void cancelStalePreparedChunks(Set<ChunkCoordinate> desiredChunks) {
+        for (Map.Entry<ChunkCoordinate, CompletableFuture<PreparedReplayChunk>> entry : pendingReplayChunkPrepares.entrySet()) {
+            if (desiredChunks.contains(entry.getKey())) {
+                continue;
+            }
+
+            if (pendingReplayChunkPrepares.remove(entry.getKey(), entry.getValue())) {
+                entry.getValue().cancel(false);
+            }
+        }
+    }
+
+    private static int computeMaxReplayChunkPreparesInFlight(int chunkPlaybackRadius) {
+        return Math.max(3, Math.min(8, Math.max(1, chunkPlaybackRadius) * 2));
+    }
+
+    private static int computeMaxLiveChunkRestorePreparesInFlight(int chunkPlaybackRadius) {
+        return Math.max(2, Math.min(4, Math.max(1, chunkPlaybackRadius)));
     }
 }

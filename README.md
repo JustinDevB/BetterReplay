@@ -162,6 +162,16 @@ List:
   Protected-Highlight-Color: "&6"
 ```
 
+Playback diagnostics key:
+
+```yaml
+Playback:
+  Speed-Step: 0.2
+  Max-Speed: 1.0
+  Chunk-View-Radius: 3
+  Chunk-Timing-Diagnostics: false
+```
+
 Chunk baseline capture keys:
 
 ```yaml
@@ -193,6 +203,9 @@ Notes:
 - `Recording.Chunk-Capture.Radius` controls the square chunk-interest window around each tracked player.
 - `Recording.Chunk-Capture.Capture-Interval-Ticks` controls how often the plugin recomputes chunk interest and exports newly discovered chunks.
 - `Recording.Chunk-Capture.Max-Unique-Chunks-Per-Recording` bounds capture size; once the cap is reached, recording continues but additional chunk baselines are skipped.
+- `Playback.Chunk-View-Radius` controls the replay viewer's chunk playback radius independently from recording capture radius. Default is `3`.
+- If `Playback.Chunk-View-Radius` is larger than `Recording.Chunk-Capture.Radius`, only chunks that were actually captured during recording can be replayed; uncaptured chunks stay on the live world view.
+- `Playback.Chunk-Timing-Diagnostics` logs per-stage replay chunk timing information at runtime so you can inspect async preparation, replay load application, and queued live restore costs while profiling MSPT spikes.
 - Protected replays are skipped by both retention cleanup and manual delete commands until they are explicitly unprotected.
 - Protection stores required audit metadata: `protectedAt` and `protectedBy`.
 - Protected replays are highlighted in `/replay list` using `List.Protected-Highlight-Color`; the default is gold (`&6`).
