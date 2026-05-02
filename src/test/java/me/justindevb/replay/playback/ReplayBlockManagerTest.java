@@ -29,13 +29,19 @@ import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -116,6 +122,46 @@ class ReplayBlockManagerTest {
 
         verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), any(BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload.class));
         verify(liveChunkCaptureService).capture(chunkCoordinate);
+    }
+
+    @Test
+    void refreshVisibleChunkBaselines_logsSnapshotSendFailures() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        ChunkCoordinate chunkCoordinate = new ChunkCoordinate("world", 0, 0);
+        byte[] replayPayloadBytes = packetFriendlyPayloadBytes(0);
+        TestLogHandler logHandler = new TestLogHandler();
+        Logger logger = testLogger(logHandler);
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+        org.mockito.Mockito.doThrow(new IOException("send failed"))
+                .when(snapshotSender)
+                .send(eq(viewer), eq(chunkCoordinate), any(BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload.class));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, replayPayloadBytes)),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                logger);
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+        }
+
+        assertTrue(logHandler.contains(Level.WARNING, "Failed to send replay chunk snapshot for ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0]"));
+        assertTrue(logHandler.containsThrown(IOException.class, "send failed"));
     }
 
         @Test
@@ -222,5 +268,42 @@ class ReplayBlockManagerTest {
             lz4.write(payload);
         }
         return out.toByteArray();
+    }
+
+    private static Logger testLogger(TestLogHandler handler) {
+        Logger logger = Logger.getLogger("ReplayBlockManagerTest." + System.nanoTime());
+        logger.setUseParentHandlers(false);
+        logger.setLevel(Level.ALL);
+        logger.addHandler(handler);
+        return logger;
+    }
+
+    private static final class TestLogHandler extends Handler {
+        private final java.util.List<LogRecord> records = new java.util.ArrayList<>();
+
+        @Override
+        public void publish(LogRecord record) {
+            records.add(record);
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() {
+        }
+
+        boolean contains(Level level, String messageFragment) {
+            return records.stream().anyMatch(record -> record.getLevel().equals(level)
+                    && record.getMessage() != null
+                    && record.getMessage().contains(messageFragment));
+        }
+
+        boolean containsThrown(Class<? extends Throwable> type, String messageFragment) {
+            return records.stream().anyMatch(record -> type.isInstance(record.getThrown())
+                    && record.getThrown().getMessage() != null
+                    && record.getThrown().getMessage().contains(messageFragment));
+        }
     }
 }

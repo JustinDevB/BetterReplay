@@ -50,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Config migration no longer accumulates extra blank lines between `Config-Version` and subsequent root sections
 - BRCP chunk playback no longer hard-links `WrappedBlockState.isFluid()`, avoiding `NoSuchMethodError` on PacketEvents runtimes that do not expose that method
 - BRCP chunk playback now resolves `Chunk_v1_18` constructors reflectively, avoiding `NoSuchMethodError` on PacketEvents runtimes with different section-constructor signatures
+- BRCP chunk playback and chunk-baseline loading no longer fail silently; packet send and decode errors are now logged with chunk coordinates so missing chunk rendering can be diagnosed from server logs
+- BRCP chunk playback now supplies a non-null PacketEvents `LightData` payload when sending chunk snapshots, avoiding `NullPointerException` during chunk packet serialization on PacketEvents 2.12.1
 
 ### Changed
 - All commands routed through `ReplayManager` API (#25)

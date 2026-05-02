@@ -16,6 +16,10 @@ import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -53,9 +57,16 @@ class ReplayChunkPlaybackCacheTest {
                 BinaryReplayChunkMetadata.present(1, 1, "abcd"),
                 Map.of("chunks/world/r.0.0.brregion", new byte[] { 1, 2, 3 }));
 
-        ReplayChunkPlaybackCache cache = new ReplayChunkPlaybackCache(chunkData);
+        TestLogHandler logHandler = new TestLogHandler();
+        ReplayChunkPlaybackCache cache = new ReplayChunkPlaybackCache(
+            chunkData,
+            regionCodec,
+            payloadCodec,
+            packetFriendlyPayloadCodec,
+            testLogger(logHandler));
 
         assertFalse(cache.loadChunk(new ChunkCoordinate("world", 0, 0)).isPresent());
+        assertTrue(logHandler.contains(Level.WARNING, "Failed to load replay chunk baseline for ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] from chunks/world/r.0.0.brregion"));
     }
 
     @Test
@@ -95,5 +106,36 @@ class ReplayChunkPlaybackCacheTest {
             lz4.write(payload);
         }
         return out.toByteArray();
+    }
+
+    private static Logger testLogger(TestLogHandler handler) {
+        Logger logger = Logger.getLogger("ReplayChunkPlaybackCacheTest." + System.nanoTime());
+        logger.setUseParentHandlers(false);
+        logger.setLevel(Level.ALL);
+        logger.addHandler(handler);
+        return logger;
+    }
+
+    private static final class TestLogHandler extends Handler {
+        private final java.util.List<LogRecord> records = new java.util.ArrayList<>();
+
+        @Override
+        public void publish(LogRecord record) {
+            records.add(record);
+        }
+
+        @Override
+        public void flush() {
+        }
+
+        @Override
+        public void close() {
+        }
+
+        boolean contains(Level level, String messageFragment) {
+            return records.stream().anyMatch(record -> record.getLevel().equals(level)
+                    && record.getMessage() != null
+                    && record.getMessage().contains(messageFragment));
+        }
     }
 }

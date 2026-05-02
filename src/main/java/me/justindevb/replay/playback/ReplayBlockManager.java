@@ -21,6 +21,8 @@ import me.justindevb.replay.recording.TimelineEvent;
 import java.io.IOException;
 import java.util.*;
 import java.util.function.IntSupplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Manages block state desync/resync during replay playback.
@@ -38,6 +40,7 @@ public class ReplayBlockManager {
     private final BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec;
     private final WorldChunkPacketFriendlyCaptureService liveChunkCaptureService;
     private final ReplayChunkSnapshotSender replayChunkSnapshotSender;
+    private final Logger logger;
 
     public record BlockKey(String world, int x, int y, int z) {}
 
@@ -54,18 +57,25 @@ public class ReplayBlockManager {
     public ReplayBlockManager(Player viewer, Replay replay, ReplayChunkData chunkData) {
         ReplayChunkData replayChunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
         BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec = new BinaryPacketFriendlyChunkPayloadCodec();
+        Logger logger = replay != null && replay.getLogger() != null
+                ? replay.getLogger()
+                : Logger.getLogger(ReplayBlockManager.class.getName());
         this.viewer = viewer;
         this.replay = replay;
         this.chunkPlaybackCache = new ReplayChunkPlaybackCache(replayChunkData);
         this.chunkPayloadFormat = replayChunkData.metadata().payloadFormat();
         this.packetFriendlyPayloadCodec = packetFriendlyPayloadCodec;
         this.liveChunkCaptureService = new WorldChunkPacketFriendlyCaptureService(packetFriendlyPayloadCodec);
+        this.logger = logger;
         PacketFriendlyChunkColumnBuilder columnBuilder = new PacketFriendlyChunkColumnBuilder();
         this.replayChunkSnapshotSender = (player, coordinate, payload) -> {
             ClientVersion clientVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(player);
             PacketEvents.getAPI().getPlayerManager().sendPacket(
                     player,
-                    new WrapperPlayServerChunkData(columnBuilder.build(coordinate, payload, clientVersion)));
+                    new WrapperPlayServerChunkData(
+                            columnBuilder.build(coordinate, payload, clientVersion),
+                            columnBuilder.buildLightData(payload),
+                            false));
         };
     }
 
@@ -78,6 +88,27 @@ public class ReplayBlockManager {
             WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
             ReplayChunkSnapshotSender replayChunkSnapshotSender
     ) {
+        this(
+                viewer,
+                replay,
+                chunkPlaybackCache,
+                chunkPayloadFormat,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                replayChunkSnapshotSender,
+                Logger.getLogger(ReplayBlockManager.class.getName()));
+    }
+
+    ReplayBlockManager(
+            Player viewer,
+            Replay replay,
+            ReplayChunkPlaybackCache chunkPlaybackCache,
+            BinaryChunkPayloadFormat chunkPayloadFormat,
+            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
+            WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
+            ReplayChunkSnapshotSender replayChunkSnapshotSender,
+            Logger logger
+    ) {
         this.viewer = viewer;
         this.replay = replay;
         this.chunkPlaybackCache = Objects.requireNonNull(chunkPlaybackCache, "chunkPlaybackCache");
@@ -85,6 +116,7 @@ public class ReplayBlockManager {
         this.packetFriendlyPayloadCodec = Objects.requireNonNull(packetFriendlyPayloadCodec, "packetFriendlyPayloadCodec");
         this.liveChunkCaptureService = Objects.requireNonNull(liveChunkCaptureService, "liveChunkCaptureService");
         this.replayChunkSnapshotSender = Objects.requireNonNull(replayChunkSnapshotSender, "replayChunkSnapshotSender");
+        this.logger = Objects.requireNonNull(logger, "logger");
     }
 
     public void configureChunkReplayContext(List<TimelineEvent> timeline, IntSupplier currentTimelineIndexSupplier) {
@@ -569,7 +601,10 @@ public class ReplayBlockManager {
         try {
             replayChunkSnapshotSender.send(viewer, coordinate, payload);
             renderedChunks.add(coordinate);
-        } catch (IOException | RuntimeException ignored) {
+        } catch (IOException | RuntimeException ex) {
+            logger.log(Level.WARNING,
+                    "Failed to send replay chunk snapshot for " + coordinate,
+                    ex);
         }
     }
 
@@ -626,7 +661,10 @@ public class ReplayBlockManager {
             CapturedChunkBaseline liveChunk = liveChunkCaptureService.capture(coordinate);
             BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = packetFriendlyPayloadCodec.decode(liveChunk.payloadBytes());
             replayChunkSnapshotSender.send(viewer, coordinate, payload);
-        } catch (IOException | RuntimeException ignored) {
+        } catch (IOException | RuntimeException ex) {
+            logger.log(Level.WARNING,
+                    "Failed to restore live chunk snapshot for " + coordinate,
+                    ex);
         }
     }
 }

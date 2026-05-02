@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * Resolves and decodes chunk baselines from replay chunk archive entries on demand.
@@ -25,11 +27,17 @@ public final class ReplayChunkPlaybackCache {
     private final BinaryChunkRegionCodec regionCodec;
     private final BinaryChunkPayloadCodec legacyPayloadCodec;
     private final BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec;
+    private final Logger logger;
     private final Map<String, BinaryChunkRegionCodec.DecodedBinaryChunkRegion> decodedRegions = new HashMap<>();
     private final Map<ChunkCoordinate, Optional<ReplayChunkSnapshot>> decodedChunks = new HashMap<>();
 
     public ReplayChunkPlaybackCache(ReplayChunkData chunkData) {
-        this(chunkData, new BinaryChunkRegionCodec(), new BinaryChunkPayloadCodec(), new BinaryPacketFriendlyChunkPayloadCodec());
+        this(
+                chunkData,
+                new BinaryChunkRegionCodec(),
+                new BinaryChunkPayloadCodec(),
+                new BinaryPacketFriendlyChunkPayloadCodec(),
+                Logger.getLogger(ReplayChunkPlaybackCache.class.getName()));
     }
 
     ReplayChunkPlaybackCache(
@@ -38,10 +46,26 @@ public final class ReplayChunkPlaybackCache {
             BinaryChunkPayloadCodec legacyPayloadCodec,
             BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec
     ) {
+        this(
+                chunkData,
+                regionCodec,
+                legacyPayloadCodec,
+                packetFriendlyPayloadCodec,
+                Logger.getLogger(ReplayChunkPlaybackCache.class.getName()));
+    }
+
+    ReplayChunkPlaybackCache(
+            ReplayChunkData chunkData,
+            BinaryChunkRegionCodec regionCodec,
+            BinaryChunkPayloadCodec legacyPayloadCodec,
+            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
+            Logger logger
+    ) {
         this.chunkData = Objects.requireNonNull(chunkData, "chunkData");
         this.regionCodec = Objects.requireNonNull(regionCodec, "regionCodec");
         this.legacyPayloadCodec = Objects.requireNonNull(legacyPayloadCodec, "legacyPayloadCodec");
         this.packetFriendlyPayloadCodec = Objects.requireNonNull(packetFriendlyPayloadCodec, "packetFriendlyPayloadCodec");
+        this.logger = Objects.requireNonNull(logger, "logger");
     }
 
     public ReplayChunkData chunkData() {
@@ -58,14 +82,14 @@ public final class ReplayChunkPlaybackCache {
     }
 
     private Optional<ReplayChunkSnapshot> decodeChunk(ChunkCoordinate coordinate) {
+        String entryName = BinaryReplayFormat.RESERVED_CHUNKS_PREFIX
+            + me.justindevb.replay.storage.binary.BinaryChunkArchiveNaming.worldDirectory(coordinate.worldName())
+            + "/r."
+            + coordinate.regionKey().regionX()
+            + "."
+            + coordinate.regionKey().regionZ()
+            + BinaryReplayFormat.CHUNK_REGION_FILE_EXTENSION;
         try {
-            String entryName = BinaryReplayFormat.RESERVED_CHUNKS_PREFIX
-                    + me.justindevb.replay.storage.binary.BinaryChunkArchiveNaming.worldDirectory(coordinate.worldName())
-                    + "/r."
-                    + coordinate.regionKey().regionX()
-                    + "."
-                    + coordinate.regionKey().regionZ()
-                    + BinaryReplayFormat.CHUNK_REGION_FILE_EXTENSION;
             byte[] regionBytes = chunkData.regionEntries().get(entryName);
             if (regionBytes == null) {
                 return Optional.empty();
@@ -89,6 +113,9 @@ public final class ReplayChunkPlaybackCache {
             }
             return Optional.empty();
         } catch (IOException | RuntimeException ex) {
+            logger.log(Level.WARNING,
+                    "Failed to load replay chunk baseline for " + coordinate + " from " + entryName,
+                    ex);
             return Optional.empty();
         }
     }

@@ -11,6 +11,7 @@ import com.github.retrooper.packetevents.protocol.world.blockentity.BlockEntityT
 import com.github.retrooper.packetevents.protocol.world.blockentity.BlockEntityTypes;
 import com.github.retrooper.packetevents.protocol.world.chunk.BaseChunk;
 import com.github.retrooper.packetevents.protocol.world.chunk.Column;
+import com.github.retrooper.packetevents.protocol.world.chunk.LightData;
 import com.github.retrooper.packetevents.protocol.world.chunk.TileEntity;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v_1_18.Chunk_v1_18;
 import com.github.retrooper.packetevents.protocol.world.chunk.palette.DataPalette;
@@ -25,6 +26,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Objects;
 
@@ -32,6 +34,7 @@ final class PacketFriendlyChunkColumnBuilder {
 
     private static final String AIR_BLOCK = "minecraft:air";
     private static final String PLAINS_BIOME = "minecraft:plains";
+    private static final byte[][] EMPTY_LIGHT_ARRAYS = new byte[0][];
 
     Column build(
             ChunkCoordinate coordinate,
@@ -49,6 +52,21 @@ final class PacketFriendlyChunkColumnBuilder {
 
         TileEntity[] tileEntities = buildTileEntities(payload, clientVersion);
         return new Column(coordinate.chunkX(), coordinate.chunkZ(), true, sections, tileEntities);
+    }
+
+    LightData buildLightData(BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload) {
+        Objects.requireNonNull(payload, "payload");
+
+        return new LightData(
+                false,
+                new BitSet(),
+                new BitSet(),
+                new BitSet(),
+                new BitSet(),
+                0,
+                0,
+                EMPTY_LIGHT_ARRAYS,
+                EMPTY_LIGHT_ARRAYS);
     }
 
     private Chunk_v1_18 buildSection(
