@@ -229,8 +229,10 @@ class ReplayBlockManagerTest {
         prepareReplayChunk.invoke(manager, chunkCoordinate, ClientVersion.V_1_21_11);
         prepareReplayChunk.invoke(manager, chunkCoordinate, ClientVersion.V_1_21_11);
 
+        assertTrue(logHandler.contains(Level.INFO, "tick="));
         assertTrue(logHandler.contains(Level.INFO, "phase=replay-load ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] result=prepared cacheHit=false"));
         assertTrue(logHandler.contains(Level.INFO, "phase=replay-load ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] result=prepared-packet-cache-hit cacheHit=n/a"));
+        assertTrue(logHandler.contains(Level.INFO, "inFlightReplayLoads=0 inFlightLiveRestores=0"));
     }
 
     @Test
@@ -258,6 +260,7 @@ class ReplayBlockManagerTest {
             new Location(world, 0, 64, 0),
                 new Location(world, 0, 64, 0));
         when(liveChunkCaptureService.capturePayload(chunkCoordinate)).thenReturn(packetFriendlyPayload(1));
+        TestLogHandler logHandler = new TestLogHandler();
 
         ReplayBlockManager manager = new ReplayBlockManager(
                 viewer,
@@ -280,7 +283,8 @@ class ReplayBlockManagerTest {
                 1,
                 3,
                 2,
-                Logger.getLogger("ReplayBlockManagerTest.reentryCache"));
+                testLogger(logHandler));
+            setChunkTimingDiagnosticsEnabled(manager, true);
 
         try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
             bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
@@ -298,6 +302,9 @@ class ReplayBlockManagerTest {
         verify(liveChunkCaptureService, times(1)).capturePayload(chunkCoordinate);
         assertEquals(1, replayPrepareCalls[0]);
         assertEquals(1, livePrepareCalls[0]);
+        assertTrue(logHandler.contains(Level.INFO, "tick="));
+        assertTrue(logHandler.contains(Level.INFO, "preparedPacketCacheHits=1 freshPreparedLoads=0"));
+        assertTrue(logHandler.contains(Level.INFO, "inFlightReplayLoads=0 inFlightLiveRestores=0 queuedRestores=0"));
     }
 
         @Test

@@ -19,6 +19,7 @@ import me.justindevb.replay.Replay;
 import me.justindevb.replay.recording.TimelineEvent;
 
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
@@ -40,6 +41,7 @@ public class ReplayBlockManager {
     private static final int DEFAULT_PLAYBACK_CHUNK_VIEW_RADIUS = 3;
     private static final int MAX_BRCP_CHUNK_APPLIES_PER_REFRESH = 1;
     private static final int MAX_BRCP_CHUNK_RESTORES_PER_REFRESH = 1;
+    private static final Method BUKKIT_GET_CURRENT_TICK_METHOD = resolveBukkitCurrentTickMethod();
     private static final String PREPARE_RESULT_PREPARED = "prepared";
     private static final String PREPARE_RESULT_PREPARED_PACKET_CACHE_HIT = "prepared-packet-cache-hit";
     private static final String PREPARE_RESULT_MISSING_REPLAY_CHUNK = "missing-replay-chunk";
@@ -84,6 +86,15 @@ public class ReplayBlockManager {
     }
 
     private record PreparedReplayChunk(PacketFriendlyChunkColumnBuilder.PreparedChunkPacket packet) {
+    }
+
+    private record ReplayLoadApplyCounts(int appliedCount, int preparedPacketCacheHits, int freshPreparedLoads) {
+    }
+
+    private enum ReplayLoadApplySource {
+        NOT_APPLIED,
+        PREPARED_PACKET_CACHE,
+        FRESH_PREPARE
     }
 
     public ReplayBlockManager(Player viewer, Replay replay, ReplayChunkData chunkData) {
@@ -454,6 +465,8 @@ public class ReplayBlockManager {
         int queuedUnloadCount = 0;
         int appliedLoadCount = 0;
         int restoredChunkCount = 0;
+        int preparedPacketCacheHitCount = 0;
+        int freshPreparedLoadCount = 0;
 
         Location location = viewer.getLocation();
         ChunkCoordinate center = new ChunkCoordinate(
@@ -489,7 +502,10 @@ public class ReplayBlockManager {
             enqueueLoadNanos = elapsedNanos(enqueueStartedAt);
 
             long applyStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
-            appliedLoadCount = applyReadyPreparedPacketFriendlyChunkBaselines(desiredChunkOrder, MAX_BRCP_CHUNK_APPLIES_PER_REFRESH);
+            ReplayLoadApplyCounts loadApplyCounts = applyReadyPreparedPacketFriendlyChunkBaselines(desiredChunkOrder, MAX_BRCP_CHUNK_APPLIES_PER_REFRESH);
+            appliedLoadCount = loadApplyCounts.appliedCount();
+            preparedPacketCacheHitCount = loadApplyCounts.preparedPacketCacheHits();
+            freshPreparedLoadCount = loadApplyCounts.freshPreparedLoads();
             applyLoadNanos = elapsedNanos(applyStartedAt);
 
             if (!centerChanged && appliedLoadCount == 0) {
@@ -498,7 +514,8 @@ public class ReplayBlockManager {
                 restoreNanos = elapsedNanos(restoreStartedAt);
             }
 
-            logChunkRefreshTimings(center, centerChanged, queuedUnloadCount, appliedLoadCount, restoredChunkCount,
+        logChunkRefreshTimings(center, centerChanged, queuedUnloadCount, appliedLoadCount, restoredChunkCount,
+            preparedPacketCacheHitCount, freshPreparedLoadCount,
                     unloadQueueNanos, enqueueLoadNanos, applyLoadNanos, restoreNanos, refreshStartedAt);
             return;
         }
@@ -727,20 +744,22 @@ public class ReplayBlockManager {
         reapplyHistoricalChunkMutations(coordinate);
     }
 
-    private void applyPreparedPacketFriendlyChunkBaseline(ChunkCoordinate coordinate) {
+    private ReplayLoadApplySource applyPreparedPacketFriendlyChunkBaseline(ChunkCoordinate coordinate) {
         if (unavailableReplayChunks.contains(coordinate)) {
-            return;
+            return ReplayLoadApplySource.NOT_APPLIED;
         }
 
         if (applyCachedPreparedReplayChunk(coordinate)) {
-            return;
+            return renderedChunks.contains(coordinate)
+                    ? ReplayLoadApplySource.PREPARED_PACKET_CACHE
+                    : ReplayLoadApplySource.NOT_APPLIED;
         }
 
         CompletableFuture<PreparedReplayChunk> future = pendingReplayChunkPrepares.computeIfAbsent(
                 coordinate,
                 this::prepareReplayChunkAsync);
         if (!future.isDone()) {
-            return;
+            return ReplayLoadApplySource.NOT_APPLIED;
         }
 
         pendingReplayChunkPrepares.remove(coordinate, future);
@@ -751,14 +770,17 @@ public class ReplayBlockManager {
             Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
             logger.log(Level.WARNING, "Failed to prepare replay chunk snapshot for " + coordinate, cause);
             unavailableReplayChunks.add(coordinate);
-            return;
+            return ReplayLoadApplySource.NOT_APPLIED;
         }
         if (preparedChunk == null) {
             unavailableReplayChunks.add(coordinate);
-            return;
+            return ReplayLoadApplySource.NOT_APPLIED;
         }
 
         applyPreparedReplayChunk(coordinate, preparedChunk);
+        return renderedChunks.contains(coordinate)
+                ? ReplayLoadApplySource.FRESH_PREPARE
+                : ReplayLoadApplySource.NOT_APPLIED;
     }
 
     private void enqueuePreparedPacketFriendlyChunkBaselines(List<ChunkCoordinate> desiredChunks) {
@@ -783,8 +805,10 @@ public class ReplayBlockManager {
         }
     }
 
-    private int applyReadyPreparedPacketFriendlyChunkBaselines(List<ChunkCoordinate> desiredChunks, int maxApplies) {
+    private ReplayLoadApplyCounts applyReadyPreparedPacketFriendlyChunkBaselines(List<ChunkCoordinate> desiredChunks, int maxApplies) {
         int applied = 0;
+        int preparedPacketCacheHits = 0;
+        int freshPreparedLoads = 0;
         for (ChunkCoordinate coordinate : desiredChunks) {
             if (applied >= maxApplies) {
                 break;
@@ -793,25 +817,26 @@ public class ReplayBlockManager {
                 continue;
             }
 
-            if (preparedReplayChunkCache.containsKey(coordinate)) {
-                applyPreparedPacketFriendlyChunkBaseline(coordinate);
-                if (renderedChunks.contains(coordinate)) {
+            CompletableFuture<PreparedReplayChunk> future = pendingReplayChunkPrepares.get(coordinate);
+            if (!preparedReplayChunkCache.containsKey(coordinate) && (future == null || !future.isDone())) {
+                continue;
+            }
+
+            ReplayLoadApplySource applySource = applyPreparedPacketFriendlyChunkBaseline(coordinate);
+            switch (applySource) {
+                case PREPARED_PACKET_CACHE -> {
+                    preparedPacketCacheHits++;
                     applied++;
                 }
-                continue;
-            }
-
-            CompletableFuture<PreparedReplayChunk> future = pendingReplayChunkPrepares.get(coordinate);
-            if (future == null || !future.isDone()) {
-                continue;
-            }
-
-            applyPreparedPacketFriendlyChunkBaseline(coordinate);
-            if (renderedChunks.contains(coordinate)) {
-                applied++;
+                case FRESH_PREPARE -> {
+                    freshPreparedLoads++;
+                    applied++;
+                }
+                case NOT_APPLIED -> {
+                }
             }
         }
-        return applied;
+        return new ReplayLoadApplyCounts(applied, preparedPacketCacheHits, freshPreparedLoads);
     }
 
     private CompletableFuture<PreparedReplayChunk> prepareReplayChunkAsync(ChunkCoordinate coordinate) {
@@ -1180,13 +1205,17 @@ public class ReplayBlockManager {
             return;
         }
         String cacheHitLabel = cacheHit == null ? "n/a" : cacheHit.toString();
+        String tickLabel = currentServerTickLabel();
         logger.log(Level.INFO,
                 String.format(Locale.ROOT,
-                        "Replay chunk async prepare phase=%s %s result=%s cacheHit=%s duration=%.3fms",
+                "Replay chunk async prepare tick=%s phase=%s %s result=%s cacheHit=%s inFlightReplayLoads=%d inFlightLiveRestores=%d duration=%.3fms",
+                tickLabel,
                         phase,
                         coordinate,
                         result,
                         cacheHitLabel,
+                pendingReplayChunkPrepares.size(),
+                pendingLiveChunkRestorePrepares.size(),
                         elapsedNanos / 1_000_000.0));
     }
 
@@ -1196,6 +1225,8 @@ public class ReplayBlockManager {
             int queuedUnloadCount,
             int appliedLoadCount,
             int restoredChunkCount,
+            int preparedPacketCacheHitCount,
+            int freshPreparedLoadCount,
             long unloadQueueNanos,
             long enqueueLoadNanos,
             long applyLoadNanos,
@@ -1209,21 +1240,49 @@ public class ReplayBlockManager {
             return;
         }
 
+        String tickLabel = currentServerTickLabel();
         logger.log(Level.INFO,
                 String.format(Locale.ROOT,
-                        "Replay chunk refresh center=%s changed=%s loadsApplied=%d restoresApplied=%d unloadsQueued=%d pendingPrepares=%d pendingRestores=%d durations[queueUnload=%.3fms, enqueueLoads=%.3fms, applyLoads=%.3fms, processRestores=%.3fms, total=%.3fms]",
+                        "Replay chunk refresh tick=%s center=%s changed=%s loadsApplied=%d restoresApplied=%d unloadsQueued=%d inFlightReplayLoads=%d inFlightLiveRestores=%d queuedRestores=%d preparedPacketCacheHits=%d freshPreparedLoads=%d durations[queueUnload=%.3fms, enqueueLoads=%.3fms, applyLoads=%.3fms, processRestores=%.3fms, total=%.3fms]",
+                        tickLabel,
                         center,
                         centerChanged,
                         appliedLoadCount,
                         restoredChunkCount,
                         queuedUnloadCount,
                         pendingReplayChunkPrepares.size(),
+                        pendingLiveChunkRestorePrepares.size(),
                         queuedLiveChunkRestores.size(),
+                        preparedPacketCacheHitCount,
+                        freshPreparedLoadCount,
                         unloadQueueNanos / 1_000_000.0,
                         enqueueLoadNanos / 1_000_000.0,
                         applyLoadNanos / 1_000_000.0,
                         restoreNanos / 1_000_000.0,
                         elapsedNanos(refreshStartedAt) / 1_000_000.0));
+    }
+
+    private static Method resolveBukkitCurrentTickMethod() {
+        try {
+            return Bukkit.class.getMethod("getCurrentTick");
+        } catch (NoSuchMethodException ex) {
+            return null;
+        }
+    }
+
+    private static String currentServerTickLabel() {
+        if (BUKKIT_GET_CURRENT_TICK_METHOD == null) {
+            return "n/a";
+        }
+
+        try {
+            Object tick = BUKKIT_GET_CURRENT_TICK_METHOD.invoke(null);
+            if (tick instanceof Number number) {
+                return Long.toString(number.longValue());
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        return "n/a";
     }
 
     private void cancelStalePreparedChunks(Set<ChunkCoordinate> desiredChunks) {

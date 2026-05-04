@@ -76,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replay chunk playback now keeps prepared replay chunk packets cached for the viewer session so replay chunks that leave view and later re-enter can resend without rebuilding the packet payload
 - Playback chunk timing diagnostics now log explicit async prepare results such as `prepared`, `missing-replay-chunk`, `unsupported-payload`, and `prepare-failed` instead of a boolean flag
 - Playback chunk timing diagnostics now also include whether replay-load async preparation reused the in-memory decoded chunk cache via `cacheHit=true|false`
+- Playback chunk timing diagnostics now include the current server tick, in-flight replay-load and live-restore async task counts, and refresh counters showing prepared replay packet cache hits versus fresh prepared loads
 
 ## [1.4.0] - 2026-04-10
 
