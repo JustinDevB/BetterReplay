@@ -52,6 +52,25 @@ class ReplayChunkPlaybackCacheTest {
     }
 
     @Test
+    void loadChunkWithDiagnostics_reportsCacheHitAfterInitialDecode() throws Exception {
+        byte[] payload = payloadCodec.encode(0, 1, List.of("minecraft:stone"), new short[16 * 16]);
+        byte[] compressedPayload = compress(payload);
+        byte[] regionBytes = regionCodec.encode(List.of(new BinaryChunkRegionEntry(0, 0, payload.length, BinaryChunkCompression.LZ4_FRAME, compressedPayload)));
+        ReplayChunkData chunkData = new ReplayChunkData(
+                BinaryReplayChunkMetadata.present(1, 1, "abcd"),
+                Map.of("chunks/world/r.0.0.brregion", regionBytes));
+
+        ReplayChunkPlaybackCache cache = new ReplayChunkPlaybackCache(chunkData);
+        ReplayChunkPlaybackCache.ChunkLoadResult firstLoad = cache.loadChunkWithDiagnostics(new ChunkCoordinate("world", 0, 0));
+        ReplayChunkPlaybackCache.ChunkLoadResult secondLoad = cache.loadChunkWithDiagnostics(new ChunkCoordinate("world", 0, 0));
+
+        assertTrue(firstLoad.snapshot().isPresent());
+        assertFalse(firstLoad.cacheHit());
+        assertTrue(secondLoad.snapshot().isPresent());
+        assertTrue(secondLoad.cacheHit());
+    }
+
+    @Test
     void loadChunk_returnsEmptyWhenRegionBytesAreCorrupt() {
         ReplayChunkData chunkData = new ReplayChunkData(
                 BinaryReplayChunkMetadata.present(1, 1, "abcd"),
@@ -70,7 +89,7 @@ class ReplayChunkPlaybackCacheTest {
     }
 
     @Test
-        void loadChunk_decodesPacketFriendlySnapshotWhenArchiveUsesBrcp() throws Exception {
+    void loadChunk_decodesPacketFriendlySnapshotWhenArchiveUsesBrcp() throws Exception {
         BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload =
             new BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload(
                 0,

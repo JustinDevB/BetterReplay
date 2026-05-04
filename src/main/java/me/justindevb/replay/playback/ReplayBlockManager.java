@@ -805,26 +805,29 @@ public class ReplayBlockManager {
 
     private PreparedReplayChunk prepareReplayChunk(ChunkCoordinate coordinate, ClientVersion clientVersion) {
         long prepareStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
+        Boolean cacheHit = null;
         try {
-            Optional<ReplayChunkSnapshot> decodedChunk;
+            ReplayChunkPlaybackCache.ChunkLoadResult chunkLoadResult;
             synchronized (chunkPlaybackCache) {
-                decodedChunk = chunkPlaybackCache.loadChunk(coordinate);
+                chunkLoadResult = chunkPlaybackCache.loadChunkWithDiagnostics(coordinate);
             }
+            cacheHit = chunkLoadResult.cacheHit();
+            Optional<ReplayChunkSnapshot> decodedChunk = chunkLoadResult.snapshot();
             if (decodedChunk.isEmpty()) {
-                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_MISSING_REPLAY_CHUNK);
+                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_MISSING_REPLAY_CHUNK, cacheHit);
                 return null;
             }
             if (!(decodedChunk.get() instanceof ReplayChunkSnapshot.PacketFriendlySnapshot packetFriendlySnapshot)) {
-                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_UNSUPPORTED_PAYLOAD);
+                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_UNSUPPORTED_PAYLOAD, cacheHit);
                 return null;
             }
 
             PreparedReplayChunk preparedChunk = new PreparedReplayChunk(
                     replayChunkPacketPreparer.prepare(coordinate, packetFriendlySnapshot.payload(), clientVersion));
-            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED);
+            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED, cacheHit);
             return preparedChunk;
         } catch (IOException | RuntimeException ex) {
-            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARE_FAILED);
+            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARE_FAILED, cacheHit);
             throw new CompletionException(ex);
         }
     }
@@ -1112,10 +1115,10 @@ public class ReplayBlockManager {
         try {
             PreparedReplayChunk preparedChunk = new PreparedReplayChunk(
                     replayChunkPacketPreparer.prepare(coordinate, payload, clientVersion));
-            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED);
+            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED, null);
             return preparedChunk;
         } catch (IOException | RuntimeException ex) {
-            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARE_FAILED);
+            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARE_FAILED, null);
             throw new CompletionException(ex);
         }
     }
@@ -1127,20 +1130,22 @@ public class ReplayBlockManager {
         return System.nanoTime() - startedAt;
     }
 
-    private void logPreparedChunkTiming(ChunkCoordinate coordinate, long elapsedNanos, String result) {
-        logPreparedChunkTiming("replay-load", coordinate, elapsedNanos, result);
+    private void logPreparedChunkTiming(ChunkCoordinate coordinate, long elapsedNanos, String result, Boolean cacheHit) {
+        logPreparedChunkTiming("replay-load", coordinate, elapsedNanos, result, cacheHit);
     }
 
-    private void logPreparedChunkTiming(String phase, ChunkCoordinate coordinate, long elapsedNanos, String result) {
+    private void logPreparedChunkTiming(String phase, ChunkCoordinate coordinate, long elapsedNanos, String result, Boolean cacheHit) {
         if (!chunkTimingDiagnosticsEnabled) {
             return;
         }
+        String cacheHitLabel = cacheHit == null ? "n/a" : cacheHit.toString();
         logger.log(Level.INFO,
                 String.format(Locale.ROOT,
-                        "Replay chunk async prepare phase=%s %s result=%s duration=%.3fms",
+                        "Replay chunk async prepare phase=%s %s result=%s cacheHit=%s duration=%.3fms",
                         phase,
                         coordinate,
                         result,
+                        cacheHitLabel,
                         elapsedNanos / 1_000_000.0));
     }
 

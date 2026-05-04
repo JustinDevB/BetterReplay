@@ -23,6 +23,12 @@ import java.util.logging.Logger;
  */
 public final class ReplayChunkPlaybackCache {
 
+    public record ChunkLoadResult(Optional<ReplayChunkSnapshot> snapshot, boolean cacheHit) {
+        public ChunkLoadResult {
+            Objects.requireNonNull(snapshot, "snapshot");
+        }
+    }
+
     private final ReplayChunkData chunkData;
     private final BinaryChunkRegionCodec regionCodec;
     private final BinaryChunkPayloadCodec legacyPayloadCodec;
@@ -73,12 +79,17 @@ public final class ReplayChunkPlaybackCache {
     }
 
     public Optional<ReplayChunkSnapshot> loadChunk(ChunkCoordinate coordinate) {
+        return loadChunkWithDiagnostics(coordinate).snapshot();
+    }
+
+    ChunkLoadResult loadChunkWithDiagnostics(ChunkCoordinate coordinate) {
         Objects.requireNonNull(coordinate, "coordinate");
         if (!chunkData.hasChunkData()) {
-            return Optional.empty();
+            return new ChunkLoadResult(Optional.empty(), false);
         }
 
-        return decodedChunks.computeIfAbsent(coordinate, this::decodeChunk);
+        boolean cacheHit = decodedChunks.containsKey(coordinate);
+        return new ChunkLoadResult(decodedChunks.computeIfAbsent(coordinate, this::decodeChunk), cacheHit);
     }
 
     private Optional<ReplayChunkSnapshot> decodeChunk(ChunkCoordinate coordinate) {

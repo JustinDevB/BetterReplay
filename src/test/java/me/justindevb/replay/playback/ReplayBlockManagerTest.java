@@ -33,6 +33,7 @@ import org.mockito.MockedStatic;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -184,6 +185,52 @@ class ReplayBlockManagerTest {
 
         assertTrue(logHandler.contains(Level.WARNING, "Failed to send replay chunk snapshot for ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0]"));
         assertTrue(logHandler.containsThrown(IOException.class, "send failed"));
+    }
+
+    @Test
+    void refreshVisibleChunkBaselines_logsReplayLoadCacheHitState() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        byte[] replayPayloadBytes = packetFriendlyPayloadBytes(0);
+        TestLogHandler logHandler = new TestLogHandler();
+        Logger logger = testLogger(logHandler);
+        ChunkCoordinate chunkCoordinate = new ChunkCoordinate("world", 0, 0);
+
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+            new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, replayPayloadBytes)),
+            BinaryChunkPayloadFormat.BRCP,
+            packetFriendlyPayloadCodec,
+            liveChunkCaptureService,
+            snapshotSender,
+            (coordinate, payload, clientVersion) -> replayPreparedChunk,
+            Runnable::run,
+            player -> ClientVersion.V_1_21_11,
+            1,
+            3,
+            2,
+            logger);
+        setChunkTimingDiagnosticsEnabled(manager, true);
+
+        Method prepareReplayChunk = ReplayBlockManager.class.getDeclaredMethod(
+            "prepareReplayChunk",
+            ChunkCoordinate.class,
+            ClientVersion.class);
+        prepareReplayChunk.setAccessible(true);
+
+        prepareReplayChunk.invoke(manager, chunkCoordinate, ClientVersion.V_1_21_11);
+        prepareReplayChunk.invoke(manager, chunkCoordinate, ClientVersion.V_1_21_11);
+
+        assertTrue(logHandler.contains(Level.INFO, "phase=replay-load ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] result=prepared cacheHit=false"));
+        assertTrue(logHandler.contains(Level.INFO, "phase=replay-load ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] result=prepared cacheHit=true"));
     }
 
         @Test
@@ -480,6 +527,12 @@ class ReplayBlockManagerTest {
         logger.setLevel(Level.ALL);
         logger.addHandler(handler);
         return logger;
+    }
+
+    private static void setChunkTimingDiagnosticsEnabled(ReplayBlockManager manager, boolean enabled) throws Exception {
+        Field field = ReplayBlockManager.class.getDeclaredField("chunkTimingDiagnosticsEnabled");
+        field.setAccessible(true);
+        field.setBoolean(manager, enabled);
     }
 
     private static final class TestLogHandler extends Handler {
