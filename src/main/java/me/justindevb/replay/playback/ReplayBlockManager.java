@@ -41,6 +41,7 @@ public class ReplayBlockManager {
     private static final int MAX_BRCP_CHUNK_APPLIES_PER_REFRESH = 1;
     private static final int MAX_BRCP_CHUNK_RESTORES_PER_REFRESH = 1;
     private static final String PREPARE_RESULT_PREPARED = "prepared";
+    private static final String PREPARE_RESULT_PREPARED_PACKET_CACHE_HIT = "prepared-packet-cache-hit";
     private static final String PREPARE_RESULT_MISSING_REPLAY_CHUNK = "missing-replay-chunk";
     private static final String PREPARE_RESULT_UNSUPPORTED_PAYLOAD = "unsupported-payload";
     private static final String PREPARE_RESULT_PREPARE_FAILED = "prepare-failed";
@@ -70,6 +71,7 @@ public class ReplayBlockManager {
     private final Set<ChunkCoordinate> renderedChunks = new HashSet<>();
     private final Set<BlockKey> visibleBreakStages = new HashSet<>();
     private final Map<ChunkCoordinate, CompletableFuture<PreparedReplayChunk>> pendingReplayChunkPrepares = new ConcurrentHashMap<>();
+    private final Map<ChunkCoordinate, PreparedReplayChunk> preparedReplayChunkCache = new ConcurrentHashMap<>();
     private final Map<ChunkCoordinate, CompletableFuture<PreparedReplayChunk>> pendingLiveChunkRestorePrepares = new ConcurrentHashMap<>();
     private final Set<ChunkCoordinate> unavailableReplayChunks = ConcurrentHashMap.newKeySet();
     private int blockBreakMutationEpoch = 0;
@@ -435,6 +437,7 @@ public class ReplayBlockManager {
         chunkBaseline.clear();
         chunkBlocksByCoordinate.clear();
         renderedChunks.clear();
+        preparedReplayChunkCache.clear();
         currentChunkCenter = null;
     }
 
@@ -729,6 +732,10 @@ public class ReplayBlockManager {
             return;
         }
 
+        if (applyCachedPreparedReplayChunk(coordinate)) {
+            return;
+        }
+
         CompletableFuture<PreparedReplayChunk> future = pendingReplayChunkPrepares.computeIfAbsent(
                 coordinate,
                 this::prepareReplayChunkAsync);
@@ -765,6 +772,7 @@ public class ReplayBlockManager {
                 break;
             }
             if (renderedChunks.contains(coordinate)
+                    || preparedReplayChunkCache.containsKey(coordinate)
                     || queuedLiveChunkRestores.contains(coordinate)
                     || unavailableReplayChunks.contains(coordinate)
                     || pendingReplayChunkPrepares.containsKey(coordinate)) {
@@ -782,6 +790,14 @@ public class ReplayBlockManager {
                 break;
             }
             if (renderedChunks.contains(coordinate)) {
+                continue;
+            }
+
+            if (preparedReplayChunkCache.containsKey(coordinate)) {
+                applyPreparedPacketFriendlyChunkBaseline(coordinate);
+                if (renderedChunks.contains(coordinate)) {
+                    applied++;
+                }
                 continue;
             }
 
@@ -807,6 +823,12 @@ public class ReplayBlockManager {
         long prepareStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
         Boolean cacheHit = null;
         try {
+            PreparedReplayChunk cachedPreparedChunk = preparedReplayChunkCache.get(coordinate);
+            if (cachedPreparedChunk != null) {
+                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED_PACKET_CACHE_HIT, null);
+                return cachedPreparedChunk;
+            }
+
             ReplayChunkPlaybackCache.ChunkLoadResult chunkLoadResult;
             synchronized (chunkPlaybackCache) {
                 chunkLoadResult = chunkPlaybackCache.loadChunkWithDiagnostics(coordinate);
@@ -824,12 +846,31 @@ public class ReplayBlockManager {
 
             PreparedReplayChunk preparedChunk = new PreparedReplayChunk(
                     replayChunkPacketPreparer.prepare(coordinate, packetFriendlySnapshot.payload(), clientVersion));
+            PreparedReplayChunk reusablePreparedChunk = preparedReplayChunkCache.putIfAbsent(coordinate, preparedChunk);
+            if (reusablePreparedChunk == null) {
+                reusablePreparedChunk = preparedChunk;
+            }
             logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED, cacheHit);
-            return preparedChunk;
+            return reusablePreparedChunk;
         } catch (IOException | RuntimeException ex) {
             logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARE_FAILED, cacheHit);
             throw new CompletionException(ex);
         }
+    }
+
+    private boolean applyCachedPreparedReplayChunk(ChunkCoordinate coordinate) {
+        PreparedReplayChunk cachedPreparedChunk = preparedReplayChunkCache.get(coordinate);
+        if (cachedPreparedChunk == null) {
+            return false;
+        }
+
+        CompletableFuture<PreparedReplayChunk> pending = pendingReplayChunkPrepares.remove(coordinate);
+        if (pending != null) {
+            pending.cancel(false);
+        }
+
+        applyPreparedReplayChunk(coordinate, cachedPreparedChunk);
+        return true;
     }
 
     private void applyPreparedReplayChunk(ChunkCoordinate coordinate, PreparedReplayChunk preparedChunk) {

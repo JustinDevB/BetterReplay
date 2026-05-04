@@ -73,6 +73,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded supported Minecraft game versions in Modrinth publishing (1.21 through 26.1.2)
 - Chunk recording design/spec docs now distinguish the current `BRCS` block-state payload from the packet-friendly `BRCP` chunk snapshot contract, including manifest fields and chunk-sidecar fallback semantics for future chunk-packet playback
 - Packet-friendly chunk packet preparation now resolves each section block palette and biome palette once, and shares per-client-version block-state global ID caching to reduce repeated registry lookups during chunk builds
+- Replay chunk playback now keeps prepared replay chunk packets cached for the viewer session so replay chunks that leave view and later re-enter can resend without rebuilding the packet payload
 - Playback chunk timing diagnostics now log explicit async prepare results such as `prepared`, `missing-replay-chunk`, `unsupported-payload`, and `prepare-failed` instead of a boolean flag
 - Playback chunk timing diagnostics now also include whether replay-load async preparation reused the in-memory decoded chunk cache via `cacheHit=true|false`
 

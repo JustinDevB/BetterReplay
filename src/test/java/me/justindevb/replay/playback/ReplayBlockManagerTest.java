@@ -230,7 +230,74 @@ class ReplayBlockManagerTest {
         prepareReplayChunk.invoke(manager, chunkCoordinate, ClientVersion.V_1_21_11);
 
         assertTrue(logHandler.contains(Level.INFO, "phase=replay-load ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] result=prepared cacheHit=false"));
-        assertTrue(logHandler.contains(Level.INFO, "phase=replay-load ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] result=prepared cacheHit=true"));
+        assertTrue(logHandler.contains(Level.INFO, "phase=replay-load ChunkCoordinate[worldName=world, chunkX=0, chunkZ=0] result=prepared-packet-cache-hit cacheHit=n/a"));
+    }
+
+    @Test
+    void refreshVisibleChunkBaselines_reusesPreparedReplayChunkAfterRestoreAndReentry() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket livePreparedChunk = preparedChunk();
+        ChunkCoordinate chunkCoordinate = new ChunkCoordinate("world", 0, 0);
+        byte[] replayPayloadBytes = packetFriendlyPayloadBytes(0);
+        int[] replayPrepareCalls = {0};
+        int[] livePrepareCalls = {0};
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(
+                new Location(world, 0, 64, 0),
+                new Location(world, 160, 64, 160),
+                new Location(world, 160, 64, 160),
+            new Location(world, 160, 64, 160),
+            new Location(world, 0, 64, 0),
+                new Location(world, 0, 64, 0));
+        when(liveChunkCaptureService.capturePayload(chunkCoordinate)).thenReturn(packetFriendlyPayload(1));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, replayPayloadBytes)),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> {
+                    if (payload.minSectionY() == 0) {
+                        replayPrepareCalls[0]++;
+                        return replayPreparedChunk;
+                    }
+                    livePrepareCalls[0]++;
+                    return livePreparedChunk;
+                },
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                1,
+                3,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.reentryCache"));
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+        }
+
+        verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+        verify(snapshotSender, times(1)).send(eq(viewer), eq(chunkCoordinate), eq(livePreparedChunk));
+        verify(liveChunkCaptureService, times(1)).capturePayload(chunkCoordinate);
+        assertEquals(1, replayPrepareCalls[0]);
+        assertEquals(1, livePrepareCalls[0]);
     }
 
         @Test
