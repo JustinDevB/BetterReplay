@@ -28,13 +28,17 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 final class PacketFriendlyChunkColumnBuilder {
 
     private static final String AIR_BLOCK = "minecraft:air";
     private static final String PLAINS_BIOME = "minecraft:plains";
     private static final byte[][] EMPTY_LIGHT_ARRAYS = new byte[0][];
+    private static final Map<ClientVersion, Map<String, Integer>> BLOCK_STATE_ID_CACHE = new ConcurrentHashMap<>();
+    private static final Map<ClientVersion, Integer> AIR_BLOCK_STATE_ID_CACHE = new ConcurrentHashMap<>();
 
     record PreparedChunkPacket(Column column, LightData lightData) {
         PreparedChunkPacket {
@@ -93,7 +97,9 @@ final class PacketFriendlyChunkColumnBuilder {
         DataPalette chunkData = DataPalette.createForChunk();
         DataPalette biomeData = DataPalette.createForBiome();
 
-        int airId = resolveBlockState(clientVersion, AIR_BLOCK).getGlobalId();
+        int[] resolvedBlockPalette = resolveBlockPaletteStateIds(clientVersion, section.blockPalette());
+        boolean[] fluidPaletteStates = resolveFluidPaletteStates(section.blockPalette());
+        int airId = resolveAirBlockStateId(clientVersion);
         int blockCount = 0;
         int fluidCount = 0;
         for (int y = 0; y < 16; y++) {
@@ -101,13 +107,13 @@ final class PacketFriendlyChunkColumnBuilder {
                 for (int x = 0; x < 16; x++) {
                     int logicalIndex = (y << 8) | (z << 4) | x;
                     int paletteIndex = decodePackedIndex(section.blockBitsPerEntry(), section.blockWords(), logicalIndex);
-                    String blockStateString = section.blockPalette().get(Math.min(paletteIndex, section.blockPalette().size() - 1));
-                    WrappedBlockState blockState = resolveBlockState(clientVersion, blockStateString);
-                    chunkData.set(x, y, z, blockState.getGlobalId());
-                    if (blockState.getGlobalId() != airId) {
+                    int resolvedPaletteIndex = Math.min(paletteIndex, resolvedBlockPalette.length - 1);
+                    int blockStateId = resolvedBlockPalette[resolvedPaletteIndex];
+                    chunkData.set(x, y, z, blockStateId);
+                    if (blockStateId != airId) {
                         blockCount++;
                     }
-                    if (hasFluidState(blockStateString)) {
+                    if (fluidPaletteStates[resolvedPaletteIndex]) {
                         fluidCount++;
                     }
                 }
@@ -149,12 +155,59 @@ final class PacketFriendlyChunkColumnBuilder {
         return tileEntities.toArray(TileEntity[]::new);
     }
 
-    private static WrappedBlockState resolveBlockState(ClientVersion clientVersion, String blockStateString) {
+    static int[] resolveBlockPaletteStateIds(ClientVersion clientVersion, List<String> blockPalette) {
+        Objects.requireNonNull(clientVersion, "clientVersion");
+        Objects.requireNonNull(blockPalette, "blockPalette");
+
+        if (blockPalette.isEmpty()) {
+            return new int[]{resolveAirBlockStateId(clientVersion)};
+        }
+
+        int[] resolvedBlockPalette = new int[blockPalette.size()];
+        for (int index = 0; index < blockPalette.size(); index++) {
+            resolvedBlockPalette[index] = resolveBlockStateId(clientVersion, blockPalette.get(index));
+        }
+        return resolvedBlockPalette;
+    }
+
+    static boolean[] resolveFluidPaletteStates(List<String> blockPalette) {
+        Objects.requireNonNull(blockPalette, "blockPalette");
+
+        if (blockPalette.isEmpty()) {
+            return new boolean[]{false};
+        }
+
+        boolean[] fluidPaletteStates = new boolean[blockPalette.size()];
+        for (int index = 0; index < blockPalette.size(); index++) {
+            fluidPaletteStates[index] = hasFluidState(blockPalette.get(index));
+        }
+        return fluidPaletteStates;
+    }
+
+    static int resolveBlockStateId(ClientVersion clientVersion, String blockStateString) {
+        Objects.requireNonNull(clientVersion, "clientVersion");
+
+        String normalizedBlockState = (blockStateString == null || blockStateString.isBlank())
+                ? AIR_BLOCK
+                : blockStateString;
+        return BLOCK_STATE_ID_CACHE
+                .computeIfAbsent(clientVersion, ignored -> new ConcurrentHashMap<>())
+                .computeIfAbsent(normalizedBlockState, key -> resolveBlockStateIdUncached(clientVersion, key));
+    }
+
+    private static int resolveBlockStateIdUncached(ClientVersion clientVersion, String blockStateString) {
         WrappedBlockState state = WrappedBlockState.getByString(clientVersion, blockStateString);
         if (state != null) {
-            return state;
+            return state.getGlobalId();
         }
-        return WrappedBlockState.getByString(clientVersion, AIR_BLOCK);
+        return resolveAirBlockStateId(clientVersion);
+    }
+
+    private static int resolveAirBlockStateId(ClientVersion clientVersion) {
+        return AIR_BLOCK_STATE_ID_CACHE.computeIfAbsent(clientVersion, ignored -> {
+            WrappedBlockState airState = WrappedBlockState.getByString(clientVersion, AIR_BLOCK);
+            return airState != null ? airState.getGlobalId() : 0;
+        });
     }
 
     private static Biome resolveBiome(ClientVersion clientVersion, String biomeKey) {

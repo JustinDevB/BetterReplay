@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -46,5 +47,16 @@ class PacketFriendlyChunkColumnBuilderTest {
         assertEquals(0, lightData.getBlockLightCount());
         assertEquals(0, lightData.getSkyLightArray().length);
         assertEquals(0, lightData.getBlockLightArray().length);
+    }
+
+    @Test
+    void resolveFluidPaletteStates_precomputesPerPaletteEntryAndHandlesEmptyPalettes() {
+        assertArrayEquals(
+                new boolean[]{true, false, true},
+                PacketFriendlyChunkColumnBuilder.resolveFluidPaletteStates(
+                        List.of("minecraft:water[level=0]", "minecraft:stone", "minecraft:oak_stairs[waterlogged=true]")));
+        assertArrayEquals(
+                new boolean[]{false},
+                PacketFriendlyChunkColumnBuilder.resolveFluidPaletteStates(List.of()));
     }
 }
