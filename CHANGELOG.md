@@ -72,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded Modrinth publishing to include Purpur, Spigot, and Bukkit loaders
 - Expanded supported Minecraft game versions in Modrinth publishing (1.21 through 26.1.2)
 - Chunk recording design/spec docs now distinguish the current `BRCS` block-state payload from the packet-friendly `BRCP` chunk snapshot contract, including manifest fields and chunk-sidecar fallback semantics for future chunk-packet playback
-- Packet-friendly chunk packet preparation now resolves each section block palette once and shares per-client-version block-state global ID caching to reduce repeated `WrappedBlockState` lookups during chunk builds
+- Packet-friendly chunk packet preparation now resolves each section block palette and biome palette once, and shares per-client-version block-state global ID caching to reduce repeated registry lookups during chunk builds
+- Playback chunk timing diagnostics now log explicit async prepare results such as `prepared`, `missing-replay-chunk`, `unsupported-payload`, and `prepare-failed` instead of a boolean flag
 
 ## [1.4.0] - 2026-04-10
 

@@ -5,6 +5,7 @@ import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -58,5 +59,24 @@ class PacketFriendlyChunkColumnBuilderTest {
         assertArrayEquals(
                 new boolean[]{false},
                 PacketFriendlyChunkColumnBuilder.resolveFluidPaletteStates(List.of()));
+    }
+
+    @Test
+    void resolvePaletteIds_resolvesEachPaletteEntryOnceAndHandlesEmptyPalettes() {
+        AtomicInteger calls = new AtomicInteger();
+
+        assertArrayEquals(
+            new int[]{6, 6, 4},
+                PacketFriendlyChunkColumnBuilder.resolvePaletteIds(
+                        List.of("plains", "plains", "void"),
+                        key -> {
+                            calls.incrementAndGet();
+                            return key.length();
+                        },
+                        99));
+        assertEquals(3, calls.get());
+        assertArrayEquals(
+                new int[]{99},
+                PacketFriendlyChunkColumnBuilder.resolvePaletteIds(List.of(), key -> 1, 99));
     }
 }

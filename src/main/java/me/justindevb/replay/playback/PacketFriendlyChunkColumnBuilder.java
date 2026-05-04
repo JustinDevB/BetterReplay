@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.ToIntFunction;
 
 final class PacketFriendlyChunkColumnBuilder {
 
@@ -120,13 +121,13 @@ final class PacketFriendlyChunkColumnBuilder {
             }
         }
 
+        int[] resolvedBiomePalette = resolveBiomePaletteIds(clientVersion, section.biomePalette());
         for (int y = 0; y < 4; y++) {
             for (int z = 0; z < 4; z++) {
                 for (int x = 0; x < 4; x++) {
                     int logicalIndex = (y << 4) | (z << 2) | x;
                     int paletteIndex = decodePackedIndex(section.biomeBitsPerEntry(), section.biomeWords(), logicalIndex);
-                    String biomeKey = section.biomePalette().get(Math.min(paletteIndex, section.biomePalette().size() - 1));
-                    biomeData.set(x, y, z, resolveBiome(clientVersion, biomeKey).getId(clientVersion));
+                    biomeData.set(x, y, z, resolvedBiomePalette[Math.min(paletteIndex, resolvedBiomePalette.length - 1)]);
                 }
             }
         }
@@ -157,17 +158,12 @@ final class PacketFriendlyChunkColumnBuilder {
 
     static int[] resolveBlockPaletteStateIds(ClientVersion clientVersion, List<String> blockPalette) {
         Objects.requireNonNull(clientVersion, "clientVersion");
-        Objects.requireNonNull(blockPalette, "blockPalette");
+        return resolvePaletteIds(blockPalette, key -> resolveBlockStateId(clientVersion, key), resolveAirBlockStateId(clientVersion));
+    }
 
-        if (blockPalette.isEmpty()) {
-            return new int[]{resolveAirBlockStateId(clientVersion)};
-        }
-
-        int[] resolvedBlockPalette = new int[blockPalette.size()];
-        for (int index = 0; index < blockPalette.size(); index++) {
-            resolvedBlockPalette[index] = resolveBlockStateId(clientVersion, blockPalette.get(index));
-        }
-        return resolvedBlockPalette;
+    static int[] resolveBiomePaletteIds(ClientVersion clientVersion, List<String> biomePalette) {
+        Objects.requireNonNull(clientVersion, "clientVersion");
+        return resolvePaletteIds(biomePalette, key -> resolveBiome(clientVersion, key).getId(clientVersion), resolveBiome(clientVersion, PLAINS_BIOME).getId(clientVersion));
     }
 
     static boolean[] resolveFluidPaletteStates(List<String> blockPalette) {
@@ -208,6 +204,21 @@ final class PacketFriendlyChunkColumnBuilder {
             WrappedBlockState airState = WrappedBlockState.getByString(clientVersion, AIR_BLOCK);
             return airState != null ? airState.getGlobalId() : 0;
         });
+    }
+
+    static int[] resolvePaletteIds(List<String> palette, ToIntFunction<String> resolver, int emptyValue) {
+        Objects.requireNonNull(palette, "palette");
+        Objects.requireNonNull(resolver, "resolver");
+
+        if (palette.isEmpty()) {
+            return new int[]{emptyValue};
+        }
+
+        int[] resolvedPalette = new int[palette.size()];
+        for (int index = 0; index < palette.size(); index++) {
+            resolvedPalette[index] = resolver.applyAsInt(palette.get(index));
+        }
+        return resolvedPalette;
     }
 
     private static Biome resolveBiome(ClientVersion clientVersion, String biomeKey) {

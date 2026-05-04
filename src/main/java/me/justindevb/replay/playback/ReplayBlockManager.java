@@ -40,6 +40,10 @@ public class ReplayBlockManager {
     private static final int DEFAULT_PLAYBACK_CHUNK_VIEW_RADIUS = 3;
     private static final int MAX_BRCP_CHUNK_APPLIES_PER_REFRESH = 1;
     private static final int MAX_BRCP_CHUNK_RESTORES_PER_REFRESH = 1;
+    private static final String PREPARE_RESULT_PREPARED = "prepared";
+    private static final String PREPARE_RESULT_MISSING_REPLAY_CHUNK = "missing-replay-chunk";
+    private static final String PREPARE_RESULT_UNSUPPORTED_PAYLOAD = "unsupported-payload";
+    private static final String PREPARE_RESULT_PREPARE_FAILED = "prepare-failed";
 
     private final Player viewer;
     private final Replay replay;
@@ -807,19 +811,20 @@ public class ReplayBlockManager {
                 decodedChunk = chunkPlaybackCache.loadChunk(coordinate);
             }
             if (decodedChunk.isEmpty()) {
-                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), false);
+                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_MISSING_REPLAY_CHUNK);
                 return null;
             }
             if (!(decodedChunk.get() instanceof ReplayChunkSnapshot.PacketFriendlySnapshot packetFriendlySnapshot)) {
-                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), false);
+                logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_UNSUPPORTED_PAYLOAD);
                 return null;
             }
 
             PreparedReplayChunk preparedChunk = new PreparedReplayChunk(
                     replayChunkPacketPreparer.prepare(coordinate, packetFriendlySnapshot.payload(), clientVersion));
-            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), true);
+            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED);
             return preparedChunk;
         } catch (IOException | RuntimeException ex) {
+            logPreparedChunkTiming(coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARE_FAILED);
             throw new CompletionException(ex);
         }
     }
@@ -1107,10 +1112,10 @@ public class ReplayBlockManager {
         try {
             PreparedReplayChunk preparedChunk = new PreparedReplayChunk(
                     replayChunkPacketPreparer.prepare(coordinate, payload, clientVersion));
-            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), true);
+            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARED);
             return preparedChunk;
         } catch (IOException | RuntimeException ex) {
-            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), false);
+            logPreparedChunkTiming("live-restore", coordinate, elapsedNanos(prepareStartedAt), PREPARE_RESULT_PREPARE_FAILED);
             throw new CompletionException(ex);
         }
     }
@@ -1122,20 +1127,20 @@ public class ReplayBlockManager {
         return System.nanoTime() - startedAt;
     }
 
-    private void logPreparedChunkTiming(ChunkCoordinate coordinate, long elapsedNanos, boolean prepared) {
-        logPreparedChunkTiming("replay-load", coordinate, elapsedNanos, prepared);
+    private void logPreparedChunkTiming(ChunkCoordinate coordinate, long elapsedNanos, String result) {
+        logPreparedChunkTiming("replay-load", coordinate, elapsedNanos, result);
     }
 
-    private void logPreparedChunkTiming(String phase, ChunkCoordinate coordinate, long elapsedNanos, boolean prepared) {
+    private void logPreparedChunkTiming(String phase, ChunkCoordinate coordinate, long elapsedNanos, String result) {
         if (!chunkTimingDiagnosticsEnabled) {
             return;
         }
         logger.log(Level.INFO,
                 String.format(Locale.ROOT,
-                        "Replay chunk async prepare phase=%s %s prepared=%s duration=%.3fms",
+                        "Replay chunk async prepare phase=%s %s result=%s duration=%.3fms",
                         phase,
                         coordinate,
-                        prepared,
+                        result,
                         elapsedNanos / 1_000_000.0));
     }
 
