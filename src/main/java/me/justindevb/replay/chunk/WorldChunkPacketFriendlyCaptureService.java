@@ -4,10 +4,10 @@ import me.justindevb.replay.storage.binary.BinaryChunkPayloadFormat;
 import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
+import org.bukkit.ChunkSnapshot;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.World;
-import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.Biome;
 import org.bukkit.block.TileState;
@@ -25,6 +25,14 @@ import java.util.Objects;
  */
 public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaselineCaptureService {
 
+    public record CapturedChunkSnapshot(
+            int minSectionY,
+            int sectionCount,
+            ChunkSnapshot snapshot,
+            List<BinaryPacketFriendlyChunkPayloadCodec.BlockEntityPayload> blockEntities
+    ) {
+    }
+
     private final BinaryPacketFriendlyChunkPayloadCodec payloadCodec;
 
     public WorldChunkPacketFriendlyCaptureService(BinaryPacketFriendlyChunkPayloadCodec payloadCodec) {
@@ -41,6 +49,10 @@ public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaseli
     }
 
     public BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload capturePayload(ChunkCoordinate coordinate) throws IOException {
+        return buildPayload(captureDetachedSnapshot(coordinate));
+    }
+
+    public CapturedChunkSnapshot captureDetachedSnapshot(ChunkCoordinate coordinate) throws IOException {
         World world = Bukkit.getWorld(coordinate.worldName());
         if (world == null) {
             throw new IOException("World is not available for chunk capture: " + coordinate.worldName());
@@ -53,18 +65,28 @@ public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaseli
         }
 
         Chunk chunk = world.getChunkAt(coordinate.chunkX(), coordinate.chunkZ());
-        List<BinaryPacketFriendlyChunkPayloadCodec.SectionPayload> sections = new ArrayList<>(sectionCount);
-        int chunkBaseX = coordinate.chunkX() << 4;
-        int chunkBaseZ = coordinate.chunkZ() << 4;
+        return new CapturedChunkSnapshot(
+                minSectionY,
+                sectionCount,
+                chunk.getChunkSnapshot(false, true, false),
+                captureBlockEntities(chunk, minSectionY));
+    }
 
-        for (int sectionOffset = 0; sectionOffset < sectionCount; sectionOffset++) {
-            int sectionY = minSectionY + sectionOffset;
-            sections.add(captureSection(world, chunk, chunkBaseX, chunkBaseZ, sectionY));
+    public BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload buildPayload(CapturedChunkSnapshot capturedSnapshot) {
+        List<BinaryPacketFriendlyChunkPayloadCodec.SectionPayload> sections = new ArrayList<>(capturedSnapshot.sectionCount());
+        ChunkSnapshot chunkSnapshot = capturedSnapshot.snapshot();
+        int chunkBaseX = chunkSnapshot.getX() << 4;
+        int chunkBaseZ = chunkSnapshot.getZ() << 4;
+
+        for (int sectionOffset = 0; sectionOffset < capturedSnapshot.sectionCount(); sectionOffset++) {
+            int sectionY = capturedSnapshot.minSectionY() + sectionOffset;
+            sections.add(captureSection(chunkSnapshot, chunkBaseX, chunkBaseZ, sectionY));
         }
 
-        List<BinaryPacketFriendlyChunkPayloadCodec.BlockEntityPayload> blockEntities = captureBlockEntities(chunk, minSectionY);
-
-        return new BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload(minSectionY, sections, blockEntities);
+        return new BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload(
+                capturedSnapshot.minSectionY(),
+                sections,
+                capturedSnapshot.blockEntities());
     }
 
     private static List<BinaryPacketFriendlyChunkPayloadCodec.BlockEntityPayload> captureBlockEntities(Chunk chunk, int minSectionY) {
@@ -102,8 +124,7 @@ public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaseli
     }
 
     private static BinaryPacketFriendlyChunkPayloadCodec.SectionPayload captureSection(
-            World world,
-            Chunk chunk,
+            ChunkSnapshot chunkSnapshot,
             int chunkBaseX,
             int chunkBaseZ,
             int sectionY
@@ -117,8 +138,7 @@ public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaseli
             int y = sectionBaseY + localY;
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
-                    Block block = chunk.getBlock(x, y, z);
-                    blockIndexes[blockWriteIndex++] = blockPalette.indexOf(block.getBlockData().getAsString());
+                    blockIndexes[blockWriteIndex++] = blockPalette.indexOf(chunkSnapshot.getBlockData(x, y, z).getAsString());
                 }
             }
         }
@@ -132,7 +152,8 @@ public final class WorldChunkPacketFriendlyCaptureService implements ChunkBaseli
                 int worldZ = chunkBaseZ + (biomeZ << 2);
                 for (int biomeX = 0; biomeX < 4; biomeX++) {
                     int worldX = chunkBaseX + (biomeX << 2);
-                    biomeIndexes[biomeWriteIndex++] = biomePalette.indexOf(resolveBiomeKey(world.getBiome(worldX, worldY, worldZ)));
+                    biomeIndexes[biomeWriteIndex++] = biomePalette.indexOf(resolveBiomeKey(
+                            chunkSnapshot.getBiome(worldX - chunkBaseX, worldY, worldZ - chunkBaseZ)));
                 }
             }
         }

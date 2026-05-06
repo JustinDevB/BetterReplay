@@ -3,9 +3,9 @@ package me.justindevb.replay.chunk;
 import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
 import org.bukkit.Bukkit;
 import org.bukkit.Chunk;
+import org.bukkit.ChunkSnapshot;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
 import org.bukkit.block.TileState;
 import org.bukkit.block.data.BlockData;
@@ -27,17 +27,19 @@ class WorldChunkPacketFriendlyCaptureServiceTest {
     void capture_includesTileEntitiesWithFallbackEmptyCompoundNbt() throws Exception {
         World world = mock(World.class);
         Chunk chunk = mock(Chunk.class);
-        Block block = mock(Block.class);
+        ChunkSnapshot chunkSnapshot = mock(ChunkSnapshot.class);
         BlockData blockData = mock(BlockData.class);
         TileState tileState = mock(TileState.class);
 
         when(world.getMinHeight()).thenReturn(0);
         when(world.getMaxHeight()).thenReturn(16);
         when(world.getChunkAt(0, 0)).thenReturn(chunk);
-        when(chunk.getBlock(anyInt(), anyInt(), anyInt())).thenReturn(block);
-        when(block.getBlockData()).thenReturn(blockData);
+        when(chunk.getChunkSnapshot(false, true, false)).thenReturn(chunkSnapshot);
+        when(chunkSnapshot.getX()).thenReturn(0);
+        when(chunkSnapshot.getZ()).thenReturn(0);
+        when(chunkSnapshot.getBlockData(anyInt(), anyInt(), anyInt())).thenReturn(blockData);
         when(blockData.getAsString()).thenReturn("minecraft:air");
-        when(world.getBiome(anyInt(), anyInt(), anyInt())).thenReturn(null);
+        when(chunkSnapshot.getBiome(anyInt(), anyInt(), anyInt())).thenReturn(null);
         when(chunk.getTileEntities(false)).thenReturn(new BlockState[] {tileState});
         when(tileState.getType()).thenReturn(Material.CHEST);
         when(tileState.getX()).thenReturn(2);

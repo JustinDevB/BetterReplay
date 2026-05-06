@@ -77,6 +77,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Playback chunk timing diagnostics now log explicit async prepare results such as `prepared`, `missing-replay-chunk`, `unsupported-payload`, and `prepare-failed` instead of a boolean flag
 - Playback chunk timing diagnostics now also include whether replay-load async preparation reused the in-memory decoded chunk cache via `cacheHit=true|false`
 - Playback chunk timing diagnostics now include the current server tick, in-flight replay-load and live-restore async task counts, and refresh counters showing prepared replay packet cache hits versus fresh prepared loads
+- Live chunk restore preparation now snapshots at most one chunk per refresh tick on the server thread, builds BRCP restore payloads from detached `ChunkSnapshot` data off thread, and logs per-refresh live-restore snapshot capture counts and timing separately from restore apply timing
+- Replay stop teardown now reuses the paced BRCP live-restore queue so ending a replay no longer synchronously snapshots every remaining live chunk in one stop call
 
 ## [1.4.0] - 2026-04-10
 

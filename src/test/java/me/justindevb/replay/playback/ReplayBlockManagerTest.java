@@ -8,6 +8,7 @@ import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.chunk.Column;
 import com.github.retrooper.packetevents.protocol.world.chunk.LightData;
+import com.tcoded.folialib.wrapper.task.WrappedTask;
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ReplayChunkData;
@@ -22,6 +23,7 @@ import me.justindevb.replay.storage.binary.BinaryChunkRegionEntry;
 import me.justindevb.replay.storage.binary.BinaryReplayChunkMetadata;
 import net.jpountz.lz4.LZ4FrameOutputStream;
 import org.bukkit.Bukkit;
+import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -38,6 +40,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -109,7 +113,9 @@ class ReplayBlockManagerTest {
         when(viewer.getWorld()).thenReturn(world);
         when(world.getName()).thenReturn("world");
         when(viewer.getLocation()).thenReturn(new Location(world, 0, 64, 0), new Location(world, 160, 64, 160));
-        when(liveChunkCaptureService.capturePayload(chunkCoordinate)).thenReturn(packetFriendlyPayload());
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedSnapshot = capturedChunkSnapshot(0, 0, 0);
+        when(liveChunkCaptureService.captureDetachedSnapshot(chunkCoordinate)).thenReturn(capturedSnapshot);
+        when(liveChunkCaptureService.buildPayload(capturedSnapshot)).thenReturn(packetFriendlyPayload());
 
         ReplayBlockManager manager = new ReplayBlockManager(
                 viewer,
@@ -122,6 +128,7 @@ class ReplayBlockManagerTest {
                 (coordinate, payload, clientVersion) -> replayPreparedChunk,
                 Runnable::run,
                 player -> ClientVersion.V_1_21_11,
+                null,
                 1,
                 3,
                 2,
@@ -137,7 +144,8 @@ class ReplayBlockManagerTest {
         }
 
         verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
-        verify(liveChunkCaptureService).capturePayload(chunkCoordinate);
+    verify(liveChunkCaptureService).captureDetachedSnapshot(chunkCoordinate);
+    verify(liveChunkCaptureService).buildPayload(capturedSnapshot);
     }
 
     @Test
@@ -172,6 +180,7 @@ class ReplayBlockManagerTest {
             (coordinate, payload, clientVersion) -> replayPreparedChunk,
             Runnable::run,
             player -> ClientVersion.V_1_21_11,
+            null,
             1,
             3,
             2,
@@ -214,6 +223,7 @@ class ReplayBlockManagerTest {
             (coordinate, payload, clientVersion) -> replayPreparedChunk,
             Runnable::run,
             player -> ClientVersion.V_1_21_11,
+            null,
             1,
             3,
             2,
@@ -259,7 +269,9 @@ class ReplayBlockManagerTest {
             new Location(world, 160, 64, 160),
             new Location(world, 0, 64, 0),
                 new Location(world, 0, 64, 0));
-        when(liveChunkCaptureService.capturePayload(chunkCoordinate)).thenReturn(packetFriendlyPayload(1));
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedSnapshot = capturedChunkSnapshot(0, 0, 1);
+        when(liveChunkCaptureService.captureDetachedSnapshot(chunkCoordinate)).thenReturn(capturedSnapshot);
+        when(liveChunkCaptureService.buildPayload(capturedSnapshot)).thenReturn(packetFriendlyPayload(1));
         TestLogHandler logHandler = new TestLogHandler();
 
         ReplayBlockManager manager = new ReplayBlockManager(
@@ -280,6 +292,7 @@ class ReplayBlockManagerTest {
                 },
                 Runnable::run,
                 player -> ClientVersion.V_1_21_11,
+                null,
                 1,
                 3,
                 2,
@@ -299,12 +312,15 @@ class ReplayBlockManagerTest {
 
         verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
         verify(snapshotSender, times(1)).send(eq(viewer), eq(chunkCoordinate), eq(livePreparedChunk));
-        verify(liveChunkCaptureService, times(1)).capturePayload(chunkCoordinate);
+        verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(chunkCoordinate);
+        verify(liveChunkCaptureService, times(1)).buildPayload(capturedSnapshot);
         assertEquals(1, replayPrepareCalls[0]);
         assertEquals(1, livePrepareCalls[0]);
         assertTrue(logHandler.contains(Level.INFO, "tick="));
         assertTrue(logHandler.contains(Level.INFO, "preparedPacketCacheHits=1 freshPreparedLoads=0"));
         assertTrue(logHandler.contains(Level.INFO, "inFlightReplayLoads=0 inFlightLiveRestores=0 queuedRestores=0"));
+        assertTrue(logHandler.contains(Level.INFO, "liveRestoreCapturesStarted=1"));
+        assertTrue(logHandler.contains(Level.INFO, "captureLiveRestoreSnapshots="));
     }
 
         @Test
@@ -341,6 +357,7 @@ class ReplayBlockManagerTest {
             (coordinate, payload, clientVersion) -> payload.minSectionY() == 0 ? replayPreparedChunk : livePreparedChunk,
             Runnable::run,
             player -> ClientVersion.V_1_21_11,
+            null,
             1,
             3,
             2,
@@ -404,6 +421,7 @@ class ReplayBlockManagerTest {
                 (coordinate, payload, clientVersion) -> replayPreparedChunk,
                 Runnable::run,
                 player -> ClientVersion.V_1_21_11,
+                null,
                 1,
                 9,
                 2,
@@ -446,6 +464,7 @@ class ReplayBlockManagerTest {
                 (coordinate, payload, clientVersion) -> replayPreparedChunk,
                 stalledExecutor,
                 player -> ClientVersion.V_1_21_11,
+                null,
                 3,
                 2,
                 2,
@@ -476,7 +495,9 @@ class ReplayBlockManagerTest {
         when(viewer.getLocation()).thenReturn(
                 new Location(world, 0, 64, 0),
                 new Location(world, 16, 64, 0));
-        when(liveChunkCaptureService.capturePayload(chunkCoordinate)).thenReturn(packetFriendlyPayload(1));
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedSnapshot = capturedChunkSnapshot(0, 0, 1);
+        when(liveChunkCaptureService.captureDetachedSnapshot(chunkCoordinate)).thenReturn(capturedSnapshot);
+        when(liveChunkCaptureService.buildPayload(capturedSnapshot)).thenReturn(packetFriendlyPayload(1));
 
         ReplayBlockManager manager = new ReplayBlockManager(
                 viewer,
@@ -489,6 +510,7 @@ class ReplayBlockManagerTest {
                 (coordinate, payload, clientVersion) -> replayPreparedChunk,
                 Runnable::run,
                 player -> ClientVersion.V_1_21_11,
+                null,
                 0,
                 2,
                 2,
@@ -503,7 +525,166 @@ class ReplayBlockManagerTest {
         }
 
         verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
-        verify(liveChunkCaptureService, times(1)).capturePayload(chunkCoordinate);
+        verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(chunkCoordinate);
+        verify(liveChunkCaptureService, times(1)).buildPayload(capturedSnapshot);
+    }
+
+    @Test
+    void restoreSessionBaseline_pacesPacketFriendlyChunkRestoreAcrossTicksWhenSchedulerAvailable() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        ChunkCoordinate chunkCoordinate = new ChunkCoordinate("world", 0, 0);
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedSnapshot = capturedChunkSnapshot(0, 0, 1);
+        WrappedTask drainTask = mock(WrappedTask.class);
+        Runnable[] scheduledDrain = new Runnable[1];
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(
+                new Location(world, 0, 64, 0),
+                new Location(world, 16, 64, 0),
+                new Location(world, 16, 64, 0));
+        when(liveChunkCaptureService.captureDetachedSnapshot(chunkCoordinate)).thenReturn(capturedSnapshot);
+        when(liveChunkCaptureService.buildPayload(capturedSnapshot)).thenReturn(packetFriendlyPayload(1));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, packetFriendlyPayloadBytes(0), List.of(chunkCoordinate))),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> replayPreparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                task -> {
+                    scheduledDrain[0] = task;
+                    return drainTask;
+                },
+                0,
+                2,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.stopPaced"));
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            manager.restoreSessionBaseline();
+
+            verify(liveChunkCaptureService, times(0)).captureDetachedSnapshot(chunkCoordinate);
+            assertTrue(scheduledDrain[0] != null);
+
+            scheduledDrain[0].run();
+            verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(chunkCoordinate);
+            verify(snapshotSender, times(1)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+
+            scheduledDrain[0].run();
+        }
+
+        verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+        verify(liveChunkCaptureService, times(1)).buildPayload(capturedSnapshot);
+        verify(drainTask, times(1)).cancel();
+    }
+
+    @Test
+    void processQueuedLiveChunkRestores_startsAtMostOneSnapshotCapturePerTick() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        Executor stalledExecutor = command -> {
+        };
+        ChunkCoordinate firstChunk = new ChunkCoordinate("world", 0, 0);
+        ChunkCoordinate secondChunk = new ChunkCoordinate("world", 1, 0);
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot firstSnapshot = capturedChunkSnapshot(0, 0, 1);
+
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(liveChunkCaptureService.captureDetachedSnapshot(firstChunk)).thenReturn(firstSnapshot);
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(ReplayChunkData.NONE),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> preparedChunk(),
+                stalledExecutor,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                1,
+                3,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.restoreCaptureCap"));
+
+        queuedLiveChunkRestores(manager).add(firstChunk);
+        queuedLiveChunkRestores(manager).add(secondChunk);
+
+        Method processQueuedLiveChunkRestores = ReplayBlockManager.class.getDeclaredMethod("processQueuedLiveChunkRestores", int.class);
+        processQueuedLiveChunkRestores.setAccessible(true);
+        processQueuedLiveChunkRestores.invoke(manager, 1);
+
+        verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(firstChunk);
+        verify(liveChunkCaptureService, times(0)).captureDetachedSnapshot(secondChunk);
+        assertEquals(1, pendingLiveChunkRestorePrepareCount(manager));
+    }
+
+    @Test
+    void processQueuedLiveChunkRestores_sendsReadyChunkAndStartsNextCaptureInSameTick() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket preparedChunk = preparedChunk();
+        ChunkCoordinate firstChunk = new ChunkCoordinate("world", 0, 0);
+        ChunkCoordinate secondChunk = new ChunkCoordinate("world", 1, 0);
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot secondSnapshot = capturedChunkSnapshot(1, 0, 1);
+
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(liveChunkCaptureService.captureDetachedSnapshot(secondChunk)).thenReturn(secondSnapshot);
+        when(liveChunkCaptureService.buildPayload(secondSnapshot)).thenReturn(packetFriendlyPayload(1));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(ReplayChunkData.NONE),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> preparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                1,
+                3,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.restorePipeline"));
+
+        queuedLiveChunkRestores(manager).add(firstChunk);
+        queuedLiveChunkRestores(manager).add(secondChunk);
+        pendingLiveChunkRestorePrepares(manager).put(firstChunk, CompletableFuture.completedFuture(preparedReplayChunkRecord(preparedChunk)));
+
+        Method processQueuedLiveChunkRestores = ReplayBlockManager.class.getDeclaredMethod("processQueuedLiveChunkRestores", int.class);
+        processQueuedLiveChunkRestores.setAccessible(true);
+        processQueuedLiveChunkRestores.invoke(manager, 1);
+
+        verify(snapshotSender, times(1)).send(eq(viewer), eq(firstChunk), eq(preparedChunk));
+        verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(secondChunk);
+        assertEquals(1, pendingLiveChunkRestorePrepareCount(manager));
     }
 
     private ReplayChunkData replayChunkData() throws Exception {
@@ -588,11 +769,46 @@ class ReplayBlockManagerTest {
         return new PacketFriendlyChunkColumnBuilder.PreparedChunkPacket(mock(Column.class), mock(LightData.class));
     }
 
+    private static WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedChunkSnapshot(int chunkX, int chunkZ, int minSectionY) {
+        ChunkSnapshot chunkSnapshot = mock(ChunkSnapshot.class);
+        when(chunkSnapshot.getX()).thenReturn(chunkX);
+        when(chunkSnapshot.getZ()).thenReturn(chunkZ);
+        return new WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot(minSectionY, 1, chunkSnapshot, List.of());
+    }
+
     @SuppressWarnings("unchecked")
     private static int pendingReplayChunkPrepareCount(ReplayBlockManager manager) throws Exception {
         Field field = ReplayBlockManager.class.getDeclaredField("pendingReplayChunkPrepares");
         field.setAccessible(true);
         return ((Map<ChunkCoordinate, ?>) field.get(manager)).size();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<ChunkCoordinate> queuedLiveChunkRestores(ReplayBlockManager manager) throws Exception {
+        Field field = ReplayBlockManager.class.getDeclaredField("queuedLiveChunkRestores");
+        field.setAccessible(true);
+        return (Set<ChunkCoordinate>) field.get(manager);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static int pendingLiveChunkRestorePrepareCount(ReplayBlockManager manager) throws Exception {
+        Field field = ReplayBlockManager.class.getDeclaredField("pendingLiveChunkRestorePrepares");
+        field.setAccessible(true);
+        return ((Map<ChunkCoordinate, ?>) field.get(manager)).size();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<ChunkCoordinate, CompletableFuture<?>> pendingLiveChunkRestorePrepares(ReplayBlockManager manager) throws Exception {
+        Field field = ReplayBlockManager.class.getDeclaredField("pendingLiveChunkRestorePrepares");
+        field.setAccessible(true);
+        return (Map<ChunkCoordinate, CompletableFuture<?>>) field.get(manager);
+    }
+
+    private static Object preparedReplayChunkRecord(PacketFriendlyChunkColumnBuilder.PreparedChunkPacket packet) throws Exception {
+        Class<?> preparedReplayChunkType = Class.forName("me.justindevb.replay.playback.ReplayBlockManager$PreparedReplayChunk");
+        var constructor = preparedReplayChunkType.getDeclaredConstructor(PacketFriendlyChunkColumnBuilder.PreparedChunkPacket.class);
+        constructor.setAccessible(true);
+        return constructor.newInstance(packet);
     }
 
     private static Logger testLogger(TestLogHandler handler) {
