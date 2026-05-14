@@ -168,6 +168,7 @@ Playback diagnostics key:
 Playback:
   Speed-Step: 0.2
   Max-Speed: 1.0
+  Chunk-Mode: 1
   Chunk-View-Radius: 3
   Chunk-Timing-Diagnostics: false
 ```
@@ -204,6 +205,7 @@ Notes:
 - `Recording.Chunk-Capture.Capture-Interval-Ticks` controls how often the plugin recomputes chunk interest and exports newly discovered chunks.
 - `Recording.Chunk-Capture.Max-Unique-Chunks-Per-Recording` bounds capture size; once the cap is reached, recording continues but additional chunk baselines are skipped.
 - `Playback.Chunk-View-Radius` controls the replay viewer's chunk playback radius independently from recording capture radius. Default is `3`.
+- `Playback.Chunk-Mode` controls replay chunk teardown semantics. `1` keeps the current moving replay window and restores live chunks as they leave that window. `2` defers live chunk restore until replay stop, lets Paper and the client unload chunks naturally, and resends replay chunks if the viewer returns after a natural unload. Default is `1`.
 - If `Playback.Chunk-View-Radius` is larger than `Recording.Chunk-Capture.Radius`, only chunks that were actually captured during recording can be replayed; uncaptured chunks stay on the live world view.
 - `Playback.Chunk-Timing-Diagnostics` logs per-stage replay chunk timing information at runtime so you can inspect async preparation, replay load application, and queued live restore costs while profiling MSPT spikes.
 - Protected replays are skipped by both retention cleanup and manual delete commands until they are explicitly unprotected.

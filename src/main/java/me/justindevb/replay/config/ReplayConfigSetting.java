@@ -3,7 +3,7 @@ package me.justindevb.replay.config;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public enum ReplayConfigSetting {
-        CONFIG_VERSION("Config-Version", 3,
+        CONFIG_VERSION("Config-Version", 4,
             "Internal config migration version. Do not edit unless instructed."),
     CHECK_UPDATE("General.Check-Update", true,
             "Check for plugin updates on startup."),
@@ -31,6 +31,8 @@ public enum ReplayConfigSetting {
             "Speed change increment per Faster/Slower click (e.g. 0.2 = 20%)."),
     PLAYBACK_MAX_SPEED("Playback.Max-Speed", 1.0,
             "Maximum playback speed multiplier. Must be >= 1.0."),
+    PLAYBACK_CHUNK_MODE("Playback.Chunk-Mode", 1,
+            "Replay chunk playback mode: 1 restores live chunks as they leave the replay window; 2 defers live chunk restore until replay stop and resends replay chunks if they naturally unload and later return."),
     PLAYBACK_CHUNK_VIEW_RADIUS("Playback.Chunk-View-Radius", 3,
             "Chunk radius around the replay viewer used for chunk snapshot playback. This is separate from recording chunk capture radius."),
     PLAYBACK_CHUNK_TIMING_DIAGNOSTICS("Playback.Chunk-Timing-Diagnostics", false,

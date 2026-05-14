@@ -23,6 +23,7 @@ import me.justindevb.replay.storage.binary.BinaryChunkRegionEntry;
 import me.justindevb.replay.storage.binary.BinaryReplayChunkMetadata;
 import net.jpountz.lz4.LZ4FrameOutputStream;
 import org.bukkit.Bukkit;
+import org.bukkit.Chunk;
 import org.bukkit.ChunkSnapshot;
 import org.bukkit.Location;
 import org.bukkit.World;
@@ -146,6 +147,167 @@ class ReplayBlockManagerTest {
         verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
     verify(liveChunkCaptureService).captureDetachedSnapshot(chunkCoordinate);
     verify(liveChunkCaptureService).buildPayload(capturedSnapshot);
+    }
+
+    @Test
+    void refreshVisibleChunkBaselines_mode2DoesNotQueueRestoreWhenChunkLeavesReplayWindow() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        ChunkCoordinate chunkCoordinate = new ChunkCoordinate("world", 0, 0);
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(
+                new Location(world, 0, 64, 0),
+                new Location(world, 0, 64, 0),
+                new Location(world, 16, 64, 0));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, packetFriendlyPayloadBytes(0), List.of(chunkCoordinate))),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> replayPreparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                0,
+                2,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.mode2NoQueue"),
+                ReplayBlockManager.PlaybackChunkMode.DEFERRED_RESTORE,
+                (player, coordinate) -> true);
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+        }
+
+        assertTrue(queuedLiveChunkRestores(manager).isEmpty());
+        verify(snapshotSender, times(1)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+        verify(liveChunkCaptureService, times(0)).captureDetachedSnapshot(any());
+    }
+
+    @Test
+    void refreshVisibleChunkBaselines_mode2ResendsReplayChunkAfterNaturalUnloadAndReturn() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        ChunkCoordinate chunkCoordinate = new ChunkCoordinate("world", 0, 0);
+        Map<Long, Boolean> sentChunks = new LinkedHashMap<>();
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(
+                new Location(world, 0, 64, 0),
+                new Location(world, 0, 64, 0),
+                new Location(world, 16, 64, 0),
+                new Location(world, 0, 64, 0));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            sentChunks.put(Chunk.getChunkKey(chunkCoordinate.chunkX(), chunkCoordinate.chunkZ()), true);
+            return null;
+        }).when(snapshotSender).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, packetFriendlyPayloadBytes(0), List.of(chunkCoordinate))),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> replayPreparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                0,
+                2,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.mode2Resend"),
+                ReplayBlockManager.PlaybackChunkMode.DEFERRED_RESTORE,
+                (player, coordinate) -> sentChunks.getOrDefault(Chunk.getChunkKey(coordinate.chunkX(), coordinate.chunkZ()), false));
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            sentChunks.put(Chunk.getChunkKey(chunkCoordinate.chunkX(), chunkCoordinate.chunkZ()), false);
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+        }
+
+        verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+        verify(liveChunkCaptureService, times(0)).captureDetachedSnapshot(any());
+    }
+
+    @Test
+    void restoreSessionBaseline_mode2SkipsRestoreForNaturallyUnloadedChunk() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        ChunkCoordinate chunkCoordinate = new ChunkCoordinate("world", 0, 0);
+        Map<Long, Boolean> sentChunks = new LinkedHashMap<>();
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(
+                new Location(world, 0, 64, 0),
+                new Location(world, 0, 64, 0));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            sentChunks.put(Chunk.getChunkKey(chunkCoordinate.chunkX(), chunkCoordinate.chunkZ()), true);
+            return null;
+        }).when(snapshotSender).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, packetFriendlyPayloadBytes(0), List.of(chunkCoordinate))),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> replayPreparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                0,
+                2,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.mode2StopSkip"),
+                ReplayBlockManager.PlaybackChunkMode.DEFERRED_RESTORE,
+                (player, coordinate) -> sentChunks.getOrDefault(Chunk.getChunkKey(coordinate.chunkX(), coordinate.chunkZ()), false));
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            sentChunks.put(Chunk.getChunkKey(chunkCoordinate.chunkX(), chunkCoordinate.chunkZ()), false);
+            manager.restoreSessionBaseline();
+        }
+
+        verify(snapshotSender, times(1)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
+        verify(liveChunkCaptureService, times(0)).captureDetachedSnapshot(any());
     }
 
     @Test

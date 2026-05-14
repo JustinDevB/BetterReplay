@@ -38,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `BRCP` chunk recordings now capture packet-friendly live chunk snapshots, include block-entity payloads when runtime NBT extraction is available, replay them with real chunk packets, reapply prior block mutations when chunks enter view mid-replay, and resend live chunks on unload or replay stop
 - Separate `Playback.Chunk-View-Radius` config for replay viewers, defaulting to `3`, plus center-first replay chunk prioritization and bounded in-flight chunk preparation windows
 - Optional `Playback.Chunk-Timing-Diagnostics` runtime logging for per-stage replay chunk timing measurements during playback profiling
+- `Playback.Chunk-Mode` config with mode `1` moving-window live restore and mode `2` deferred restore that cooperates with natural client chunk unloads and replay chunk resend-on-return
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
