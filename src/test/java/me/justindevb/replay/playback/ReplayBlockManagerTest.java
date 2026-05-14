@@ -13,6 +13,7 @@ import me.justindevb.replay.Replay;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.chunk.WorldChunkPacketFriendlyCaptureService;
+import me.justindevb.replay.config.ReplayConfigSetting;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryChunkCompression;
 import me.justindevb.replay.storage.binary.BinaryChunkPayloadCodec;
@@ -29,6 +30,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -50,6 +52,7 @@ import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -406,6 +409,25 @@ class ReplayBlockManagerTest {
     }
 
     @Test
+    void constructor_usesConfiguredSendLimitToSetReplayLoadProbeCapToTenTimesSendRate() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        FileConfiguration config = mock(FileConfiguration.class);
+        Logger logger = Logger.getLogger("ReplayBlockManagerTest.configuredPrepareCaps");
+
+        when(replay.getConfig()).thenReturn(config);
+        when(replay.getLogger()).thenReturn(logger);
+        when(config.getInt(ReplayConfigSetting.PLAYBACK_CHUNK_VIEW_RADIUS.getKey(), 3)).thenReturn(3);
+        when(config.getInt(ReplayConfigSetting.PLAYBACK_CHUNK_SEND_LIMIT_PER_TICK.getKey(), 1)).thenReturn(10);
+        when(config.getInt(ReplayConfigSetting.PLAYBACK_CHUNK_CLEAR_LIMIT_PER_TICK.getKey(), 1)).thenReturn(10);
+
+        ReplayBlockManager manager = new ReplayBlockManager(viewer, replay, ReplayChunkData.NONE);
+
+        assertEquals(100, intField(manager, "maxReplayChunkPreparesInFlight"));
+        assertEquals(10, intField(manager, "maxLiveChunkRestorePreparesInFlight"));
+    }
+
+    @Test
     void refreshVisibleChunkBaselines_logsReplayLoadCacheHitState() throws Exception {
         Player viewer = mock(Player.class);
         Replay replay = mock(Replay.class);
@@ -689,6 +711,57 @@ class ReplayBlockManagerTest {
     }
 
     @Test
+    void enqueuePreparedPacketFriendlyChunkBaselines_reclaimsCompletedMissingChunkSlotsBeforeEnqueue() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        Executor stalledExecutor = command -> {
+        };
+        ChunkCoordinate missingA = new ChunkCoordinate("world", 0, 0);
+        ChunkCoordinate missingB = new ChunkCoordinate("world", 1, 0);
+        ChunkCoordinate missingC = new ChunkCoordinate("world", 0, 1);
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, packetFriendlyPayloadBytes(0), chunkSquare("world", 0, 0, 1))),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> preparedChunk(),
+                stalledExecutor,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                1,
+                3,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.missingSlotReuse"));
+
+        pendingReplayChunkPrepares(manager).put(missingA, CompletableFuture.completedFuture(null));
+        pendingReplayChunkPrepares(manager).put(missingB, CompletableFuture.completedFuture(null));
+        pendingReplayChunkPrepares(manager).put(missingC, CompletableFuture.completedFuture(null));
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+        }
+
+        assertEquals(3, pendingReplayChunkPrepareCount(manager));
+        assertFalse(pendingReplayChunkPrepares(manager).containsKey(missingA));
+        assertFalse(pendingReplayChunkPrepares(manager).containsKey(missingB));
+        assertFalse(pendingReplayChunkPrepares(manager).containsKey(missingC));
+    }
+
+    @Test
     void restoreSessionBaseline_restoresQueuedPacketFriendlyChunkOnlyOnce() throws Exception {
         Player viewer = mock(Player.class);
         Replay replay = mock(Replay.class);
@@ -800,6 +873,76 @@ class ReplayBlockManagerTest {
 
         verify(snapshotSender, times(2)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
         verify(liveChunkCaptureService, times(1)).buildPayload(capturedSnapshot);
+        verify(drainTask, times(1)).cancel();
+    }
+
+    @Test
+    void restoreSessionBaseline_usesChunkClearLimitPerTickForReplayEndDrain() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        ChunkCoordinate firstChunk = new ChunkCoordinate("world", 0, 0);
+        ChunkCoordinate secondChunk = new ChunkCoordinate("world", 1, 0);
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot firstSnapshot = capturedChunkSnapshot(0, 0, 1);
+        WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot secondSnapshot = capturedChunkSnapshot(1, 0, 1);
+        WrappedTask drainTask = mock(WrappedTask.class);
+        Runnable[] scheduledDrain = new Runnable[1];
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(
+                new Location(world, 0, 64, 0),
+            new Location(world, 0, 64, 0),
+            new Location(world, 0, 64, 0));
+        when(liveChunkCaptureService.captureDetachedSnapshot(firstChunk)).thenReturn(firstSnapshot);
+        when(liveChunkCaptureService.captureDetachedSnapshot(secondChunk)).thenReturn(secondSnapshot);
+        when(liveChunkCaptureService.buildPayload(firstSnapshot)).thenReturn(packetFriendlyPayload(1));
+        when(liveChunkCaptureService.buildPayload(secondSnapshot)).thenReturn(packetFriendlyPayload(1));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(BinaryChunkPayloadFormat.BRCP, packetFriendlyPayloadBytes(0), List.of(firstChunk, secondChunk))),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> replayPreparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                task -> {
+                    scheduledDrain[0] = task;
+                    return drainTask;
+                },
+                1,
+                2,
+                2,
+                9,
+                9,
+                Logger.getLogger("ReplayBlockManagerTest.stopClearLimit"));
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+            manager.refreshVisibleChunkBaselines();
+            manager.restoreSessionBaseline();
+
+            verify(liveChunkCaptureService, times(0)).captureDetachedSnapshot(any());
+            assertTrue(scheduledDrain[0] != null);
+
+            scheduledDrain[0].run();
+            verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(firstChunk);
+            verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(secondChunk);
+
+            scheduledDrain[0].run();
+        }
+
+        verify(snapshotSender, times(4)).send(eq(viewer), any(ChunkCoordinate.class), eq(replayPreparedChunk));
         verify(drainTask, times(1)).cancel();
     }
 
@@ -1039,6 +1182,19 @@ class ReplayBlockManagerTest {
         Field field = ReplayBlockManager.class.getDeclaredField("pendingReplayChunkPrepares");
         field.setAccessible(true);
         return ((Map<ChunkCoordinate, ?>) field.get(manager)).size();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<ChunkCoordinate, CompletableFuture<?>> pendingReplayChunkPrepares(ReplayBlockManager manager) throws Exception {
+        Field field = ReplayBlockManager.class.getDeclaredField("pendingReplayChunkPrepares");
+        field.setAccessible(true);
+        return (Map<ChunkCoordinate, CompletableFuture<?>>) field.get(manager);
+    }
+
+    private static int intField(ReplayBlockManager manager, String fieldName) throws Exception {
+        Field field = ReplayBlockManager.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.getInt(manager);
     }
 
     @SuppressWarnings("unchecked")

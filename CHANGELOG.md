@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replay controls getting stuck after replay ends (#27)
 - Replay export now writes under the plugin data folder
 - Chunk playback restore flow now handles unload timing and viewer return cases more reliably
+- Replay chunk load probing now frees completed missing-chunk checks before scheduling the next async wave, so higher chunk send limits are not throttled by one-tick queue lag when many surrounding chunks were never recorded
+- Replay chunk load probing now runs at `10x` the configured chunk send rate, so fast `missing-replay-chunk` checks do not throttle how quickly the viewer can discover whether nearby chunks were actually recorded
 - Config migration now preserves wrapped pseudo-comments, keeps the managed header stable, and avoids accumulating blank lines between root sections
 
 ### Changed
