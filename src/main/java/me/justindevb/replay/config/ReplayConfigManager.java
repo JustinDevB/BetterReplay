@@ -13,7 +13,7 @@ import java.util.Set;
 
 public class ReplayConfigManager {
 
-    private static final int CURRENT_CONFIG_VERSION = 4;
+    private static final int CURRENT_CONFIG_VERSION = 5;
     private static final String OBSOLETE_COMPRESS_REPLAYS_KEY = "General.Compress-Replays";
     private static final String OBSOLETE_COMPRESS_REPLAYS_COMMENT = "GZIP compress replay data to save disk space.";
     private static final String LEGACY_LIST_PAGE_SIZE_KEY = "list-page-size";
@@ -67,6 +67,16 @@ public class ReplayConfigManager {
         int configuredChunkMode = commented.getInt(ReplayConfigSetting.PLAYBACK_CHUNK_MODE.getKey(), 1);
         if (configuredChunkMode < 1 || configuredChunkMode > 2) {
             changed |= commented.setIfDifferent(ReplayConfigSetting.PLAYBACK_CHUNK_MODE.getKey(), 1);
+        }
+
+        int configuredChunkSendLimit = commented.getInt(ReplayConfigSetting.PLAYBACK_CHUNK_SEND_LIMIT_PER_TICK.getKey(), 1);
+        if (configuredChunkSendLimit < 1) {
+            changed |= commented.setIfDifferent(ReplayConfigSetting.PLAYBACK_CHUNK_SEND_LIMIT_PER_TICK.getKey(), 1);
+        }
+
+        int configuredChunkClearLimit = commented.getInt(ReplayConfigSetting.PLAYBACK_CHUNK_CLEAR_LIMIT_PER_TICK.getKey(), 1);
+        if (configuredChunkClearLimit < 1) {
+            changed |= commented.setIfDifferent(ReplayConfigSetting.PLAYBACK_CHUNK_CLEAR_LIMIT_PER_TICK.getKey(), 1);
         }
 
         changed |= commented.setIfDifferent(ReplayConfigSetting.CONFIG_VERSION.getKey(), CURRENT_CONFIG_VERSION);

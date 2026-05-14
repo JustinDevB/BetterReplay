@@ -52,7 +52,7 @@ class ReplayConfigManagerTest {
         String nl = System.lineSeparator();
         assertTrue(migrated.startsWith("# ==========================================="));
         assertTrue(migrated.contains("# Internal config migration version. Do not edit unless instructed."));
-        assertTrue(migrated.contains("Config-Version: 4"));
+        assertTrue(migrated.contains("Config-Version: 5"));
         assertFalse(migrated.contains("Compress-Replays:"));
         assertTrue(migrated.contains("# Check for plugin updates on startup."));
         assertTrue(migrated.contains("# Enable automatic deletion of old replays."));
@@ -75,8 +75,8 @@ class ReplayConfigManagerTest {
         assertTrue(migrated.contains("# Number of replay names shown per /replay list page."));
         assertTrue(migrated.indexOf("# MySQL host name or IP address.") < migrated.indexOf("host:"));
         assertTrue(migrated.indexOf("# Check for plugin updates on startup.") < migrated.indexOf("Check-Update:"));
-        assertTrue(migrated.indexOf("Config-Version: 4") < migrated.indexOf("General:"));
-        assertTrue(migrated.contains("Config-Version: 4" + nl + nl + "General:"));
+        assertTrue(migrated.indexOf("Config-Version: 5") < migrated.indexOf("General:"));
+        assertTrue(migrated.contains("Config-Version: 5" + nl + nl + "General:"));
         assertTrue(migrated.indexOf("password: password") < migrated.indexOf("# Number of replay names shown per /replay list page."));
 
         verify(plugin).reloadConfig();
@@ -116,9 +116,9 @@ class ReplayConfigManagerTest {
         assertFalse(migrated.contains("list-page-size:"));
         assertFalse(migrated.contains("list-protected-highlight-color:"));
         assertFalse(migrated.contains("list:"));
-        assertTrue(migrated.indexOf("Config-Version: 4") < migrated.indexOf("General:"));
-        assertTrue(migrated.contains("Config-Version: 4" + nl + nl + "General:"));
-        assertFalse(migrated.contains("Config-Version: 4" + nl + nl + nl + "General:"));
+        assertTrue(migrated.indexOf("Config-Version: 5") < migrated.indexOf("General:"));
+        assertTrue(migrated.contains("Config-Version: 5" + nl + nl + "General:"));
+        assertFalse(migrated.contains("Config-Version: 5" + nl + nl + nl + "General:"));
     }
 
     @Test
@@ -154,6 +154,25 @@ class ReplayConfigManagerTest {
         String migrated = Files.readString(configFile, StandardCharsets.UTF_8);
         assertTrue(migrated.contains("Chunk-Mode: 1"));
     }
+
+      @Test
+      void initialize_clampsPlaybackChunkSendAndClearLimits_toAtLeastOne() throws IOException {
+        Path configFile = tempDir.resolve("config.yml");
+        Files.writeString(configFile, """
+            Playback:
+              Chunk-Send-Limit-Per-Tick: 0
+              Chunk-Clear-Limit-Per-Tick: -5
+            """, StandardCharsets.UTF_8);
+
+        when(plugin.getDataFolder()).thenReturn(tempDir.toFile());
+        when(plugin.getName()).thenReturn("BetterReplay");
+
+        new ReplayConfigManager(plugin).initialize();
+
+        String migrated = Files.readString(configFile, StandardCharsets.UTF_8);
+        assertTrue(migrated.contains("Chunk-Send-Limit-Per-Tick: 1"));
+        assertTrue(migrated.contains("Chunk-Clear-Limit-Per-Tick: 1"));
+      }
 
     @Test
     void initialize_migratesLowercaseGroupedListConfig_withoutLeavingEmptyLegacyRoot() throws IOException {

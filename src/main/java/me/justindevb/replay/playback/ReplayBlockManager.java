@@ -40,8 +40,8 @@ import java.util.logging.Logger;
 public class ReplayBlockManager {
 
     private static final int DEFAULT_PLAYBACK_CHUNK_VIEW_RADIUS = 3;
-    private static final int MAX_BRCP_CHUNK_APPLIES_PER_REFRESH = 1;
-    private static final int MAX_BRCP_CHUNK_RESTORES_PER_REFRESH = 1;
+    private static final int DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK = 1;
+    private static final int DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK = 1;
     private static final Method BUKKIT_GET_CURRENT_TICK_METHOD = resolveBukkitCurrentTickMethod();
     private static final String PREPARE_RESULT_PREPARED = "prepared";
     private static final String PREPARE_RESULT_PREPARED_PACKET_CACHE_HIT = "prepared-packet-cache-hit";
@@ -63,6 +63,8 @@ public class ReplayBlockManager {
     private final PlaybackChunkMode chunkPlaybackMode;
     private final ChunkSentStateResolver chunkSentStateResolver;
     private final int chunkPlaybackRadius;
+    private final int maxReplayChunkAppliesPerRefresh;
+    private final int maxLiveChunkRestoresPerRefresh;
     private final int maxReplayChunkPreparesInFlight;
     private final int maxLiveChunkRestorePreparesInFlight;
     private final boolean chunkTimingDiagnosticsEnabled;
@@ -166,6 +168,14 @@ public class ReplayBlockManager {
             && replay.getConfig() != null
             ? Math.max(0, ReplayConfigSetting.PLAYBACK_CHUNK_VIEW_RADIUS.getInt(replay.getConfig()))
             : DEFAULT_PLAYBACK_CHUNK_VIEW_RADIUS;
+        this.maxReplayChunkAppliesPerRefresh = replay != null
+            && replay.getConfig() != null
+            ? Math.max(1, ReplayConfigSetting.PLAYBACK_CHUNK_SEND_LIMIT_PER_TICK.getInt(replay.getConfig()))
+            : DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK;
+        this.maxLiveChunkRestoresPerRefresh = replay != null
+            && replay.getConfig() != null
+            ? Math.max(1, ReplayConfigSetting.PLAYBACK_CHUNK_CLEAR_LIMIT_PER_TICK.getInt(replay.getConfig()))
+            : DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK;
         this.maxReplayChunkPreparesInFlight = computeMaxReplayChunkPreparesInFlight(this.chunkPlaybackRadius);
         this.maxLiveChunkRestorePreparesInFlight = computeMaxLiveChunkRestorePreparesInFlight(this.chunkPlaybackRadius);
         this.chunkTimingDiagnosticsEnabled = replay != null
@@ -204,6 +214,8 @@ public class ReplayBlockManager {
                 player -> ClientVersion.V_1_21_11,
                 null,
                 1,
+                DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
+                DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
                 computeMaxReplayChunkPreparesInFlight(1),
                 computeMaxLiveChunkRestorePreparesInFlight(1),
                 Logger.getLogger(ReplayBlockManager.class.getName()),
@@ -234,6 +246,8 @@ public class ReplayBlockManager {
             player -> ClientVersion.V_1_21_11,
             null,
             1,
+            DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
+            DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
             computeMaxReplayChunkPreparesInFlight(1),
             computeMaxLiveChunkRestorePreparesInFlight(1),
             logger,
@@ -254,6 +268,47 @@ public class ReplayBlockManager {
             Function<Player, ClientVersion> clientVersionResolver,
             LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler,
             int chunkPlaybackRadius,
+                int maxReplayChunkPreparesInFlight,
+                int maxLiveChunkRestorePreparesInFlight,
+                Logger logger
+            ) {
+            this(
+                viewer,
+                replay,
+                chunkPlaybackCache,
+                chunkPayloadFormat,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                replayChunkSnapshotSender,
+                replayChunkPacketPreparer,
+                replayChunkPreparationExecutor,
+                clientVersionResolver,
+                liveChunkRestoreDrainScheduler,
+                chunkPlaybackRadius,
+                DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
+                DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
+                maxReplayChunkPreparesInFlight,
+                maxLiveChunkRestorePreparesInFlight,
+                logger,
+                PlaybackChunkMode.MOVING_WINDOW,
+                (player, coordinate) -> true);
+            }
+
+            ReplayBlockManager(
+                Player viewer,
+                Replay replay,
+                ReplayChunkPlaybackCache chunkPlaybackCache,
+                BinaryChunkPayloadFormat chunkPayloadFormat,
+                BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
+                WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
+                ReplayChunkSnapshotSender replayChunkSnapshotSender,
+                ReplayChunkPacketPreparer replayChunkPacketPreparer,
+                Executor replayChunkPreparationExecutor,
+                Function<Player, ClientVersion> clientVersionResolver,
+                LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler,
+                int chunkPlaybackRadius,
+            int maxReplayChunkAppliesPerRefresh,
+            int maxLiveChunkRestoresPerRefresh,
             int maxReplayChunkPreparesInFlight,
             int maxLiveChunkRestorePreparesInFlight,
             Logger logger
@@ -271,11 +326,54 @@ public class ReplayBlockManager {
                 clientVersionResolver,
                 liveChunkRestoreDrainScheduler,
                 chunkPlaybackRadius,
+                maxReplayChunkAppliesPerRefresh,
+                maxLiveChunkRestoresPerRefresh,
                 maxReplayChunkPreparesInFlight,
                 maxLiveChunkRestorePreparesInFlight,
                 logger,
                 PlaybackChunkMode.MOVING_WINDOW,
                 (player, coordinate) -> true);
+    }
+
+    ReplayBlockManager(
+            Player viewer,
+            Replay replay,
+            ReplayChunkPlaybackCache chunkPlaybackCache,
+            BinaryChunkPayloadFormat chunkPayloadFormat,
+            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
+            WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
+            ReplayChunkSnapshotSender replayChunkSnapshotSender,
+            ReplayChunkPacketPreparer replayChunkPacketPreparer,
+            Executor replayChunkPreparationExecutor,
+            Function<Player, ClientVersion> clientVersionResolver,
+            LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler,
+            int chunkPlaybackRadius,
+            int maxReplayChunkPreparesInFlight,
+            int maxLiveChunkRestorePreparesInFlight,
+            Logger logger,
+            PlaybackChunkMode chunkPlaybackMode,
+            ChunkSentStateResolver chunkSentStateResolver
+    ) {
+        this(
+                viewer,
+                replay,
+                chunkPlaybackCache,
+                chunkPayloadFormat,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                replayChunkSnapshotSender,
+                replayChunkPacketPreparer,
+                replayChunkPreparationExecutor,
+                clientVersionResolver,
+                liveChunkRestoreDrainScheduler,
+                chunkPlaybackRadius,
+                DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
+                DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
+                maxReplayChunkPreparesInFlight,
+                maxLiveChunkRestorePreparesInFlight,
+                logger,
+                chunkPlaybackMode,
+                chunkSentStateResolver);
     }
 
         ReplayBlockManager(
@@ -291,6 +389,8 @@ public class ReplayBlockManager {
             Function<Player, ClientVersion> clientVersionResolver,
             LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler,
             int chunkPlaybackRadius,
+            int maxReplayChunkAppliesPerRefresh,
+            int maxLiveChunkRestoresPerRefresh,
             int maxReplayChunkPreparesInFlight,
             int maxLiveChunkRestorePreparesInFlight,
                 Logger logger,
@@ -311,6 +411,8 @@ public class ReplayBlockManager {
         this.chunkPlaybackMode = Objects.requireNonNull(chunkPlaybackMode, "chunkPlaybackMode");
         this.chunkSentStateResolver = Objects.requireNonNull(chunkSentStateResolver, "chunkSentStateResolver");
         this.chunkPlaybackRadius = Math.max(0, chunkPlaybackRadius);
+        this.maxReplayChunkAppliesPerRefresh = Math.max(1, maxReplayChunkAppliesPerRefresh);
+        this.maxLiveChunkRestoresPerRefresh = Math.max(1, maxLiveChunkRestoresPerRefresh);
         this.maxReplayChunkPreparesInFlight = Math.max(1, maxReplayChunkPreparesInFlight);
         this.maxLiveChunkRestorePreparesInFlight = Math.max(1, maxLiveChunkRestorePreparesInFlight);
         this.chunkTimingDiagnosticsEnabled = false;
@@ -579,7 +681,7 @@ public class ReplayBlockManager {
             return;
         }
 
-        processQueuedLiveChunkRestores(MAX_BRCP_CHUNK_RESTORES_PER_REFRESH);
+        processQueuedLiveChunkRestores(maxLiveChunkRestoresPerRefresh);
         if (queuedLiveChunkRestores.isEmpty() && pendingLiveChunkRestorePrepares.isEmpty()) {
             cancelLiveChunkRestoreDrainTask();
         }
@@ -668,7 +770,7 @@ public class ReplayBlockManager {
             enqueueLoadNanos = elapsedNanos(enqueueStartedAt);
 
             long applyStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
-            ReplayLoadApplyCounts loadApplyCounts = applyReadyPreparedPacketFriendlyChunkBaselines(desiredChunkOrder, MAX_BRCP_CHUNK_APPLIES_PER_REFRESH);
+            ReplayLoadApplyCounts loadApplyCounts = applyReadyPreparedPacketFriendlyChunkBaselines(desiredChunkOrder, maxReplayChunkAppliesPerRefresh);
             appliedLoadCount = loadApplyCounts.appliedCount();
             preparedPacketCacheHitCount = loadApplyCounts.preparedPacketCacheHits();
             freshPreparedLoadCount = loadApplyCounts.freshPreparedLoads();
@@ -676,7 +778,7 @@ public class ReplayBlockManager {
 
             if (!centerChanged && appliedLoadCount == 0) {
                 long restoreStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
-                LiveChunkRestoreProcessResult restoreProcessResult = processQueuedLiveChunkRestores(MAX_BRCP_CHUNK_RESTORES_PER_REFRESH);
+                LiveChunkRestoreProcessResult restoreProcessResult = processQueuedLiveChunkRestores(maxLiveChunkRestoresPerRefresh);
                 restoredChunkCount = restoreProcessResult.restoredCount();
                 liveRestoreCapturesStarted = restoreProcessResult.capturesStarted();
                 liveRestoreCaptureNanos = restoreProcessResult.captureNanos();

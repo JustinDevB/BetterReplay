@@ -311,6 +311,53 @@ class ReplayBlockManagerTest {
     }
 
     @Test
+    void refreshVisibleChunkBaselines_usesConfiguredChunkSendLimitPerTick() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket replayPreparedChunk = preparedChunk();
+        ChunkCoordinate firstChunk = new ChunkCoordinate("world", 0, 0);
+        ChunkCoordinate secondChunk = new ChunkCoordinate("world", 1, 0);
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+        when(viewer.getLocation()).thenReturn(new Location(world, 8, 64, 8));
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(replayChunkData(
+                        BinaryChunkPayloadFormat.BRCP,
+                        packetFriendlyPayloadBytes(0),
+                        List.of(firstChunk, secondChunk))),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> replayPreparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                1,
+                2,
+                1,
+                9,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.sendLimit"));
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+
+            manager.refreshVisibleChunkBaselines();
+        }
+
+        verify(snapshotSender, times(2)).send(eq(viewer), any(ChunkCoordinate.class), eq(replayPreparedChunk));
+    }
+
+    @Test
     void refreshVisibleChunkBaselines_logsSnapshotSendFailures() throws Exception {
         Player viewer = mock(Player.class);
         Replay replay = mock(Replay.class);
@@ -847,6 +894,55 @@ class ReplayBlockManagerTest {
         verify(snapshotSender, times(1)).send(eq(viewer), eq(firstChunk), eq(preparedChunk));
         verify(liveChunkCaptureService, times(1)).captureDetachedSnapshot(secondChunk);
         assertEquals(1, pendingLiveChunkRestorePrepareCount(manager));
+    }
+
+    @Test
+    void drainLiveChunkRestoresDuringTeardown_usesConfiguredChunkClearLimitPerTick() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        World world = mock(World.class);
+        ReplayChunkSnapshotSender snapshotSender = mock(ReplayChunkSnapshotSender.class);
+        WorldChunkPacketFriendlyCaptureService liveChunkCaptureService = mock(WorldChunkPacketFriendlyCaptureService.class);
+        PacketFriendlyChunkColumnBuilder.PreparedChunkPacket preparedChunk = preparedChunk();
+        ChunkCoordinate firstChunk = new ChunkCoordinate("world", 0, 0);
+        ChunkCoordinate secondChunk = new ChunkCoordinate("world", 1, 0);
+
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(world.getName()).thenReturn("world");
+
+        ReplayBlockManager manager = new ReplayBlockManager(
+                viewer,
+                replay,
+                new ReplayChunkPlaybackCache(ReplayChunkData.NONE),
+                BinaryChunkPayloadFormat.BRCP,
+                packetFriendlyPayloadCodec,
+                liveChunkCaptureService,
+                snapshotSender,
+                (coordinate, payload, clientVersion) -> preparedChunk,
+                Runnable::run,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                1,
+                1,
+                2,
+                3,
+                2,
+                Logger.getLogger("ReplayBlockManagerTest.clearLimit"),
+                ReplayBlockManager.PlaybackChunkMode.MOVING_WINDOW,
+                (player, coordinate) -> true);
+
+        queuedLiveChunkRestores(manager).add(firstChunk);
+        queuedLiveChunkRestores(manager).add(secondChunk);
+        pendingLiveChunkRestorePrepares(manager).put(firstChunk, CompletableFuture.completedFuture(preparedReplayChunkRecord(preparedChunk)));
+        pendingLiveChunkRestorePrepares(manager).put(secondChunk, CompletableFuture.completedFuture(preparedReplayChunkRecord(preparedChunk)));
+
+        Method drainLiveChunkRestoresDuringTeardown = ReplayBlockManager.class.getDeclaredMethod("drainLiveChunkRestoresDuringTeardown");
+        drainLiveChunkRestoresDuringTeardown.setAccessible(true);
+        drainLiveChunkRestoresDuringTeardown.invoke(manager);
+
+        verify(snapshotSender, times(2)).send(eq(viewer), any(ChunkCoordinate.class), eq(preparedChunk));
+        assertTrue(queuedLiveChunkRestores(manager).isEmpty());
     }
 
     private ReplayChunkData replayChunkData() throws Exception {

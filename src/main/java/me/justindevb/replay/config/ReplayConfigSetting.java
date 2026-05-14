@@ -3,7 +3,7 @@ package me.justindevb.replay.config;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public enum ReplayConfigSetting {
-        CONFIG_VERSION("Config-Version", 4,
+        CONFIG_VERSION("Config-Version", 5,
             "Internal config migration version. Do not edit unless instructed."),
     CHECK_UPDATE("General.Check-Update", true,
             "Check for plugin updates on startup."),
@@ -35,6 +35,10 @@ public enum ReplayConfigSetting {
             "Replay chunk playback mode: 1 restores live chunks as they leave the replay window; 2 defers live chunk restore until replay stop and resends replay chunks if they naturally unload and later return."),
     PLAYBACK_CHUNK_VIEW_RADIUS("Playback.Chunk-View-Radius", 3,
             "Chunk radius around the replay viewer used for chunk snapshot playback. This is separate from recording chunk capture radius."),
+    PLAYBACK_CHUNK_SEND_LIMIT_PER_TICK("Playback.Chunk-Send-Limit-Per-Tick", 1,
+            "Maximum number of replay chunks sent to the viewer per tick during packet-friendly chunk playback. Increase this on dedicated replay servers to fill larger chunk view radii faster."),
+    PLAYBACK_CHUNK_CLEAR_LIMIT_PER_TICK("Playback.Chunk-Clear-Limit-Per-Tick", 1,
+            "Maximum number of live chunks restored to the viewer per tick during packet-friendly chunk teardown. Increase this on dedicated replay servers to clear larger chunk view radii faster."),
     PLAYBACK_CHUNK_TIMING_DIAGNOSTICS("Playback.Chunk-Timing-Diagnostics", false,
             "Log replay chunk load and restore stage timings during playback for MSPT troubleshooting."),
     RETENTION_ENABLED("Retention.Enabled", false,
