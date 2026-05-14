@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replay sessions now always start at `1.0x` speed; `Playback.Max-Speed` is enforced to a minimum of `1.0`
 - Config keys for list settings were renamed from `list-page-size`/`list-protected-highlight-color` to `List.Page-Size`/`List.Protected-Highlight-Color`; values are auto-migrated on startup
 - Update checks now treat `-SNAPSHOT` builds as their corresponding release, and Modrinth publishing metadata now includes Purpur, Spigot, and Bukkit loaders
+- Modrinth uploads now publish the matching release changelog on `main` and the `[Unreleased]` section for `dev` alpha builds
 
 ## [1.4.0] - 2026-04-10
 

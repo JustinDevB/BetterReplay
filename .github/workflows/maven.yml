@@ -33,6 +33,43 @@ jobs:
         id: version
         run: echo "VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
 
+      - name: Resolve Modrinth changelog
+        id: modrinth_changelog
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          IS_DEV_BRANCH: ${{ github.ref == 'refs/heads/dev' }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          changelog_path = Path("CHANGELOG.md")
+          text = changelog_path.read_text(encoding="utf-8")
+          matches = list(re.finditer(r'^## \[(.+?)\](?: - .*)?$', text, re.MULTILINE))
+
+          sections = {}
+          for index, match in enumerate(matches):
+              start = match.end()
+              end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+              sections[match.group(1)] = text[start:end].strip()
+
+          version = os.environ["VERSION"]
+          target = "Unreleased" if os.environ.get("IS_DEV_BRANCH") == "true" else version.split("-", 1)[0]
+          body = sections.get(target)
+
+          if not body:
+              print(f"Unable to find changelog section [{target}] in {changelog_path}.", file=sys.stderr)
+              sys.exit(1)
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write("CHANGELOG<<EOF\n")
+              output.write(f"## [{target}]\n\n{body}\n")
+              output.write("EOF\n")
+          PY
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
@@ -47,6 +84,7 @@ jobs:
         with:
           modrinth-id: ${{ secrets.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          modrinth-changelog: ${{ steps.modrinth_changelog.outputs.CHANGELOG }}
           files: target/BetterReplay-*.jar
           version: ${{ steps.version.outputs.VERSION }}
           version-type: ${{ github.ref == 'refs/heads/main' && 'release' || 'alpha' }}
@@ -69,6 +107,7 @@ jobs:
             1.21.9
             1.21.10
             1.21.11
+            26.1.1
             26.1.2
           dependencies: |
             packetevents(required)
