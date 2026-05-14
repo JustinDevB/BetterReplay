@@ -3,6 +3,7 @@ package me.justindevb.replay;
 import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.api.ReplayManager;
 import me.justindevb.replay.storage.ReplayDeleteResult;
+import me.justindevb.replay.storage.ReplayPlaybackData;
 import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.storage.ReplayStorage;
@@ -74,14 +75,14 @@ public class ReplayManagerImpl implements ReplayManager {
                         return CompletableFuture.completedFuture(Optional.<ReplaySession>empty());
                     }
 
-                    return replay.getReplayStorage().loadReplay(replayName)
-                            .thenApply(timeline -> {
-                                if (timeline == null || timeline.isEmpty()) {
+                    return replay.getReplayStorage().loadReplayData(replayName)
+                            .thenApply(replayData -> {
+                                if (replayData == null || replayData.timeline().isEmpty()) {
                                     runSync(() -> viewer.sendMessage("§cReplay is empty or corrupted: " + replayName));
                                     return Optional.<ReplaySession>empty();
                                 }
 
-                                ReplaySession session = new ReplaySession(timeline, viewer, replay);
+                                ReplaySession session = new ReplaySession(replayData, viewer, replay);
 
                                 runSync(session::start);
 

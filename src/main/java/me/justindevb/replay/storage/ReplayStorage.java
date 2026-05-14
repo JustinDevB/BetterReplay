@@ -19,6 +19,10 @@ public interface ReplayStorage {
 
     CompletableFuture<List<TimelineEvent>> loadReplay(String name);
 
+    default CompletableFuture<ReplayPlaybackData> loadReplayData(String name) {
+        return loadReplay(name).thenApply(timeline -> timeline == null ? null : new ReplayPlaybackData(timeline));
+    }
+
     CompletableFuture<List<String>> listReplays();
 
     default CompletableFuture<List<ReplaySummary>> listReplaySummaries() {

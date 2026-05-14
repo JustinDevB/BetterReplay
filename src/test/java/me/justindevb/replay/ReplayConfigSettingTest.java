@@ -49,6 +49,16 @@ class ReplayConfigSettingTest {
     }
 
     @Test
+    void chunkCaptureRadius_usesExpectedKeyAndDefault() {
+        when(config.getInt("Recording.Chunk-Capture.Radius", 1)).thenReturn(3);
+
+        int value = ReplayConfigSetting.CHUNK_CAPTURE_RADIUS.getInt(config);
+
+        assertEquals(3, value);
+        verify(config).getInt("Recording.Chunk-Capture.Radius", 1);
+    }
+
+    @Test
     void protectedReplayHighlightColor_usesExpectedKeyAndDefault() {
         when(config.getString("List.Protected-Highlight-Color", "&6")).thenReturn("&c");
 

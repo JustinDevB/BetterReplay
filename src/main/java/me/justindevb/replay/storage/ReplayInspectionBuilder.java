@@ -24,6 +24,41 @@ public final class ReplayInspectionBuilder {
             int seekCheckpointCount,
             List<TimelineEvent> timeline
     ) {
+            return build(
+                replayName,
+                format,
+                storedBytes,
+                compressedPayloadBytes,
+                decompressedPayloadBytes,
+                0,
+                0,
+                0,
+                0,
+                recordingStartedAtEpochMillis,
+                recordedWithVersion,
+                minimumViewerVersion,
+                indexedPayload,
+                seekCheckpointCount,
+                timeline);
+            }
+
+            public static ReplayInspection build(
+                String replayName,
+                ReplayFormat format,
+                long storedBytes,
+                long compressedPayloadBytes,
+                long decompressedPayloadBytes,
+                int chunkRegionEntryCount,
+                int chunkEntryCount,
+                long compressedChunkPayloadBytes,
+                long decompressedChunkPayloadBytes,
+                Long recordingStartedAtEpochMillis,
+                String recordedWithVersion,
+                String minimumViewerVersion,
+                boolean indexedPayload,
+                int seekCheckpointCount,
+                List<TimelineEvent> timeline
+            ) {
         int recordCount = timeline.size();
         int startTick = recordCount == 0 ? 0 : Integer.MAX_VALUE;
         int endTick = 0;
@@ -57,6 +92,10 @@ public final class ReplayInspectionBuilder {
                 storedBytes,
                 compressedPayloadBytes,
                 decompressedPayloadBytes,
+                chunkRegionEntryCount,
+                chunkEntryCount,
+                compressedChunkPayloadBytes,
+                decompressedChunkPayloadBytes,
                 recordingStartedAtEpochMillis,
                 recordedWithVersion,
                 minimumViewerVersion,

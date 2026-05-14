@@ -2,6 +2,9 @@ package me.justindevb.replay;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import com.github.retrooper.packetevents.protocol.player.ClientVersion;
+import com.github.retrooper.packetevents.protocol.world.biome.Biomes;
+import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import com.tcoded.folialib.FoliaLib;
 import org.bstats.bukkit.Metrics;
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
@@ -56,6 +59,7 @@ public class Replay extends JavaPlugin {
     public void onEnable() {
         instance = this;
         PacketEvents.getAPI().init();
+        prewarmPacketEventsChunkMappings();
         foliaLib = new FoliaLib(this);
 
         recorderManager = new RecorderManager(this);
@@ -196,5 +200,14 @@ public class Replay extends JavaPlugin {
                 new ReplayBenchmarkHarness(getPluginMeta().getVersion()),
                 new ReplayBenchmarkReportWriter(Path.of(getDataFolder().getPath(), "benchmarks")),
                 asyncExecutor);
+    }
+
+    private void prewarmPacketEventsChunkMappings() {
+        try {
+            WrappedBlockState.getByString(ClientVersion.V_1_21_11, "minecraft:air");
+            Biomes.getRegistry().getByName(ClientVersion.V_1_21_11, "minecraft:plains");
+        } catch (RuntimeException ex) {
+            getLogger().log(Level.FINE, "Failed to prewarm PacketEvents chunk mappings", ex);
+        }
     }
 }

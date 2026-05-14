@@ -1,11 +1,16 @@
 package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
+import me.justindevb.replay.chunk.CapturedChunkBaseline;
+import me.justindevb.replay.chunk.ChunkCoordinate;
+import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.storage.ReplaySaveRequest;
 import me.justindevb.replay.util.VersionUtil;
 import net.jpountz.lz4.LZ4FrameInputStream;
 import net.jpountz.lz4.LZ4FrameOutputStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -26,6 +31,7 @@ import java.util.zip.ZipOutputStream;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -35,6 +41,9 @@ class BinaryReplayStorageCodecTest {
 
     private final BinaryReplayStorageCodec codec = new BinaryReplayStorageCodec();
     private final Gson gson = new Gson();
+
+    @TempDir
+    java.nio.file.Path tempDir;
 
     @Test
     void loadsValidBinaryReplayArchive() throws Exception {
@@ -61,7 +70,13 @@ class BinaryReplayStorageCodecTest {
                 "9.0.0",
                 manifest.recordingStartedAtEpochMillis(),
                 manifest.payloadChecksum(),
-                manifest.payloadChecksumAlgorithm())).getBytes(StandardCharsets.UTF_8));
+            manifest.payloadChecksumAlgorithm(),
+            manifest.hasChunkData(),
+            manifest.chunkRegionEntryCount(),
+            manifest.chunkEntryCount(),
+            manifest.chunkCoordinateHash(),
+            manifest.chunkPayloadFormat(),
+            manifest.chunkPayloadVersion())).getBytes(StandardCharsets.UTF_8));
 
         byte[] mutatedArchive = writeArchive(entries);
 
@@ -122,6 +137,120 @@ class BinaryReplayStorageCodecTest {
         assertThrows(IOException.class, () -> codec.decodeTimeline(writeArchive(entries), "1.4.0"));
     }
 
+    @Test
+    void finalizeReplay_withChunkArtifacts_includesChunkEntriesInArchive() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+        ChunkRecordingArtifacts chunkArtifacts = writer.snapshotArtifacts();
+
+        byte[] archive = codec.finalizeReplay(
+                "with-chunks",
+                new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, chunkArtifacts),
+                "1.4.0");
+
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+                BinaryReplayManifest.class);
+
+        assertTrue(manifest.hasChunkData());
+        assertEquals(1, manifest.chunkRegionEntryCount());
+        assertEquals(1, manifest.chunkEntryCount());
+        assertTrue(entries.containsKey("chunks/world/r.0.0.brregion"));
+    }
+
+    @Test
+    void inspectReplay_reportsChunkPayloadSizesSeparately() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+
+        byte[] archive = codec.finalizeReplay(
+                "inspect-chunks",
+                new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
+                "1.4.0");
+
+        me.justindevb.replay.storage.ReplayInspection inspection = codec.inspectReplay("inspect-chunks", archive, "1.4.0");
+
+        assertEquals(1, inspection.chunkRegionEntryCount());
+        assertEquals(1, inspection.chunkEntryCount());
+        assertTrue(inspection.compressedChunkPayloadBytes() > 0);
+        assertEquals(3, inspection.decompressedChunkPayloadBytes());
+    }
+
+        @Test
+        void finalizeReplay_withPacketFriendlyChunkArtifacts_tagsManifestWithBrcp() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(
+            new ChunkCoordinate("world", 0, 0),
+            new byte[] { 7, 8, 9 },
+            BinaryChunkPayloadFormat.BRCP));
+
+        byte[] archive = codec.finalizeReplay(
+            "with-brcp-chunks",
+            new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
+            "1.4.0");
+
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(
+            new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+            BinaryReplayManifest.class);
+
+        assertEquals(BinaryChunkPayloadFormat.BRCP.manifestValue(), manifest.chunkPayloadFormat());
+        assertEquals(1, manifest.chunkPayloadVersion());
+        assertEquals(BinaryChunkPayloadFormat.BRCP, manifest.chunkMetadata().payloadFormat());
+        }
+
+        @Test
+        void decodeReplayData_loadsChunkEntriesWhenManifestAndArchiveMatch() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+
+        byte[] archive = codec.finalizeReplay(
+            "decode-chunks",
+            new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
+            "1.4.0");
+
+        me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(archive, "1.4.0");
+
+        assertEquals(3, replayData.timeline().size());
+        assertTrue(replayData.chunkData().hasChunkData());
+        assertEquals(1, replayData.chunkData().regionEntries().size());
+        assertNotNull(replayData.chunkData().regionEntries().get("chunks/world/r.0.0.brregion"));
+        }
+
+        @Test
+        void decodeReplayData_softFailsWhenChunkManifestDoesNotMatchArchive() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+
+        byte[] archive = codec.finalizeReplay(
+            "decode-soft-fail",
+            new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
+            "1.4.0");
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+            BinaryReplayManifest.class);
+        BinaryReplayManifest mutated = new BinaryReplayManifest(
+                manifest.formatVersion(),
+                manifest.recordedWithVersion(),
+                manifest.minimumViewerVersion(),
+                manifest.recordingStartedAtEpochMillis(),
+                manifest.payloadChecksum(),
+                manifest.payloadChecksumAlgorithm(),
+                manifest.hasChunkData(),
+                manifest.chunkRegionEntryCount(),
+                manifest.chunkEntryCount() + 1,
+                manifest.chunkCoordinateHash(),
+                manifest.chunkPayloadFormat(),
+                manifest.chunkPayloadVersion());
+        entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(mutated).getBytes(StandardCharsets.UTF_8));
+
+        me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(writeArchive(entries), "1.4.0");
+
+        assertEquals(3, replayData.timeline().size());
+        assertFalse(replayData.chunkData().hasChunkData());
+        assertTrue(replayData.chunkData().regionEntries().isEmpty());
+        }
+
     private static List<TimelineEvent> sampleTimeline() {
         return List.of(
                 new TimelineEvent.PlayerMove(0, "uuid-1", "Steve", "world", 1, 64, 3, 0, 0, "STANDING"),
@@ -147,6 +276,13 @@ class BinaryReplayStorageCodecTest {
         try (ZipOutputStream zip = new ZipOutputStream(out)) {
             writeStoredEntry(zip, BinaryReplayFormat.MANIFEST_ENTRY_NAME, entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME));
             writeStoredEntry(zip, BinaryReplayFormat.REPLAY_ENTRY_NAME, entries.get(BinaryReplayFormat.REPLAY_ENTRY_NAME));
+            for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
+                if (BinaryReplayFormat.MANIFEST_ENTRY_NAME.equals(entry.getKey())
+                        || BinaryReplayFormat.REPLAY_ENTRY_NAME.equals(entry.getKey())) {
+                    continue;
+                }
+                writeStoredEntry(zip, entry.getKey(), entry.getValue());
+            }
         }
         return out.toByteArray();
     }
@@ -188,9 +324,15 @@ class BinaryReplayStorageCodecTest {
                 manifest.formatVersion(),
                 manifest.recordedWithVersion(),
                 manifest.minimumViewerVersion(),
-            manifest.recordingStartedAtEpochMillis(),
+                manifest.recordingStartedAtEpochMillis(),
                 "%08x".formatted(crc32c.getValue()),
-                manifest.payloadChecksumAlgorithm());
+                manifest.payloadChecksumAlgorithm(),
+                manifest.hasChunkData(),
+                manifest.chunkRegionEntryCount(),
+                manifest.chunkEntryCount(),
+                manifest.chunkCoordinateHash(),
+                manifest.chunkPayloadFormat(),
+                manifest.chunkPayloadVersion());
         entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(updated).getBytes(StandardCharsets.UTF_8));
     }
 }

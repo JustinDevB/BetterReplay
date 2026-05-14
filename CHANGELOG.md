@@ -8,47 +8,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Modrinth auto-publish via CI with alpha-aware update checking
-- `HeldItemChange` event for instant hand swap and slot change recording
-- Comprehensive test suite (279 tests across 5 phases)
-- Sealed `TimelineEvent` records replacing raw `Map<String, Object>` for type-safe timeline events
-- Source organization plan executed (Tier 1 + Tier 2 package restructure)
-- Enum-based config settings model with centralized, typed config keys
-- Versioned config migration with one-time comment backfill for legacy config files
 - Frame-by-frame step controls during paused replay; step backward or forward one tick at a time via `⏮`/`⏭` inventory buttons (slots 6–7)
 - Variable playback speed controls during active replay; adjust with `⏪ Slower`/`⏩ Faster` inventory buttons (slots 6–7) using configurable step increments
 - Current playback speed displayed in the action bar as `[X.Xx]` during playback
 - New config keys `Playback.Speed-Step` (default `0.2`) and `Playback.Max-Speed` (default `1.0`) to control speed increment and upper bound
-- Binary replay storage now uses finalized `.br` archives with crash-safe append-log recording, lazy indexed loading, file/MySQL backend support, filtered export tooling, hidden benchmark/debug diagnostics, preserved recording start timestamps, startup recovery of orphaned temp logs, and temporary legacy JSON compatibility during migration
-- Replay protection metadata and admin commands for protecting and unprotecting saved replays from manual deletion and retention cleanup
-- Config-driven replay retention cleanup with duration parsing, scheduled scans, and protection-aware deletion skipping
-- Configurable protected replay highlighting in `/replay list`
+- Finalized binary `.br` replay storage for file and MySQL backends, including crash-safe append-log recording, lazy indexed loading, preserved recording start timestamps, startup recovery of orphaned temp logs, filtered export tooling, hidden benchmark/debug utilities, and temporary legacy JSON compatibility during migration
+- Replay protection commands and metadata, protected replay highlighting in `/replay list`, and config-driven retention cleanup with duration parsing
+- Optional chunk baseline capture and chunk-aware playback for binary replays, including block-entity support, replay chunk caching, `Playback.Chunk-View-Radius`, `Playback.Chunk-Send-Limit-Per-Tick`, `Playback.Chunk-Clear-Limit-Per-Tick`, `Playback.Chunk-Timing-Diagnostics`, and `Playback.Chunk-Mode`
 
 ### Fixed
 - `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
 - PacketEvents block-break recording is now rescheduled onto the server thread to avoid Netty-thread contention and unsafe shared-state mutation (#43)
+- Held-item swaps and hotbar slot changes are now captured immediately for more accurate replay inventory playback
 - Nested replay inventory loss when starting a replay during an active replay (#31)
 - Replay controls getting stuck after replay ends (#27)
-- Static `Replay.getInstance()` NPEs in test environments (#32)
-- Deprecation warnings and unused imports cleaned up
-- Config migration comment placement and header ordering for generated configs
-- Wrapped YAML pseudo-comment values now load correctly during idempotent config initialization (prevents parse failure on long comment lines)
-- Config rewrite now deduplicates managed header text and keeps `Config-Version` at the top for cleaner layout
-- Config migration no longer accumulates extra blank lines between `Config-Version` and subsequent root sections
+- Replay export now writes under the plugin data folder
+- Chunk playback restore flow now handles unload timing and viewer return cases more reliably
+- Replay chunk load probing now frees completed missing-chunk checks before scheduling the next async wave, so higher chunk send limits are not throttled by one-tick queue lag when many surrounding chunks were never recorded
+- Replay chunk load probing now runs at `10x` the configured chunk send rate, so fast `missing-replay-chunk` checks do not throttle how quickly the viewer can discover whether nearby chunks were actually recorded
+- Config migration now preserves wrapped pseudo-comments, keeps the managed header stable, and avoids accumulating blank lines between root sections
 
 ### Changed
-- All commands routed through `ReplayManager` API (#25)
 - `RecordingStopEvent` now fires synchronously to fix async AntiCheatReplay compatibility
-- All `printStackTrace()` calls replaced with proper logger calls
-- CI GitHub Actions upgraded to Node.js 24-ready major versions (`actions/checkout@v6`, `actions/setup-java@v5`, `actions/upload-artifact@v7`)
-- Config settings ownership moved out of `Replay` into a dedicated comment-preserving config manager
+- `ReplayManager` now exposes `listSavedReplaySummaries`, `protectSavedReplay`, `unprotectSavedReplay`, and returns `ReplayDeleteResult` from `deleteSavedReplay`
+- Config settings ownership moved out of `Replay` into a dedicated typed, comment-preserving config manager with versioned migrations
 - Replay sessions now always start at `1.0x` speed; `Playback.Max-Speed` is enforced to a minimum of `1.0`
-- Generated config output now inserts blank lines between root-level keys/sections for readability
-- `ReplayManager.deleteSavedReplay` now returns `ReplayDeleteResult`, and the public API also exposes `listSavedReplaySummaries`, `protectSavedReplay`, and `unprotectSavedReplay`
-- Config keys for list settings renamed from `list-page-size`/`list-protected-highlight-color` to `List.Page-Size`/`List.Protected-Highlight-Color`; values are auto-migrated on startup
-- Updated to Java 26 runtime, Paper 26.1.2, and PacketEvents 2.12.1
-- Expanded Modrinth publishing to include Purpur, Spigot, and Bukkit loaders
-- Expanded supported Minecraft game versions in Modrinth publishing (1.21 through 26.1.2)
+- Config keys for list settings were renamed from `list-page-size`/`list-protected-highlight-color` to `List.Page-Size`/`List.Protected-Highlight-Color`; values are auto-migrated on startup
+- Update checks now treat `-SNAPSHOT` builds as their corresponding release, and Modrinth publishing metadata now includes Purpur, Spigot, and Bukkit loaders
 
 ## [1.4.0] - 2026-04-10
 

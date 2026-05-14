@@ -1,11 +1,15 @@
 package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
+import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
+import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayFormat;
 import me.justindevb.replay.storage.ReplayInspection;
 import me.justindevb.replay.storage.ReplayInspectionBuilder;
 import me.justindevb.replay.storage.ReplayIndexedTimeline;
+import me.justindevb.replay.storage.ReplayPlaybackData;
+import me.justindevb.replay.storage.ReplaySaveRequest;
 import me.justindevb.replay.storage.ReplayStorageCodec;
 import me.justindevb.replay.util.VersionUtil;
 import net.jpountz.lz4.LZ4FrameInputStream;
@@ -18,6 +22,7 @@ import java.nio.file.Files;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,16 +36,27 @@ import java.util.zip.ZipInputStream;
  */
 public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
 
+    private static final Comparator<String> CHUNK_ENTRY_ORDER = Comparator.naturalOrder();
+
     private final Gson gson;
     private final BinaryReplayArchiveFinalizer finalizer;
+    private final BinaryChunkTempArchiveFinalizer chunkArchiveFinalizer;
+    private final BinaryChunkRegionCodec chunkRegionCodec;
 
     public BinaryReplayStorageCodec() {
-        this(new Gson(), new BinaryReplayArchiveFinalizer());
+        this(new Gson(), new BinaryReplayArchiveFinalizer(), new BinaryChunkTempArchiveFinalizer(), new BinaryChunkRegionCodec());
     }
 
-    BinaryReplayStorageCodec(Gson gson, BinaryReplayArchiveFinalizer finalizer) {
+    BinaryReplayStorageCodec(
+            Gson gson,
+            BinaryReplayArchiveFinalizer finalizer,
+            BinaryChunkTempArchiveFinalizer chunkArchiveFinalizer,
+            BinaryChunkRegionCodec chunkRegionCodec
+    ) {
         this.gson = Objects.requireNonNull(gson, "gson");
         this.finalizer = Objects.requireNonNull(finalizer, "finalizer");
+        this.chunkArchiveFinalizer = Objects.requireNonNull(chunkArchiveFinalizer, "chunkArchiveFinalizer");
+        this.chunkRegionCodec = Objects.requireNonNull(chunkRegionCodec, "chunkRegionCodec");
     }
 
     @Override
@@ -92,8 +108,23 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
     }
 
     @Override
+    public byte[] finalizeReplay(String replayName, ReplaySaveRequest request, String pluginVersion) throws IOException {
+        ReplayChunkData chunkData = resolveChunkData(request);
+        long recordingStartedAtEpochMillis = request.recordingStartedAtEpochMillis() != null
+                ? request.recordingStartedAtEpochMillis()
+                : System.currentTimeMillis();
+        return finalizer.finalizeReplay(replayName, request.timeline(), pluginVersion, recordingStartedAtEpochMillis, chunkData);
+    }
+
+    @Override
     public List<TimelineEvent> decodeTimeline(byte[] storedBytes, String runningVersion) throws IOException {
         return openReplay(storedBytes, runningVersion).timeline();
+    }
+
+    @Override
+    public ReplayPlaybackData decodeReplayData(byte[] storedBytes, String runningVersion) throws IOException {
+        ParsedBinaryReplay replay = openReplay(storedBytes, runningVersion);
+        return new ReplayPlaybackData(replay.timeline(), replay.chunkData());
     }
 
     @Override
@@ -106,6 +137,7 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         validatePayloadHeader(payload);
         ParsedPayload parsedPayload = parsePayload(payload);
         LazyTimeline timeline = new LazyTimeline(payload, parsedPayload.events(), parsedPayload.stringTable(), parsedPayload.tickIndex());
+        InspectedChunkData inspectedChunkData = inspectChunkData(manifest, archiveEntries.chunkEntries());
 
         return ReplayInspectionBuilder.build(
                 replayName,
@@ -113,6 +145,10 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
                 storedBytes.length,
                 archiveEntries.replayBytes().length,
                 payload.length,
+            inspectedChunkData.chunkRegionEntryCount(),
+            inspectedChunkData.chunkEntryCount(),
+            inspectedChunkData.compressedChunkPayloadBytes(),
+            inspectedChunkData.decompressedChunkPayloadBytes(),
                 manifest.recordingStartedAtEpochMillis(),
                 manifest.recordedWithVersion(),
                 manifest.minimumViewerVersion(),
@@ -139,12 +175,32 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
 
         ParsedPayload parsedPayload = parsePayload(payload);
         LazyTimeline timeline = new LazyTimeline(payload, parsedPayload.events(), parsedPayload.stringTable(), parsedPayload.tickIndex());
-        return new ParsedBinaryReplay(manifest, timeline, parsedPayload.tickIndex(), parsedPayload.stringTable(), parsedPayload.indexLoaded());
+        return new ParsedBinaryReplay(
+            manifest,
+            timeline,
+            parsedPayload.tickIndex(),
+            parsedPayload.stringTable(),
+            parsedPayload.indexLoaded(),
+            loadChunkData(manifest, archiveEntries.chunkEntries()));
+    }
+
+    private ReplayChunkData resolveChunkData(ReplaySaveRequest request) throws IOException {
+        ReplayChunkData chunkData = request.chunkData();
+        if (chunkData != null && chunkData.hasChunkData()) {
+            return chunkData;
+        }
+
+        ChunkRecordingArtifacts chunkArtifacts = request.chunkArtifacts();
+        if (chunkArtifacts == null || !chunkArtifacts.isPresent()) {
+            return ReplayChunkData.NONE;
+        }
+        return chunkArchiveFinalizer.finalizeArtifacts(chunkArtifacts);
     }
 
     private ArchiveEntries readArchiveEntries(byte[] storedBytes) throws IOException {
         byte[] manifestBytes = null;
         byte[] replayBytes = null;
+        Map<String, byte[]> chunkEntries = new HashMap<>();
 
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(storedBytes))) {
             ZipEntry entry;
@@ -154,6 +210,8 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
                     manifestBytes = bytes;
                 } else if (BinaryReplayFormat.REPLAY_ENTRY_NAME.equals(entry.getName())) {
                     replayBytes = bytes;
+                } else if (entry.getName().startsWith(BinaryReplayFormat.RESERVED_CHUNKS_PREFIX)) {
+                    chunkEntries.put(entry.getName(), bytes);
                 }
                 zip.closeEntry();
             }
@@ -162,7 +220,59 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         if (manifestBytes == null || replayBytes == null) {
             throw new IOException("Binary replay archive is missing required entries");
         }
-        return new ArchiveEntries(manifestBytes, replayBytes);
+        return new ArchiveEntries(manifestBytes, replayBytes, Map.copyOf(chunkEntries));
+    }
+
+    private ReplayChunkData loadChunkData(BinaryReplayManifest manifest, Map<String, byte[]> chunkEntries) {
+        try {
+            return inspectChunkData(manifest, chunkEntries).hasChunkData()
+                    ? new ReplayChunkData(manifest.chunkMetadata(), chunkEntries)
+                    : ReplayChunkData.NONE;
+        } catch (IOException | RuntimeException ex) {
+            return ReplayChunkData.NONE;
+        }
+    }
+
+    private InspectedChunkData inspectChunkData(BinaryReplayManifest manifest, Map<String, byte[]> chunkEntries) throws IOException {
+        if (!manifest.hasChunkData()) {
+            return InspectedChunkData.NONE;
+        }
+        if (chunkEntries.size() != manifest.chunkRegionEntryCount()) {
+            return InspectedChunkData.NONE;
+        }
+
+        int chunkEntryCount = 0;
+        long compressedChunkPayloadBytes = 0;
+        long decompressedChunkPayloadBytes = 0;
+        List<String> coordinateDigests = new ArrayList<>();
+        for (String entryName : chunkEntries.keySet().stream().sorted(CHUNK_ENTRY_ORDER).toList()) {
+            if (!entryName.endsWith(BinaryReplayFormat.CHUNK_REGION_FILE_EXTENSION)) {
+                return InspectedChunkData.NONE;
+            }
+
+            BinaryChunkRegionCodec.DecodedBinaryChunkRegion decodedRegion = chunkRegionCodec.decode(chunkEntries.get(entryName));
+            chunkEntryCount += decodedRegion.entries().size();
+            for (BinaryChunkRegionIndexEntry indexEntry : decodedRegion.indexEntries()) {
+                compressedChunkPayloadBytes += indexEntry.compressedLength();
+                decompressedChunkPayloadBytes += indexEntry.uncompressedLength();
+                coordinateDigests.add(entryName + ':' + indexEntry.localChunkX() + ':' + indexEntry.localChunkZ());
+            }
+        }
+
+        if (chunkEntryCount != manifest.chunkEntryCount()) {
+            return InspectedChunkData.NONE;
+        }
+        String coordinateHash = crc32cHex(coordinateDigests);
+        if (manifest.chunkCoordinateHash() != null && !manifest.chunkCoordinateHash().equals(coordinateHash)) {
+            return InspectedChunkData.NONE;
+        }
+
+        return new InspectedChunkData(
+                true,
+                manifest.chunkRegionEntryCount(),
+                chunkEntryCount,
+                compressedChunkPayloadBytes,
+                decompressedChunkPayloadBytes);
     }
 
     private BinaryReplayManifest parseManifest(byte[] manifestBytes) throws IOException {
@@ -370,12 +480,23 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         return "%08x".formatted(crc32c.getValue());
     }
 
+    private static String crc32cHex(List<String> coordinateDigests) {
+        CRC32C crc32c = new CRC32C();
+        for (String digest : coordinateDigests) {
+            byte[] bytes = digest.getBytes(BinaryReplayFormat.STRING_CHARSET);
+            crc32c.update(bytes, 0, bytes.length);
+            crc32c.update('\n');
+        }
+        return "%08x".formatted(crc32c.getValue());
+    }
+
     record ParsedBinaryReplay(
             BinaryReplayManifest manifest,
             LazyTimeline timeline,
             List<BinaryTickIndexEntry> tickIndex,
             List<String> stringTable,
-            boolean indexLoaded
+            boolean indexLoaded,
+            ReplayChunkData chunkData
     ) {
     }
 
@@ -442,7 +563,17 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         }
     }
 
-    private record ArchiveEntries(byte[] manifestBytes, byte[] replayBytes) {
+    private record ArchiveEntries(byte[] manifestBytes, byte[] replayBytes, Map<String, byte[]> chunkEntries) {
+    }
+
+    private record InspectedChunkData(
+            boolean hasChunkData,
+            int chunkRegionEntryCount,
+            int chunkEntryCount,
+            long compressedChunkPayloadBytes,
+            long decompressedChunkPayloadBytes
+    ) {
+        private static final InspectedChunkData NONE = new InspectedChunkData(false, 0, 0, 0, 0);
     }
 
     private record ParsedPayload(List<EventSlice> events, List<String> stringTable, List<BinaryTickIndexEntry> tickIndex, boolean indexLoaded) {

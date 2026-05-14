@@ -39,6 +39,7 @@ The archive contains:
 
 - `manifest.json`
 - `replay.bin`
+- optional `chunks/` region entries when chunk snapshot capture is enabled
 
 The `manifest.json` entry provides replay metadata and compatibility information.
 
@@ -64,14 +65,280 @@ The `.br` file is a ZIP-style archive whose entries are stored using `STORE` rat
 | `manifest.json` | Yes | Replay metadata, versioning, checksum, and compatibility gate |
 | `replay.bin` | Yes | LZ4-compressed finalized replay payload |
 
+### Optional chunk-enabled entries
+
+| Entry name pattern | Required | Purpose |
+|-------------------|----------|---------|
+| `chunks/<world>/r.<regionX>.<regionZ>.brregion` | No | Region-grouped chunk snapshot payloads |
+
 ### Reserved prefixes
 
 | Prefix | Purpose |
 |--------|---------|
-| `chunks/` | Future chunk payload entries |
+| `chunks/` | Chunk region entries and related chunk artifacts |
 | `meta/` | Future auxiliary metadata entries |
 
-These prefixes are reserved in v1 but are not required to exist.
+These prefixes are reserved in v1. `chunks/` is now defined for chunk-enabled archives but is still optional.
+
+## Chunk Archive Entry Naming
+
+Chunk region entries use this canonical naming pattern:
+
+- `chunks/<worldSegment>/r.<regionX>.<regionZ>.brregion`
+
+Rules:
+
+- `regionX` and `regionZ` use plain signed base-10 decimal text
+- `.brregion` is the fixed finalized region-entry extension
+- `worldSegment` is derived from the world name by UTF-8 encoding it and percent-encoding every byte outside `[A-Za-z0-9._-]`
+- percent-encoding uses uppercase hex byte escapes such as `%20` and `%2F`
+
+Examples:
+
+- `chunks/world/r.0.0.brregion`
+- `chunks/world%20name%2Fnether/r.-2.7.brregion`
+
+## Chunk Payload Codec Rules
+
+The finalized chunk region format and the temp region append-log both use a one-byte codec identifier.
+
+v1 freezes exactly one supported codec:
+
+| Codec ID | Name | Meaning |
+|----------|------|---------|
+| `0x01` | `LZ4_FRAME` | Payload bytes are one standalone LZ4 frame for a single chunk snapshot payload |
+
+Unknown chunk codec identifiers are a hard parse failure for the affected entry.
+
+## Chunk Payload Formats
+
+Chunk-enabled archives use one uncompressed chunk payload family for every chunk payload stored under `chunks/`.
+
+Frozen payload families:
+
+| Payload magic | Version | Status | Meaning |
+|---------------|---------|--------|---------|
+| `BRCS` | `1` | legacy/current implementation | block-state baseline payload |
+| `BRCP` | `1` | frozen next contract | packet-friendly chunk snapshot payload |
+
+Rules:
+
+- one archive must not mix multiple chunk payload families or versions
+- packet-friendly archives must declare `chunkPayloadFormat = "BRCP"` and `chunkPayloadVersion = 1` in `manifest.json`
+- legacy chunk-enabled archives may omit those manifest fields and are interpreted as `BRCS` version `1`
+
+## Legacy Chunk Baseline Payload (`BRCS`)
+
+The uncompressed bytes inside each chunk payload encode one full chunk baseline snapshot before the outer `LZ4_FRAME` compression is applied.
+
+v1 uses this layout:
+
+| Field | Width | Encoding | v1 value |
+|-------|-------|----------|----------|
+| magic | 4 bytes | raw ASCII bytes | `BRCS` |
+| version | 1 byte | unsigned byte | `0x01` |
+| reserved | 3 bytes | zero-filled | `0x00 0x00 0x00` |
+| `minY` | 4 bytes | little-endian signed int32 | world minimum build height |
+| `height` | 4 bytes | little-endian signed int32, positive in valid payloads | vertical block span for this snapshot |
+| `paletteSize` | VarInt | non-negative | number of unique block-state strings |
+| `palette[]` | repeated | length-prefixed UTF-8 strings | deterministic insertion order of block-state strings |
+| `stateIndexes[]` | `16 * 16 * height * 2` bytes | little-endian unsigned uint16 values | palette index for each block in Y-major, then Z-major, then X-major order |
+
+Rules:
+
+- `stateIndexes` always covers exactly one chunk volume of `16 * 16 * height` blocks
+- palette indices reference entries in `palette[]`
+- v1 chunk capture stores block states only; block entities, lighting, and biome data are intentionally excluded
+- playback decodes this payload lazily when a viewer enters the corresponding recorded chunk window
+
+This payload is documented here because it is still the current implementation. It is not the target long-term packet-friendly snapshot contract.
+
+## Packet-Friendly Chunk Snapshot Payload (`BRCP`)
+
+`BRCP` is the frozen next chunk payload contract for chunk-packet playback.
+
+Design intent:
+
+- keep the payload internal-model based rather than storing exact outbound packet bytes
+- keep it section-oriented so packet builders can emit chunk packets without per-block rebuilding
+- preserve enough data for correct initial chunk rendering without making the archive format depend on transient live packet byte layouts
+
+### `BRCP` header
+
+| Field | Width | Encoding | v1 value |
+|-------|-------|----------|----------|
+| magic | 4 bytes | raw ASCII bytes | `BRCP` |
+| version | 1 byte | unsigned byte | `0x01` |
+| flags | 1 byte | unsigned bitfield | see below |
+| reserved | 2 bytes | zero-filled | `0x00 0x00` |
+| `minSectionY` | 4 bytes | little-endian signed int32 | minimum section Y for the chunk snapshot |
+| `sectionCount` | 4 bytes | little-endian signed int32, positive in valid payloads | number of vertical sections stored in this chunk |
+| `blockEntityCount` | unsigned varint | non-negative | number of trailing block entity records |
+
+Total fixed-width header size before `blockEntityCount`: `16` bytes.
+
+### `BRCP` flags
+
+| Bit | Name | Meaning in v1 |
+|-----|------|---------------|
+| `0x01` | `HAS_BIOMES` | must be set |
+| `0x02` | `HAS_BLOCK_ENTITIES` | set if and only if `blockEntityCount > 0` |
+| `0x04` | `STORES_HEIGHTMAPS` | must be clear |
+| `0x08` | `STORES_LIGHT` | must be clear |
+| `0x10-0x80` | reserved | must be clear |
+
+### `BRCP` section payloads
+
+After the header, exactly `sectionCount` section payloads are written in ascending section-Y order starting at `minSectionY`.
+
+Each section payload uses this layout:
+
+| Field | Encoding | Notes |
+|-------|----------|-------|
+| `blockPaletteSize` | unsigned varint | number of block-state palette entries |
+| `blockPalette[]` | repeated varint length + UTF-8 bytes | canonical block-state strings |
+| `blockBitsPerEntry` | unsigned byte | `0` only when `blockPaletteSize == 1` |
+| `blockWordCount` | unsigned varint | number of packed 64-bit words for the 4096 block indices |
+| `blockWords[]` | repeated 8-byte little-endian int64 | packed block-state palette indices |
+| `biomePaletteSize` | unsigned varint | number of biome palette entries |
+| `biomePalette[]` | repeated varint length + UTF-8 bytes | biome namespaced keys |
+| `biomeBitsPerEntry` | unsigned byte | `0` only when `biomePaletteSize == 1` |
+| `biomeWordCount` | unsigned varint | number of packed 64-bit words for the 64 biome-cell indices |
+| `biomeWords[]` | repeated 8-byte little-endian int64 | packed biome palette indices |
+
+### `BRCP` block entity payloads
+
+After all section payloads, exactly `blockEntityCount` block entity records are written.
+
+Each block entity record uses this layout:
+
+| Field | Encoding | Notes |
+|-------|----------|-------|
+| `packedXZ` | unsigned byte | upper nibble = local X (`0-15`), lower nibble = local Z (`0-15`) |
+| `yOffset` | unsigned varint | block Y offset relative to `minSectionY * 16` |
+| `typeKey` | varint length + UTF-8 bytes | namespaced block-entity type key |
+| `nbtLength` | unsigned varint | byte length of `nbtBytes` |
+| `nbtBytes` | raw bytes | binary NBT compound payload used for client block-entity initialization |
+
+### `BRCP` rules
+
+- `sectionCount` covers the full vertical chunk span needed for replay playback on the recorded world height; omitted vertical gaps are invalid
+- section block-state indices always represent `16 * 16 * 16 = 4096` cells in Y-major, then Z-major, then X-major order
+- section biome indices always represent `4 * 4 * 4 = 64` biome cells in Y-major, then Z-major, then X-major order
+- packed palette indices are written as a dense fixed-width bit stream where value `n` starts at bit offset `index * bitsPerEntry` within the concatenated 64-bit word stream
+- `blockPalette[]` entries use canonical Bukkit/Paper block-data strings suitable for deterministic runtime re-resolution
+- `biomePalette[]` entries use namespaced biome keys
+- `nbtBytes` stores binary NBT, not SNBT text and not full raw packet bytes
+- heightmaps are not stored in `BRCP`; packet builders derive the required heightmap payload from section block states at send time
+- light data is not stored in `BRCP`; replay playback reuses the viewer's live-world lighting state and accepts lighting drift as a known limitation of this phase
+
+## Finalized Chunk Region Entries (`.brregion`)
+
+Each `.brregion` entry stores chunk snapshots for one Minecraft region in a playback-optimized format.
+
+The file layout is:
+
+1. fixed region header
+2. fixed-width region-local chunk index
+3. concatenated compressed payload area
+
+Chunk payloads are stored independently, so a reader can seek to and decompress one chunk without decoding the rest of the region entry.
+
+The region container design is expected to survive the payload refactor even if the per-chunk uncompressed payload contract changes.
+
+For `BRCP` version `1`, the finalized region container layout is intentionally unchanged from the legacy `BRCS` container layout. Only the compressed payload contents and the manifest metadata differ.
+
+### Region header
+
+| Field | Width | Encoding | v1 value |
+|-------|-------|----------|----------|
+| magic | 4 bytes | raw ASCII bytes | `BRRG` |
+| version | 1 byte | unsigned byte | `0x01` |
+| flags | 1 byte | unsigned byte | `0x00` |
+| reserved | 2 bytes | zero-filled | `0x00 0x00` |
+| `indexEntryCount` | 4 bytes | little-endian signed int32, non-negative in valid files | number of index rows |
+| `payloadSectionOffset` | 4 bytes | little-endian signed int32, non-negative in valid files | byte offset of the first payload byte |
+
+Total v1 region header size: `16` bytes.
+
+`payloadSectionOffset` must equal `16 + indexEntryCount * 16` in v1.
+
+### Region index rows
+
+Each v1 region index row is fixed-width at `16` bytes.
+
+Rows are written in deterministic lexicographic order by `(localChunkX, localChunkZ)`.
+
+| Field | Width | Encoding | Notes |
+|-------|-------|----------|-------|
+| `localChunkX` | 1 byte | unsigned byte | `0-31` within the region |
+| `localChunkZ` | 1 byte | unsigned byte | `0-31` within the region |
+| `codecId` | 1 byte | unsigned byte | v1 supports only `0x01` (`LZ4_FRAME`) |
+| reserved | 1 byte | zero-filled | must be `0x00` in v1 |
+| `payloadOffset` | 4 bytes | little-endian signed int32, non-negative in valid files | offset relative to the start of the payload area, not the file start |
+| `compressedLength` | 4 bytes | little-endian signed int32, positive in valid files | compressed payload byte count |
+| `uncompressedLength` | 4 bytes | little-endian signed int32, positive in valid files | uncompressed chunk byte count |
+
+Duplicate `(localChunkX, localChunkZ)` rows are invalid.
+
+Payload ranges must not overlap.
+
+### Payload area
+
+The payload area begins at `payloadSectionOffset` and contains only raw compressed chunk payload bytes concatenated in index order.
+
+The v1 region format does not add a per-chunk footer or trailer after the index row metadata.
+
+## Temp Region Append-Log
+
+Recording-time chunk capture uses append-friendly temp region files rather than writing finalized `.brregion` entries directly.
+
+The temp file layout is:
+
+1. fixed temp-region header
+2. repeated fixed-header append records
+
+### Temp-region header
+
+| Field | Width | Encoding | v1 value |
+|-------|-------|----------|----------|
+| magic | 4 bytes | raw ASCII bytes | `BRTC` |
+| version | 1 byte | unsigned byte | `0x01` |
+| flags | 1 byte | unsigned byte | `0x00` |
+| reserved | 2 bytes | zero-filled | `0x00 0x00` |
+
+Total v1 temp-region header size: `8` bytes.
+
+### Temp append record
+
+Each appended chunk snapshot record uses this layout:
+
+| Field | Width | Encoding | Notes |
+|-------|-------|----------|-------|
+| `localChunkX` | 1 byte | unsigned byte | `0-31` within the region |
+| `localChunkZ` | 1 byte | unsigned byte | `0-31` within the region |
+| `codecId` | 1 byte | unsigned byte | v1 supports only `0x01` (`LZ4_FRAME`) |
+| flags | 1 byte | unsigned byte | must be `0x00` in v1 |
+| `uncompressedLength` | 4 bytes | little-endian signed int32, positive in valid files | original payload length |
+| `compressedLength` | 4 bytes | little-endian signed int32, positive in valid files | stored payload byte count |
+| `payloadChecksum` | 4 bytes | little-endian unsigned CRC32C stored in an int32 slot | checksum of the compressed payload bytes only |
+| `payload` | `compressedLength` bytes | raw bytes | independently compressed chunk payload |
+
+Total v1 temp record header size before the payload: `16` bytes.
+
+The temp append-log intentionally relies on `compressedLength` rather than a separate `recordLength` field.
+
+For `BRCP` version `1`, the temp-region container layout is also unchanged. Recording-time writers still append one compressed chunk payload per record; only the uncompressed payload bytes change from `BRCS` to `BRCP`.
+
+## Chunk Corruption Policy
+
+Chunk snapshots remain optional additive data on top of the required `manifest.json` + `replay.bin` contract.
+
+Default v1 policy:
+
+- missing or corrupt `.brregion` entries disable chunk sidecar usage and degrade to timeline-only playback for the affected recorded area
+- corrupt per-chunk payload metadata inside a region entry degrades the affected replay chunk state only
+- strict hard-fail behavior is reserved for future opt-in configuration, not the default contract
 
 ## Append-Log Temp File
 
@@ -404,6 +671,7 @@ Purpose:
 
 - compact playback artifact
 - archive portability across file and MySQL backends
+- optional chunk region entries follow their own contracts described above and are not embedded inside `replay.bin`
 
 ## Failure Rules
 

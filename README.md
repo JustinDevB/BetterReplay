@@ -9,8 +9,9 @@ It records player and nearby entity activity on the server, saves the timeline, 
 - Targets modern Paper APIs
 - Uses PacketEvents and FoliaLib for packet handling and scheduling
 - Supports two storage backends:
-  - local JSON files
+  - local file storage
   - MySQL
+- New saves use finalized binary `.br` replay archives; legacy JSON replays are still readable during the migration window
 
 ## How this differs from client-side replay mods
 
@@ -49,16 +50,51 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
   - [src/main/java/me/justindevb/replay/storage/MySQLReplayStorage.java](src/main/java/me/justindevb/replay/storage/MySQLReplayStorage.java)
   - [src/main/java/me/justindevb/replay/storage/ReplayStorageCodec.java](src/main/java/me/justindevb/replay/storage/ReplayStorageCodec.java)
   - [src/main/java/me/justindevb/replay/storage/ReplayFormatDetector.java](src/main/java/me/justindevb/replay/storage/ReplayFormatDetector.java)
+- Chunk capture and replay chunk pipeline
+  - [src/main/java/me/justindevb/replay/chunk/ChunkCaptureCoordinator.java](src/main/java/me/justindevb/replay/chunk/ChunkCaptureCoordinator.java)
+  - [src/main/java/me/justindevb/replay/playback/ReplayChunkSnapshotSender.java](src/main/java/me/justindevb/replay/playback/ReplayChunkSnapshotSender.java)
+- Admin tooling and retention
+  - [src/main/java/me/justindevb/replay/export/ReplayExportCommand.java](src/main/java/me/justindevb/replay/export/ReplayExportCommand.java)
+  - [src/main/java/me/justindevb/replay/debug/ReplayDebugCommand.java](src/main/java/me/justindevb/replay/debug/ReplayDebugCommand.java)
+  - [src/main/java/me/justindevb/replay/benchmark/ReplayBenchmarkCommand.java](src/main/java/me/justindevb/replay/benchmark/ReplayBenchmarkCommand.java)
+  - [src/main/java/me/justindevb/replay/retention/ReplayRetentionService.java](src/main/java/me/justindevb/replay/retention/ReplayRetentionService.java)
 
 ## Features
 
-- Start and stop recordings
-- Save recordings to file or MySQL
-- List, protect, unprotect, and delete stored replays
-- Automatic retention cleanup for expired replays
-- Replay sessions for viewers
+- Server-side recording and in-game playback with no client replay mod required
+- Finalized binary `.br` replay archives stored in either file or MySQL backends
+- Replay protection, retention cleanup, filtered export, and hidden admin diagnostics
+- Optional chunk-aware recording and playback for block baselines around recorded players
+- Playback controls with pause stepping, variable speed, and live speed feedback
 - API-first integration support for other plugins
 - Optional Floodgate soft dependency support
+
+## Notable capabilities
+
+### Binary storage and admin tooling
+
+New saves are written as finalized binary `.br` archives for both file and MySQL storage. Active recordings stream into crash-safe append logs first, which lets BetterReplay recover orphaned temporary recordings on the next startup instead of silently losing them after a crash or forced stop.
+
+The same archive format powers the hidden admin utilities:
+
+- `/replay export` writes filtered `.br` exports under the plugin `exports/` folder
+- `/replay debug info` inspects replay metadata such as format, version, counts, sizes, and recording timestamp
+- `/replay debug dump` writes a human-readable event dump under `dumps/`
+- `/replay benchmark` generates Markdown and JSON benchmark reports under `benchmarks/`
+
+### Replay protection and cleanup
+
+Protected replays are excluded from both manual deletion and retention cleanup until they are explicitly unprotected. `/replay list` can highlight protected entries, and the `Retention.*` settings accept human-readable durations like `30d` and `1h` so scheduled cleanup stays readable for operators.
+
+### Chunk-aware playback
+
+When `Recording.Chunk-Capture.Enabled` is turned on, BetterReplay stores palette-compressed chunk baselines for the captured area around tracked players inside the `.br` archive. During playback, those chunk snapshots are streamed around the viewer as an overlay and then restored back to live world state when the replay window moves or the replay ends.
+
+`Playback.Chunk-Mode` controls how aggressively live chunks are restored. Mode `1` keeps a moving replay chunk window and restores live chunks as they leave it. Mode `2` defers live chunk restore until replay stop, lets Paper and the client unload chunks naturally, and resends replay chunks if the viewer returns after a natural unload. `Playback.Chunk-Send-Limit-Per-Tick` and `Playback.Chunk-Clear-Limit-Per-Tick` both default to `1`, which is safer on mixed live servers; dedicated replay servers can raise them with `Playback.Chunk-View-Radius` to fill and clear larger replay windows faster. Replay-load probing now runs ahead of chunk sends at `10x` the configured send rate so missing-chunk checks do not become the bottleneck when most nearby chunks were never recorded. `Playback.Chunk-Timing-Diagnostics` adds per-stage timing logs for chunk preparation, replay load, and live restore work when you need to profile MSPT spikes.
+
+### Playback controls
+
+Paused replays can step backward or forward one tick group at a time, and active replays support configurable slower/faster controls through `Playback.Speed-Step` and `Playback.Max-Speed`. The current speed multiplier is shown in the action bar so viewers can tell immediately whether they are watching at `1.0x` speed or a faster/slower rate.
 
 ## Commands and permissions
 
@@ -161,6 +197,30 @@ List:
   Protected-Highlight-Color: "&6"
 ```
 
+Playback diagnostics key:
+
+```yaml
+Playback:
+  Speed-Step: 0.2
+  Max-Speed: 1.0
+  Chunk-Mode: 1
+  Chunk-View-Radius: 3
+  Chunk-Send-Limit-Per-Tick: 1
+  Chunk-Clear-Limit-Per-Tick: 1
+  Chunk-Timing-Diagnostics: false
+```
+
+Chunk baseline capture keys:
+
+```yaml
+Recording:
+  Chunk-Capture:
+    Enabled: false
+    Radius: 1
+    Capture-Interval-Ticks: 20
+    Max-Unique-Chunks-Per-Recording: 20000
+```
+
 Retention cleanup keys:
 
 ```yaml
@@ -176,6 +236,16 @@ Notes:
 - If Storage-Type is invalid, plugin falls back to file storage.
 - MySQL replay names are stored in a VARCHAR(64) primary key column.
 - Binary `.br` payloads require the replay data column to be `LONGBLOB`; the plugin now widens `data` automatically during storage initialization.
+- Chunk baseline capture is stored only in finalized binary `.br` archives; legacy JSON replays remain timeline-only.
+- `Recording.Chunk-Capture.Enabled` captures palette-compressed chunk baselines around tracked players during recording and replays those block states on demand around the viewer.
+- `Recording.Chunk-Capture.Radius` controls the square chunk-interest window around each tracked player.
+- `Recording.Chunk-Capture.Capture-Interval-Ticks` controls how often the plugin recomputes chunk interest and exports newly discovered chunks.
+- `Recording.Chunk-Capture.Max-Unique-Chunks-Per-Recording` bounds capture size; once the cap is reached, recording continues but additional chunk baselines are skipped.
+- `Playback.Chunk-View-Radius` controls the replay viewer's chunk playback radius independently from recording capture radius. Default is `3`.
+- `Playback.Chunk-Mode` controls replay chunk teardown semantics. `1` keeps the current moving replay window and restores live chunks as they leave that window. `2` defers live chunk restore until replay stop, lets Paper and the client unload chunks naturally, and resends replay chunks if the viewer returns after a natural unload. Default is `1`.
+- `Playback.Chunk-Send-Limit-Per-Tick` and `Playback.Chunk-Clear-Limit-Per-Tick` control how aggressively packet-friendly chunk playback fills and clears the replay viewer's chunk window. Both default to `1`; dedicated replay servers can raise them to support larger view radii with less concern about live server impact. Replay-load probing runs at `10x` the configured send limit so uncaptured chunks can be ruled out quickly without waiting on the actual packet send rate.
+- If `Playback.Chunk-View-Radius` is larger than `Recording.Chunk-Capture.Radius`, only chunks that were actually captured during recording can be replayed; uncaptured chunks stay on the live world view.
+- `Playback.Chunk-Timing-Diagnostics` logs per-stage replay chunk timing information at runtime so you can inspect async preparation, replay load application, and queued live restore costs while profiling MSPT spikes.
 - Protected replays are skipped by both retention cleanup and manual delete commands until they are explicitly unprotected.
 - Protection stores required audit metadata: `protectedAt` and `protectedBy`.
 - Protected replays are highlighted in `/replay list` using `List.Protected-Highlight-Color`; the default is gold (`&6`).
@@ -226,6 +296,7 @@ Primary docs:
 Binary replay note:
 - Finalized `.br` archives now store the recording start wall-clock timestamp in `manifest.json` as `recordingStartedAtEpochMillis`.
 - Active temp append-logs also write a fixed file header carrying the same timestamp so final saves can preserve it after crash-safe recovery.
+- Chunk-enabled `.br` archives may also include `chunks/` region entries containing palette-compressed chunk baselines that are decoded lazily during playback.
 
 Planning docs:
 

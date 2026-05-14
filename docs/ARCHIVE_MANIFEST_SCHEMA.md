@@ -19,7 +19,7 @@ In v1, the manifest is stored as:
 
 at the root of the `.br` archive.
 
-## Required v1 Fields
+## Required v1 Core Fields
 
 | Field | Type | Required | Purpose |
 |-------|------|----------|---------|
@@ -29,6 +29,28 @@ at the root of the `.br` archive.
 | `recordingStartedAtEpochMillis` | integer | Yes | Wall-clock recording start time in Unix epoch milliseconds |
 | `payloadChecksum` | string | Yes | Whole-payload checksum for `replay.bin` |
 | `payloadChecksumAlgorithm` | string | Yes | Name of the checksum algorithm used for `payloadChecksum` |
+
+## Optional Chunk Metadata Fields
+
+These additive fields are used only by chunk-enabled archives.
+
+Chunk-disabled v1 archives may omit them entirely. When omitted, readers treat them as the logical defaults shown below.
+
+| Field | Type | Required | Default when omitted | Purpose |
+|-------|------|----------|----------------------|---------|
+| `hasChunkData` | boolean | No | `false` | Signals that the archive contains optional chunk snapshot entries under `chunks/` |
+| `chunkRegionEntryCount` | integer | No | `0` | Number of finalized `.brregion` entries stored under `chunks/` |
+| `chunkEntryCount` | integer | No | `0` | Total number of chunk snapshot payloads indexed across all region entries |
+| `chunkCoordinateHash` | string | No | absent | Optional lowercase-hex integrity/debug digest over recorded chunk coordinates |
+| `chunkPayloadFormat` | string | No | `"BRCS"` when `hasChunkData` is `true` | Declares the uncompressed chunk payload family used by every chunk payload in the archive |
+| `chunkPayloadVersion` | integer | No | `1` when `hasChunkData` is `true` | Declares the payload revision within `chunkPayloadFormat` |
+
+Chunk-enabled archives written with the frozen packet-friendly snapshot contract must write:
+
+- `chunkPayloadFormat = "BRCP"`
+- `chunkPayloadVersion = 1`
+
+Legacy chunk-enabled archives that omit these fields are interpreted as `BRCS` version `1` for backward compatibility.
 
 ## Field Definitions
 
@@ -164,6 +186,143 @@ Example:
 "payloadChecksumAlgorithm": "CRC32C"
 ```
 
+### `hasChunkData`
+
+Type:
+
+- boolean
+
+Meaning:
+
+- indicates whether this archive carries optional chunk snapshot data under `chunks/`
+
+Rules:
+
+- `false` means the replay behaves like a standard `manifest.json` + `replay.bin` archive
+- `true` means the archive may contain one or more `chunks/<world>/r.<regionX>.<regionZ>.brregion` entries
+- when `false`, `chunkRegionEntryCount` and `chunkEntryCount` must both be `0` and `chunkCoordinateHash`, `chunkPayloadFormat`, and `chunkPayloadVersion` must be absent
+
+Example:
+
+```json
+"hasChunkData": true
+```
+
+### `chunkRegionEntryCount`
+
+Type:
+
+- integer
+
+Meaning:
+
+- number of finalized `.brregion` archive entries stored for chunk snapshots
+
+Rules:
+
+- must be non-negative
+- must be positive when `hasChunkData` is `true`
+
+Example:
+
+```json
+"chunkRegionEntryCount": 3
+```
+
+### `chunkEntryCount`
+
+Type:
+
+- integer
+
+Meaning:
+
+- total number of individually indexed chunk snapshot payloads across every finalized `.brregion` entry
+
+Rules:
+
+- must be non-negative
+- must be positive when `hasChunkData` is `true`
+- must not be smaller than `chunkRegionEntryCount`
+
+Example:
+
+```json
+"chunkEntryCount": 418
+```
+
+### `chunkCoordinateHash`
+
+Type:
+
+- string
+
+Meaning:
+
+- optional lowercase-hex digest over the recorded chunk coordinate set
+- intended for diagnostics and future integrity tooling rather than as the primary archive checksum
+
+Rules:
+
+- if present, must use lowercase hexadecimal
+- must be absent when `hasChunkData` is `false`
+
+Example:
+
+```json
+"chunkCoordinateHash": "00ff11aa"
+```
+
+### `chunkPayloadFormat`
+
+Type:
+
+- string
+
+Meaning:
+
+- identifies the uncompressed payload family used by every chunk payload stored under `chunks/`
+
+Supported v1 values:
+
+- `BRCS` for the legacy block-state baseline payload
+- `BRCP` for the frozen packet-friendly chunk snapshot payload
+
+Rules:
+
+- must be absent when `hasChunkData` is `false`
+- when present, every chunk payload in the archive must use the same family
+- writers using the packet-friendly snapshot contract must write `BRCP`
+
+Example:
+
+```json
+"chunkPayloadFormat": "BRCP"
+```
+
+### `chunkPayloadVersion`
+
+Type:
+
+- integer
+
+Meaning:
+
+- identifies the revision within `chunkPayloadFormat`
+
+Rules:
+
+- must be absent when `hasChunkData` is `false`
+- must be positive when present
+- `BRCS` currently uses version `1`
+- `BRCP` currently uses version `1`
+
+Example:
+
+```json
+"chunkPayloadVersion": 1
+```
+
 ### v1 checksum representation rules
 
 - `payloadChecksum` must be stored as lowercase hexadecimal
@@ -179,7 +338,13 @@ Example:
   "minimumViewerVersion": "1.5.0",
   "recordingStartedAtEpochMillis": 1700000000000,
   "payloadChecksum": "7d8f8f2b",
-  "payloadChecksumAlgorithm": "CRC32C"
+  "payloadChecksumAlgorithm": "CRC32C",
+  "hasChunkData": true,
+  "chunkRegionEntryCount": 3,
+  "chunkEntryCount": 418,
+  "chunkCoordinateHash": "00ff11aa",
+  "chunkPayloadFormat": "BRCP",
+  "chunkPayloadVersion": 1
 }
 ```
 
@@ -196,9 +361,13 @@ Recommended order:
 5. validate `formatVersion`
 6. compare `minimumViewerVersion` to the running plugin version
 7. read `replay.bin`
-8. validate `payloadChecksum` using `payloadChecksumAlgorithm`
+8. validate chunk metadata field semantics
+9. validate `payloadChecksum` using `payloadChecksumAlgorithm`
+10. if `hasChunkData` is true, build or validate the `chunks/` entry inventory
 
-If any step fails, the replay must not proceed to playback.
+If any required replay-core step fails, the replay must not proceed to playback.
+
+If optional chunk metadata or chunk entry inventory validation fails, the loader should disable chunk sidecar usage, warn, and continue with timeline-only playback.
 
 ## Failure Expectations
 
@@ -231,6 +400,26 @@ Result:
 Reason:
 
 - the reader does not know how to parse the binary structure safely
+
+### Inconsistent chunk metadata
+
+Result:
+
+- soft failure of chunk sidecar support; replay continues without chunk snapshots
+
+Reason:
+
+- chunk sidecar data is optional additive metadata and should not block timeline playback by default
+
+### Unsupported `chunkPayloadFormat` or `chunkPayloadVersion`
+
+Result:
+
+- soft failure of chunk sidecar support; replay continues without chunk snapshots
+
+Reason:
+
+- the reader can still play the core replay timeline even if it does not understand the optional chunk payload family
 
 ### Viewer version too old
 
@@ -285,7 +474,8 @@ Possible future additions include:
 - replay duration
 - tick count
 - player count summary
-- chunk payload presence flags
+- chunk snapshot payload presence flags
+- chunk light-policy hints
 - debug/export hints
 
 Those fields are not required for v1 and should not be assumed by readers unless formally added in a later schema revision.

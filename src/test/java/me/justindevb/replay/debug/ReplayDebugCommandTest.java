@@ -102,7 +102,7 @@ class ReplayDebugCommandTest {
         when(replay.getReplayStorage()).thenReturn(replayStorage);
         when(replayStorage.getReplayInfo("demo replay")).thenReturn(CompletableFuture.completedFuture(
                 new ReplayInspection("demo replay", ReplayFormat.BINARY_ARCHIVE, 3, 0, 10, 10, 0.5,
-                        512, 256, 1024, 123456789L, "1.4.0", "1.4.0", 1, 1, true, 2)));
+                512, 256, 1024, 1, 2, 96, 192, 123456789L, "1.4.0", "1.4.0", 1, 1, true, 2)));
 
         boolean handled = command.handle(sender, new String[]{"debug", "info", "demo", "replay"});
 
@@ -110,7 +110,10 @@ class ReplayDebugCommandTest {
         verify(sender).sendMessage("§eReplay info started for: demo replay");
         verify(sender).sendMessage("§6Replay info: §fdemo replay");
         verify(sender).sendMessage(org.mockito.ArgumentMatchers.contains("§7Records: §f3"));
-        verify(sender).sendMessage(org.mockito.ArgumentMatchers.contains("§7Stored size: §f512 B"));
+        verify(sender).sendMessage("§7Stored Size: §f512 B");
+        verify(sender).sendMessage("§7Replay: §fCompressed 256 B §8| §fDecompressed 1.00 KiB");
+        verify(sender).sendMessage("§7Chunks: §fCompressed 96 B §8| §fDecompressed 192 B");
+        verify(sender).sendMessage("§7Chunk data: §f1 region / 2 chunks");
     }
 
     @Test

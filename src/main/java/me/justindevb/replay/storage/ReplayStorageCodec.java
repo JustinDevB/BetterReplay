@@ -1,5 +1,6 @@
 package me.justindevb.replay.storage;
 
+import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 
 import java.io.File;
@@ -35,7 +36,15 @@ public interface ReplayStorageCodec extends ReplayFinalizer, ReplayArchiveReader
         return finalizeReplay(replayName, timeline, pluginVersion);
     }
 
+    default byte[] finalizeReplay(String replayName, ReplaySaveRequest request, String pluginVersion) throws IOException {
+        return finalizeReplay(replayName, request.timeline(), pluginVersion, request.recordingStartedAtEpochMillis());
+    }
+
     List<TimelineEvent> decodeTimeline(byte[] storedBytes, String runningVersion) throws IOException;
+
+    default ReplayPlaybackData decodeReplayData(byte[] storedBytes, String runningVersion) throws IOException {
+        return new ReplayPlaybackData(decodeTimeline(storedBytes, runningVersion), ReplayChunkData.NONE);
+    }
 
     default ReplayInspection inspectReplay(String replayName, byte[] storedBytes, String runningVersion) throws IOException {
         List<TimelineEvent> timeline = decodeTimeline(storedBytes, runningVersion);

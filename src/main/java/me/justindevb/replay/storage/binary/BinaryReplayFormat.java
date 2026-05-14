@@ -16,6 +16,7 @@ public final class BinaryReplayFormat {
     public static final String REPLAY_ENTRY_NAME = "replay.bin";
     public static final String RESERVED_CHUNKS_PREFIX = "chunks/";
     public static final String RESERVED_META_PREFIX = "meta/";
+    public static final String CHUNK_REGION_FILE_EXTENSION = ".brregion";
 
     public static final int FORMAT_VERSION = 1;
     public static final String PAYLOAD_CHECKSUM_ALGORITHM = "CRC32C";
@@ -54,6 +55,40 @@ public final class BinaryReplayFormat {
     public static final int TICK_INDEX_INTERVAL = 50;
     public static final int TICK_INDEX_ENTRY_BYTES = Integer.BYTES + Long.BYTES;
 
+        public static final byte[] CHUNK_REGION_MAGIC = new byte[] {'B', 'R', 'R', 'G'};
+        public static final int CHUNK_REGION_VERSION = 1;
+        public static final int CHUNK_REGION_FLAGS_NONE = 0;
+        public static final int CHUNK_REGION_HEADER_SIZE = CHUNK_REGION_MAGIC.length
+            + Byte.BYTES
+            + Byte.BYTES
+            + Short.BYTES
+            + Integer.BYTES
+            + Integer.BYTES;
+        public static final int CHUNK_REGION_INDEX_ENTRY_BYTES = Byte.BYTES
+            + Byte.BYTES
+            + Byte.BYTES
+            + Byte.BYTES
+            + Integer.BYTES
+            + Integer.BYTES
+            + Integer.BYTES;
+        public static final int CHUNK_REGION_MIN_LOCAL_COORDINATE = 0;
+        public static final int CHUNK_REGION_MAX_LOCAL_COORDINATE = 31;
+
+        public static final byte[] CHUNK_TEMP_REGION_MAGIC = new byte[] {'B', 'R', 'T', 'C'};
+        public static final int CHUNK_TEMP_REGION_VERSION = 1;
+        public static final int CHUNK_TEMP_REGION_FLAGS_NONE = 0;
+        public static final int CHUNK_TEMP_REGION_HEADER_SIZE = CHUNK_TEMP_REGION_MAGIC.length
+            + Byte.BYTES
+            + Byte.BYTES
+            + Short.BYTES;
+        public static final int CHUNK_TEMP_REGION_RECORD_HEADER_BYTES = Byte.BYTES
+            + Byte.BYTES
+            + Byte.BYTES
+            + Byte.BYTES
+            + Integer.BYTES
+            + Integer.BYTES
+            + Integer.BYTES;
+
     private BinaryReplayFormat() {
     }
 
@@ -75,6 +110,14 @@ public final class BinaryReplayFormat {
 
     public static byte[] indexSectionMagicBytes() {
         return INDEX_SECTION_MAGIC.clone();
+    }
+
+    public static byte[] chunkRegionMagicBytes() {
+        return CHUNK_REGION_MAGIC.clone();
+    }
+
+    public static byte[] chunkTempRegionMagicBytes() {
+        return CHUNK_TEMP_REGION_MAGIC.clone();
     }
 
     public static String payloadMagicHex() {

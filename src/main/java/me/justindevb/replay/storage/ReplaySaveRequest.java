@@ -1,5 +1,7 @@
 package me.justindevb.replay.storage;
 
+import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
+import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 
 import java.util.List;
@@ -9,7 +11,9 @@ import java.util.List;
  */
 public record ReplaySaveRequest(
         List<TimelineEvent> timeline,
-        Long recordingStartedAtEpochMillis
+        Long recordingStartedAtEpochMillis,
+    ReplayChunkData chunkData,
+    ChunkRecordingArtifacts chunkArtifacts
 ) {
 
     public ReplaySaveRequest {
@@ -17,9 +21,19 @@ public record ReplaySaveRequest(
         if (recordingStartedAtEpochMillis != null && recordingStartedAtEpochMillis < 0) {
             throw new IllegalArgumentException("recordingStartedAtEpochMillis must be non-negative");
         }
+        chunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
+        chunkArtifacts = chunkArtifacts != null ? chunkArtifacts : ChunkRecordingArtifacts.NONE;
     }
 
     public ReplaySaveRequest(List<TimelineEvent> timeline) {
-        this(timeline, null);
+        this(timeline, null, ReplayChunkData.NONE, ChunkRecordingArtifacts.NONE);
+    }
+
+    public ReplaySaveRequest(List<TimelineEvent> timeline, Long recordingStartedAtEpochMillis) {
+        this(timeline, recordingStartedAtEpochMillis, ReplayChunkData.NONE, ChunkRecordingArtifacts.NONE);
+    }
+
+    public ReplaySaveRequest(List<TimelineEvent> timeline, Long recordingStartedAtEpochMillis, ChunkRecordingArtifacts chunkArtifacts) {
+        this(timeline, recordingStartedAtEpochMillis, ReplayChunkData.NONE, chunkArtifacts);
     }
 }

@@ -9,6 +9,7 @@ import me.justindevb.replay.util.ReplayCache;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Pose;
 import org.bukkit.inventory.ItemStack;
@@ -43,6 +44,7 @@ class RecordingSessionIntegrationTest {
     @Mock private PlayerInventory playerInventory;
     @Mock private ReplayStorage storage;
     @Mock private ReplayCache replayCache;
+    @Mock private FileConfiguration config;
 
     private UUID playerUuid;
 
@@ -50,6 +52,11 @@ class RecordingSessionIntegrationTest {
     void setUp() {
         playerUuid = UUID.randomUUID();
         when(player.getUniqueId()).thenReturn(playerUuid);
+        when(plugin.getConfig()).thenReturn(config);
+        when(config.getBoolean("Recording.Chunk-Capture.Enabled", false)).thenReturn(false);
+        when(config.getInt("Recording.Chunk-Capture.Radius", 1)).thenReturn(1);
+        when(config.getInt("Recording.Chunk-Capture.Capture-Interval-Ticks", 20)).thenReturn(20);
+        when(config.getInt("Recording.Chunk-Capture.Max-Unique-Chunks-Per-Recording", 20000)).thenReturn(20_000);
     }
 
     private RecordingSession createSession(int durationSeconds) {
@@ -59,11 +66,15 @@ class RecordingSessionIntegrationTest {
 
     @Test
     void constructor_setsFields() {
-        RecordingSession s = createSession(30);
-        assertEquals(0, s.getTick());
-        assertFalse(s.isStopped());
-        assertTrue(s.getTrackedPlayers().contains(playerUuid));
-        assertTrue(s.isTrackedPlayer(playerUuid));
+        try (MockedStatic<Replay> replayStatic = mockStatic(Replay.class)) {
+            replayStatic.when(Replay::getInstance).thenReturn(plugin);
+
+            RecordingSession s = createSession(30);
+            assertEquals(0, s.getTick());
+            assertFalse(s.isStopped());
+            assertTrue(s.getTrackedPlayers().contains(playerUuid));
+            assertTrue(s.isTrackedPlayer(playerUuid));
+        }
     }
 
     @Test

@@ -158,10 +158,11 @@ public final class ReplayDebugCommand {
                     + " §8| §7Worlds: §f" + info.uniqueWorldCount());
             sender.sendMessage("§7Ticks: §f" + info.startTick() + " -> " + info.endTick() + " §8| §7Length: §f"
                     + info.durationTicks() + " ticks (" + formatSeconds(info.durationSeconds()) + "s)");
-            sender.sendMessage("§7Stored size: §f" + formatBytes(info.storedBytes()) + " §8| §7Compressed payload: §f"
-                    + formatBytes(info.compressedPayloadBytes()) + " §8| §7Decompressed payload: §f"
-                    + formatBytes(info.decompressedPayloadBytes()));
-            sender.sendMessage("§7Compression ratio: §f" + formatCompressionRatio(info));
+                sender.sendMessage("§7Stored Size: §f" + formatBytes(info.storedBytes()));
+                sender.sendMessage("§7Replay: §fCompressed " + formatBytes(info.compressedPayloadBytes())
+                    + " §8| §fDecompressed " + formatBytes(info.decompressedPayloadBytes()));
+                sender.sendMessage(formatChunkPayloadStats(info));
+                sender.sendMessage(formatChunkStats(info));
             sender.sendMessage("§7Seek index: §f" + (info.indexedPayload() ? ("yes (" + info.seekCheckpointCount() + " checkpoints)") : "no"));
         });
     }
@@ -271,12 +272,25 @@ public final class ReplayDebugCommand {
         return DECIMAL_FORMAT.format(seconds);
     }
 
-    private static String formatCompressionRatio(ReplayInspection info) {
-        if (info.compressedPayloadBytes() <= 0 || info.decompressedPayloadBytes() <= 0) {
-            return "unknown";
+    private static String formatChunkPayloadStats(ReplayInspection info) {
+        if (info.chunkEntryCount() <= 0 || info.chunkRegionEntryCount() <= 0) {
+            return "§7Chunks: §fnone";
         }
-        double ratio = (double) info.decompressedPayloadBytes() / (double) info.compressedPayloadBytes();
-        return DECIMAL_FORMAT.format(ratio) + "x";
+        return "§7Chunks: §fCompressed "
+                + formatBytes(info.compressedChunkPayloadBytes())
+                + " §8| §fDecompressed "
+                + formatBytes(info.decompressedChunkPayloadBytes());
+    }
+
+    private static String formatChunkStats(ReplayInspection info) {
+        if (info.chunkEntryCount() <= 0 || info.chunkRegionEntryCount() <= 0) {
+            return "§7Chunk data: §fnone";
+        }
+        return "§7Chunk data: §f"
+                + info.chunkRegionEntryCount()
+                + (info.chunkRegionEntryCount() == 1 ? " region / " : " regions / ")
+                + info.chunkEntryCount()
+                + (info.chunkEntryCount() == 1 ? " chunk" : " chunks");
     }
 
     private static String formatBytes(long bytes) {

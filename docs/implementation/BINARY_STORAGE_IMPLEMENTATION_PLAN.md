@@ -2,7 +2,7 @@
 
 This document converts the chosen binary storage design into an implementation sequence for BetterReplay.
 
-It assumes the decisions already captured in [STORAGE_FORMAT_COMPARISON.md](f:\Minecraft\Forks\BetterReplay\docs\planning\STORAGE_FORMAT_COMPARISON.md) and [TEMP_BINARY_STORAGE_OPEN_QUESTIONS.md](f:\Minecraft\Forks\BetterReplay\docs\planning\TEMP_BINARY_STORAGE_OPEN_QUESTIONS.md).
+It assumes the decisions already captured in [STORAGE_FORMAT_COMPARISON.md](../planning/STORAGE_FORMAT_COMPARISON.md) and [TEMP_BINARY_STORAGE_OPEN_QUESTIONS.md](../planning/TEMP_BINARY_STORAGE_OPEN_QUESTIONS.md).
 
 ## Goal
 

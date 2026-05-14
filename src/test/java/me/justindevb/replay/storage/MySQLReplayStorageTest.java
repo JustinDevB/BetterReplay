@@ -6,9 +6,12 @@ import com.tcoded.folialib.wrapper.task.WrappedTask;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.api.ReplayExportQuery;
+import me.justindevb.replay.chunk.CapturedChunkBaseline;
+import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.debug.ReplayDumpQuery;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
+import me.justindevb.replay.storage.binary.BinaryChunkTempRegionFileWriter;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -167,6 +170,27 @@ class MySQLReplayStorageTest {
 
         assertNotNull(loaded);
         assertEquals(3, loaded.size());
+    }
+
+    @Test
+    void saveReplay_withChunkArtifacts_roundTripsChunkPlaybackData() throws Exception {
+        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-artifacts"));
+        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+
+        storage.saveReplay("binary-chunks", new ReplaySaveRequest(sampleTimeline(), 1_700_000_000_000L, writer.snapshotArtifacts())).get();
+
+        ArgumentCaptor<byte[]> dataCaptor = ArgumentCaptor.forClass(byte[].class);
+        verify(saveStatement).setBytes(org.mockito.ArgumentMatchers.eq(2), dataCaptor.capture());
+        storedBytes = dataCaptor.getValue();
+        when(selectResultSet.next()).thenReturn(true);
+        when(selectResultSet.getBytes("data")).thenReturn(storedBytes);
+
+        ReplayPlaybackData replayData = storage.loadReplayData("binary-chunks").get();
+
+        assertNotNull(replayData);
+        assertEquals(3, replayData.timeline().size());
+        assertTrue(replayData.chunkData().hasChunkData());
+        assertTrue(replayData.chunkData().regionEntries().containsKey("chunks/world/r.0.0.brregion"));
     }
 
     @Test

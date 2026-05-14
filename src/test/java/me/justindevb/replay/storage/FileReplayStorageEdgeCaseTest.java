@@ -1,7 +1,10 @@
 package me.justindevb.replay.storage;
 
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.chunk.CapturedChunkBaseline;
+import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.recording.TimelineEvent;
+import me.justindevb.replay.storage.binary.BinaryChunkTempRegionFileWriter;
 import org.bukkit.configuration.file.FileConfiguration;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import org.junit.jupiter.api.BeforeEach;
@@ -215,6 +218,24 @@ class FileReplayStorageEdgeCaseTest {
             List<TimelineEvent> loaded = storage.loadReplay("autodetect").get();
             assertNotNull(loaded);
             assertEquals(1, loaded.size());
+        }
+
+        @Test
+        void saveReplay_withChunkArtifacts_roundTripsChunkPlaybackData() throws Exception {
+            BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-artifacts"));
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+
+            storage.saveReplay("chunk-file", new ReplaySaveRequest(
+                    List.of(new TimelineEvent.PlayerQuit(0, "u")),
+                    1_700_000_000_000L,
+                    writer.snapshotArtifacts())).get();
+
+            ReplayPlaybackData replayData = storage.loadReplayData("chunk-file").get();
+
+            assertNotNull(replayData);
+            assertEquals(1, replayData.timeline().size());
+            assertTrue(replayData.chunkData().hasChunkData());
+            assertTrue(replayData.chunkData().regionEntries().containsKey("chunks/world/r.0.0.brregion"));
         }
     }
 }
