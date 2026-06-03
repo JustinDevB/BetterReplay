@@ -6,6 +6,9 @@ import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.biome.Biomes;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import com.tcoded.folialib.FoliaLib;
+import me.justindevb.replay.velocity.ReplayJoinListener;
+import me.justindevb.replay.velocity.ReplayLaunchMessageListener;
+import me.justindevb.replay.velocity.ReplayTransferManager;
 import org.bstats.bukkit.Metrics;
 import io.github.retrooper.packetevents.factory.spigot.SpigotPacketEventsBuilder;
 import me.justindevb.replay.api.ReplayAPI;
@@ -53,6 +56,7 @@ public class Replay extends JavaPlugin {
     private ReplayBenchmarkService replayBenchmarkService;
     private ReplayRetentionService replayRetentionService;
     private ReplayViewerStateManager replayViewerStateManager;
+    private ReplayTransferManager transferManager;
 
     @Override
     public void onLoad() {
@@ -94,11 +98,14 @@ public class Replay extends JavaPlugin {
         initRetention();
         recorderManager.recoverPendingAppendLogs();
 
+        initVelocityLogic();
+
         initBstats();
 
 
         checkForUpdate();
     }
+
 
     @Override
     public void onDisable() {
@@ -233,6 +240,10 @@ public class Replay extends JavaPlugin {
         return manager;
     }
 
+    public ReplayTransferManager getTransferManager() {
+        return transferManager;
+    }
+
     public void initBstats() {
         int pluginId = 29341;
         Metrics metrics = new Metrics(this, pluginId);
@@ -262,5 +273,14 @@ public class Replay extends JavaPlugin {
         } catch (RuntimeException ex) {
             getLogger().log(Level.FINE, "Failed to prewarm PacketEvents chunk mappings", ex);
         }
+    }
+
+    private void initVelocityLogic() {
+        transferManager = new ReplayTransferManager(this);
+
+        getServer().getPluginManager().registerEvents(new ReplayJoinListener(this), this);
+
+        getServer().getMessenger().registerOutgoingPluginChannel(this, ReplayTransferManager.CHANNEL);
+        getServer().getMessenger().registerIncomingPluginChannel(this, ReplayTransferManager.CHANNEL, new ReplayLaunchMessageListener(this));
     }
 }

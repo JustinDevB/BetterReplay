@@ -144,16 +144,118 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                 }
             }
             case "play" -> {
+
                 if (!p.hasPermission("replay.play")) {
                     p.sendMessage("You do not have permission");
                     return true;
                 }
+
                 if (args.length < 2) {
-                    p.sendMessage("§c/replay play <name>");
+                    p.sendMessage("§c/replay play <name> [server:<server>]");
                     return true;
                 }
-                String replayName = joinArgs(args, 1);
-                replayManager.startReplay(replayName, p);
+
+                String replayName = args[1];
+
+                String foundTargetServer = null;
+
+                for (int i = 2; i < args.length; i++) {
+
+                    String arg = args[i];
+
+                    if (arg.regionMatches(
+                            true,
+                            0,
+                            "server:",
+                            0,
+                            "server:".length()
+                    )) {
+
+                        String server =
+                                arg.substring("server:".length())
+                                        .trim();
+
+                        if (!server.isEmpty()) {
+                            foundTargetServer = server;
+                        }
+
+                        break;
+                    }
+                }
+
+                // Must be effectively final for lambda usage
+                final String targetServer = foundTargetServer;
+
+                Replay plugin = Replay.getInstance();
+
+                plugin.getReplayStorage()
+                        .replayExists(replayName)
+                        .thenAccept(exists -> {
+
+                            if (!exists) {
+
+                                plugin.getFoliaLib()
+                                        .getScheduler()
+                                        .runLater(
+                                                () -> p.sendMessage(
+                                                        "§cReplay not found: "
+                                                                + replayName
+                                                ),
+                                                1L
+                                        );
+
+                                return;
+                            }
+
+                            if (targetServer == null) {
+
+                                replayManager.startReplay(
+                                        replayName,
+                                        p
+                                );
+
+                                return;
+                            }
+
+                            plugin.getTransferManager()
+                                    .requestReplayTransfer(
+                                            p,
+                                            replayName,
+                                            targetServer
+                                    );
+
+                            plugin.getFoliaLib()
+                                    .getScheduler()
+                                    .runLater(
+                                            () -> p.sendMessage(
+                                                    "§aConnecting to replay server §e"
+                                                            + targetServer
+                                                            + "§a..."
+                                            ),
+                                            1L
+                                    );
+
+                        })
+                        .exceptionally(ex -> {
+
+                            plugin.getLogger().log(
+                                    Level.SEVERE,
+                                    "Failed to verify replay existence: "
+                                            + replayName,
+                                    ex
+                            );
+
+                            plugin.getFoliaLib()
+                                    .getScheduler()
+                                    .runLater(
+                                            () -> p.sendMessage(
+                                                    "§cFailed to load replay information."
+                                            ),
+                                            1L
+                                    );
+
+                            return null;
+                        });
 
                 return true;
             }
