@@ -18,6 +18,7 @@ import me.justindevb.replay.config.ReplayConfigReloadResult;
 import me.justindevb.replay.config.ReplayConfigSetting;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
+import me.justindevb.replay.metrics.BStatsCharts;
 import me.justindevb.replay.listeners.PacketEventsListener;
 import me.justindevb.replay.playback.ReplayViewerStateManager;
 import me.justindevb.replay.retention.ReplayRetentionService;
@@ -234,7 +235,8 @@ public class Replay extends JavaPlugin {
 
     public void initBstats() {
         int pluginId = 29341;
-        new Metrics(this, pluginId);
+        Metrics metrics = new Metrics(this, pluginId);
+        BStatsCharts.register(metrics, getConfig());
     }
 
     public FoliaLib getFoliaLib() {
