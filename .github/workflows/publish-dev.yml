@@ -21,17 +21,65 @@ jobs:
           java-version: 26
           distribution: 'temurin'
 
+      - name: Resolve alpha version for dev builds
+        id: version
+        env:
+          MODRINTH_PROJECT_ID: ${{ secrets.MODRINTH_PROJECT_ID }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
+          import urllib.request
+
+          def read_maven_version():
+              return subprocess.check_output(
+                  ["mvn", "help:evaluate", "-Dexpression=project.version", "-q", "-DforceStdout"],
+                  text=True,
+              ).strip()
+
+          base = read_maven_version()
+          version = None
+          canonical_repo = os.environ.get("GITHUB_REPOSITORY") == "justindevb/BetterReplay"
+          modrinth_project_id = os.environ.get("MODRINTH_PROJECT_ID", "").strip()
+
+          if canonical_repo and modrinth_project_id:
+              with urllib.request.urlopen(
+                  f"https://api.modrinth.com/v2/project/{modrinth_project_id}/version"
+              ) as response:
+                  published_versions = json.load(response)
+
+              published_numbers = [entry.get("version_number", "") for entry in published_versions]
+              if base in published_numbers:
+                  print(
+                      f"Stable version {base} is already published. Bump pom.xml to the next development version before publishing more dev alphas.",
+                      file=sys.stderr,
+                  )
+                  sys.exit(1)
+
+              alpha_pattern = re.compile(rf"^{re.escape(base)}-alpha\.(\d+)$")
+              highest_alpha = 0
+              for published_number in published_numbers:
+                  match = alpha_pattern.match(published_number)
+                  if match:
+                      highest_alpha = max(highest_alpha, int(match.group(1)))
+
+              version = f"{base}-alpha.{highest_alpha + 1}"
+          else:
+              version = f"{base}-alpha.{os.environ['GITHUB_RUN_NUMBER']}"
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"VERSION={version}\n")
+          PY
+
       - name: Set alpha version for dev builds
         run: |
-          BASE=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
-          mvn versions:set -DnewVersion="${BASE}-alpha.${GITHUB_RUN_NUMBER}" -DgenerateBackupPoms=false
+          mvn versions:set -DnewVersion="${{ steps.version.outputs.VERSION }}" -DgenerateBackupPoms=false
 
       - name: Build
         run: mvn install
-
-      - name: Resolve version
-        id: version
-        run: echo "VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
 
       - name: Resolve Modrinth changelog
         id: modrinth_changelog
