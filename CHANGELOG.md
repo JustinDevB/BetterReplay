@@ -8,43 +8,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- `/replay reload` command to re-read `config.yml`, restart retention scheduling, and report which changed settings apply immediately, only to new sessions, or still require a server restart
-- Frame-by-frame step controls during paused replay; step backward or forward one tick at a time via `⏮`/`⏭` inventory buttons (slots 6–7)
-- Variable playback speed controls during active replay; adjust with `⏪ Slower`/`⏩ Faster` inventory buttons (slots 6–7) using configurable step increments
-- Current playback speed displayed in the action bar as `[X.Xx]` during playback
-- New config keys `Playback.Speed-Step` (default `0.2`) and `Playback.Max-Speed` (default `1.0`) to control speed increment and upper bound
-- Replay viewer safety controls: `Playback.Viewer-Safety-Mode`, `Playback.Restore-Viewer-Location-On-Stop`, `Playback.Restore-Viewer-GameMode-On-Stop`, `Playback.Restore-Viewer-Flight-On-Stop`, and `Playback.Restore-Viewer-State-On-Rejoin`
-- Finalized binary `.br` replay storage for file and MySQL backends, including crash-safe append-log recording, lazy indexed loading, preserved recording start timestamps, startup recovery of orphaned temp logs, filtered export tooling, hidden benchmark/debug utilities, and temporary legacy JSON compatibility during migration
-- Replay protection commands and metadata, protected replay highlighting in `/replay list`, and config-driven retention cleanup with duration parsing
-- Optional chunk baseline capture and chunk-aware playback for binary replays, including block-entity support, replay chunk caching, `Playback.Chunk-View-Radius`, `Playback.Chunk-Send-Limit-Per-Tick`, `Playback.Chunk-Clear-Limit-Per-Tick`, `Playback.Chunk-Timing-Diagnostics`, and `Playback.Chunk-Mode`
-- Split inventory recording into dedicated equipment-state and storage-snapshot events backed by raw item bytes, plus regression coverage for the new binary payloads and legacy JSON upgrade path
-- New config key `Playback.Vanish-Viewer` (default `true`) to hide replay viewers from live players during playback
-
-### Fixed
-- `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
-- PacketEvents block-break recording is now rescheduled onto the server thread to avoid Netty-thread contention and unsafe shared-state mutation (#43)
-- Held-item swaps and hotbar slot changes are now captured immediately for more accurate replay inventory playback
-- Replay viewers can no longer pick up live world items during playback, preventing replay inventory lockups from stray pickups
-- Equipment polling now reuses a single per-tick capture across concurrent recordings and only falls back to clean-player sweeps periodically, reducing repeated ItemStack serialization under high recording load
-- Dirty inventory polls now reuse a shared short-lived storage snapshot cache across concurrent recordings, while clean fallback sweeps still force a fresh capture to preserve missed-change detection
-- Nested replay inventory loss when starting a replay during an active replay (#31)
-- Replay playback now returns viewers to their original location and gameplay state by default, including disconnect/rejoin recovery
-- Replay controls getting stuck after replay ends (#27)
-- Replay export now writes under the plugin data folder
-- Chunk playback restore flow now handles unload timing and viewer return cases more reliably
-- Replay chunk load probing now frees completed missing-chunk checks before scheduling the next async wave, so higher chunk send limits are not throttled by one-tick queue lag when many surrounding chunks were never recorded
-- Replay chunk load probing now runs at `10x` the configured chunk send rate, so fast `missing-replay-chunk` checks do not throttle how quickly the viewer can discover whether nearby chunks were actually recorded
-- Config migration now preserves wrapped pseudo-comments, keeps the managed header stable, and avoids accumulating blank lines between root sections
+- 2026-04-17: Frame-by-frame step controls during paused replay; step backward or forward one tick group at a time via `⏮` and `⏭` inventory buttons
+- 2026-04-19: Variable playback speed controls during active replay, current speed action-bar feedback, and config keys `Playback.Speed-Step` plus `Playback.Max-Speed`
+- 2026-04-27: Finalized binary `.br` replay storage for file and MySQL backends, including crash-safe append-log recording, lazy indexed loading, preserved recording start timestamps, startup recovery of orphaned temp logs, and temporary legacy JSON compatibility during migration
+- 2026-04-27: Hidden admin utilities: `/replay export`, `/replay debug dump`, `/replay debug info`, and `/replay benchmark`, with output written under the plugin data folder
+- 2026-04-29: Replay protection commands and metadata, protected replay highlighting in `/replay list`, config-driven retention cleanup with human-readable duration parsing, and deletion safeguards for protected replays
+- 2026-05-14: Optional chunk baseline capture and chunk-aware playback for binary replays, including block-entity support, replay chunk caching, `Playback.Chunk-View-Radius`, `Playback.Chunk-Send-Limit-Per-Tick`, `Playback.Chunk-Clear-Limit-Per-Tick`, `Playback.Chunk-Timing-Diagnostics`, and `Playback.Chunk-Mode`
+- 2026-05-30: Inventory recording split into dedicated equipment-state and storage-snapshot events backed by raw item bytes, plus regression coverage for the new binary payloads and legacy JSON upgrade path
+- 2026-05-31: Replay viewer safety controls: `Playback.Viewer-Safety-Mode`, `Playback.Restore-Viewer-Location-On-Stop`, `Playback.Restore-Viewer-GameMode-On-Stop`, `Playback.Restore-Viewer-Flight-On-Stop`, and `Playback.Restore-Viewer-State-On-Rejoin`
+- 2026-06-02: `/replay reload` command to re-read `config.yml`, restart retention scheduling, and report which changed settings apply immediately, only to new sessions, on future checks, or after restart
+- 2026-06-02: New config key `Playback.Vanish-Viewer` (default `true`) to hide replay viewers from live players during playback
 
 ### Changed
-- `RecordingStopEvent` now fires synchronously to fix async AntiCheatReplay compatibility
-- `ReplayManager` now exposes `listSavedReplaySummaries`, `protectSavedReplay`, `unprotectSavedReplay`, and returns `ReplayDeleteResult` from `deleteSavedReplay`
-- Config settings ownership moved out of `Replay` into a dedicated typed, comment-preserving config manager with versioned migrations
-- Replay sessions now always start at `1.0x` speed; `Playback.Max-Speed` is enforced to a minimum of `1.0`
-- Config keys for list settings were renamed from `list-page-size`/`list-protected-highlight-color` to `List.Page-Size`/`List.Protected-Highlight-Color`; values are auto-migrated on startup
-- Update checks now treat `-SNAPSHOT` builds as their corresponding release, and Modrinth publishing metadata now includes Purpur, Spigot, and Bukkit loaders
-- Modrinth uploads now publish the matching release changelog on `main` and the `[Unreleased]` section for `dev` alpha builds
-- Binary replay archives now use format version `2`; new `.br` inventory payloads store split equipment/storage slot bytes directly, while legacy JSON replay loading remains supported and older alpha `.br` inventory archives are intentionally unsupported
+- 2026-04-11: `RecordingStopEvent` now fires synchronously to fix async AntiCheatReplay compatibility
+- 2026-04-19: Update checks now treat `-SNAPSHOT` builds as their corresponding release version
+- 2026-04-20: Config settings ownership moved out of `Replay` into a dedicated typed, comment-preserving config manager with versioned migrations
+- 2026-04-22: Replay sessions now always start at `1.0x` speed, and `Playback.Max-Speed` is enforced to a minimum of `1.0`
+- 2026-04-27: Binary replay archives now use format version `2`; new `.br` inventory payloads store split equipment and storage slot bytes directly, while legacy JSON replay loading remains supported and older alpha `.br` inventory archives are intentionally unsupported
+- 2026-04-29: `ReplayManager` now exposes `listSavedReplaySummaries`, `protectSavedReplay`, `unprotectSavedReplay`, and returns `ReplayDeleteResult` from `deleteSavedReplay`
+- 2026-04-30: Config keys for list settings were renamed from `list-page-size` and `list-protected-highlight-color` to `List.Page-Size` and `List.Protected-Highlight-Color`, with automatic startup migration
+- 2026-04-30: Modrinth publishing metadata now includes Purpur, Spigot, and Bukkit loaders
+- 2026-05-14: Modrinth uploads now publish the matching release changelog on `main` and the `[Unreleased]` section for `dev` alpha builds
+- 2026-06-04: README content was reorganized into overview sections with dedicated Architecture, Configuration, and Commands documents under `docs/`
+
+### Removed
+- 2026-04-28: `General.Enable-Benchmark-Command`; `/replay benchmark` is now always permission-gated through `replay.benchmark`
+
+### Fixed
+- 2026-04-13: Replay controls no longer get stuck after replay ends (#27)
+- 2026-04-15: Held-item swaps and hotbar slot changes are now captured immediately for more accurate replay inventory playback
+- 2026-04-16: Nested replay inventory loss when starting a replay during an active replay (#31)
+- 2026-04-17: Backward step controls now move exactly one tick group per click instead of skipping two
+- 2026-04-19: `activeSessions` in `RecorderManager` changed to `ConcurrentHashMap` to prevent `ConcurrentModificationException` (#33)
+- 2026-04-22: Config migration now preserves wrapped pseudo-comments, keeps the managed header stable, and avoids accumulating blank lines between root sections
+- 2026-04-27: Replay export now writes under the plugin data folder
+- 2026-04-30: PacketEvents block-break recording is now rescheduled onto the server thread to avoid Netty-thread contention and unsafe shared-state mutation (#43)
+- 2026-05-14: Chunk playback restore flow now handles unload timing and viewer return cases more reliably, and replay chunk load probing no longer bottlenecks missing-chunk checks under higher send rates
+- 2026-05-30: Equipment polling and dirty inventory polling now reuse shared short-lived caches across concurrent recordings to reduce repeated `ItemStack` serialization work without losing fallback accuracy
+- 2026-05-31: Replay playback now returns viewers to their original location and gameplay state by default, including disconnect and rejoin recovery
+- 2026-06-02: Replay viewers can no longer pick up live world items during playback, preventing replay inventory lockups from stray pickups
+- 2026-06-03: Replay viewer startup teleports now use asynchronous teleports for safer Paper and Folia compatibility
 
 ## [1.4.0] - 2026-04-10
 

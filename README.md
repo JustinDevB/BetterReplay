@@ -1,17 +1,16 @@
 # BetterReplay
 
-BetterReplay is a server-side replay plugin for Paper and Folia-style scheduling.
-It records player and nearby entity activity on the server, saves the timeline, and replays it for viewers in-game.
+BetterReplay is a server-side replay plugin for Paper with Folia-friendly scheduling through FoliaLib.
+It records player and nearby entity activity on the server, stores that timeline, and replays it in-game for viewers without requiring a client replay mod.
 
 ## What this project is
 
-- Server plugin written in Java
+- Server plugin written in Java 21
 - Targets modern Paper APIs
-- Uses PacketEvents and FoliaLib for packet handling and scheduling
-- Supports two storage backends:
-  - local file storage
-  - MySQL
-- New saves use finalized binary `.br` replay archives; legacy JSON replays are still readable during the migration window, but older alpha `.br` inventory archives are intentionally not loaded by current builds
+- Uses PacketEvents for packet interception and replay entity updates
+- Uses FoliaLib for scheduler and teleport compatibility
+- Supports file and MySQL storage backends
+- New saves use finalized binary `.br` archives; legacy JSON replays remain readable during the migration window, but pre-`v2` alpha `.br` inventory archives are intentionally unsupported
 
 ## How this differs from client-side replay mods
 
@@ -22,257 +21,45 @@ Server-side approach (this project):
 - No replay mod required on player clients
 - Captures server-observed gameplay state and events
 - Plays back by spawning and updating replay entities for a viewer
-- Good for moderation, event review, and server-side tooling
+- Fits moderation, event review, and server-side tooling workflows
 
 Typical client-side replay mod approach:
 - Records from a specific client perspective
 - Usually requires modded client setup
-- Often includes advanced free-camera/cinematic editing features
-- Playback is usually local to the client recording
+- Often focuses on free-camera or cinematic editing
+- Playback is usually local to the recording client
 
 In short: BetterReplay focuses on server-managed replay workflows and API-driven integration.
-
-## High-level architecture
-
-- Replay bootstrapping
-  - [src/main/java/me/justindevb/replay/Replay.java](src/main/java/me/justindevb/replay/Replay.java)
-- Public API entry point
-  - [src/main/java/me/justindevb/replay/api/ReplayAPI.java](src/main/java/me/justindevb/replay/api/ReplayAPI.java)
-  - [src/main/java/me/justindevb/replay/api/ReplayManager.java](src/main/java/me/justindevb/replay/api/ReplayManager.java)
-- Recording lifecycle
-  - [src/main/java/me/justindevb/replay/RecorderManager.java](src/main/java/me/justindevb/replay/RecorderManager.java)
-  - [src/main/java/me/justindevb/replay/RecordingSession.java](src/main/java/me/justindevb/replay/RecordingSession.java)
-- Replay playback lifecycle
-  - [src/main/java/me/justindevb/replay/ReplaySession.java](src/main/java/me/justindevb/replay/ReplaySession.java)
-- Storage abstraction and implementations
-  - [src/main/java/me/justindevb/replay/storage/ReplayStorage.java](src/main/java/me/justindevb/replay/storage/ReplayStorage.java)
-  - [src/main/java/me/justindevb/replay/storage/FileReplayStorage.java](src/main/java/me/justindevb/replay/storage/FileReplayStorage.java)
-  - [src/main/java/me/justindevb/replay/storage/MySQLReplayStorage.java](src/main/java/me/justindevb/replay/storage/MySQLReplayStorage.java)
-  - [src/main/java/me/justindevb/replay/storage/ReplayStorageCodec.java](src/main/java/me/justindevb/replay/storage/ReplayStorageCodec.java)
-  - [src/main/java/me/justindevb/replay/storage/ReplayFormatDetector.java](src/main/java/me/justindevb/replay/storage/ReplayFormatDetector.java)
-- Chunk capture and replay chunk pipeline
-  - [src/main/java/me/justindevb/replay/chunk/ChunkCaptureCoordinator.java](src/main/java/me/justindevb/replay/chunk/ChunkCaptureCoordinator.java)
-  - [src/main/java/me/justindevb/replay/playback/ReplayChunkSnapshotSender.java](src/main/java/me/justindevb/replay/playback/ReplayChunkSnapshotSender.java)
-- Admin tooling and retention
-  - [src/main/java/me/justindevb/replay/export/ReplayExportCommand.java](src/main/java/me/justindevb/replay/export/ReplayExportCommand.java)
-  - [src/main/java/me/justindevb/replay/debug/ReplayDebugCommand.java](src/main/java/me/justindevb/replay/debug/ReplayDebugCommand.java)
-  - [src/main/java/me/justindevb/replay/benchmark/ReplayBenchmarkCommand.java](src/main/java/me/justindevb/replay/benchmark/ReplayBenchmarkCommand.java)
-  - [src/main/java/me/justindevb/replay/retention/ReplayRetentionService.java](src/main/java/me/justindevb/replay/retention/ReplayRetentionService.java)
 
 ## Features
 
 - Server-side recording and in-game playback with no client replay mod required
 - Finalized binary `.br` replay archives stored in either file or MySQL backends
+- Crash-safe append-log recording with startup recovery of orphaned temporary saves
 - Replay protection, retention cleanup, filtered export, and hidden admin diagnostics
 - Optional chunk-aware recording and playback for block baselines around recorded players
 - Playback controls with pause stepping, variable speed, and live speed feedback
+- Viewer safety controls, viewer state restoration, and optional live-player vanish during playback
 - API-first integration support for other plugins
 - Optional Floodgate soft dependency support
 
-## Notable capabilities
+## Architecture
 
-### Binary storage and admin tooling
+The plugin is organized around a bootstrap layer, a recording pipeline, a playback pipeline, a storage abstraction, and operator tooling for export, diagnostics, benchmarking, and retention.
 
-New saves are written as finalized binary `.br` archives for both file and MySQL storage. Active recordings stream into crash-safe append logs first, which lets BetterReplay recover orphaned temporary recordings on the next startup instead of silently losing them after a crash or forced stop.
-
-Current `.br` archives use binary replay format `v2`, which records equipment state and storage inventory as separate raw-byte payloads. Legacy JSON replay loading remains available during migration, but pre-`v2` alpha binary inventory archives are intentionally unsupported.
-
-The same archive format powers the hidden admin utilities:
-
-- `/replay export` writes filtered `.br` exports under the plugin `exports/` folder
-- `/replay debug info` inspects replay metadata such as format, version, counts, sizes, and recording timestamp
-- `/replay debug dump` writes a human-readable event dump under `dumps/`
-- `/replay benchmark` generates Markdown and JSON benchmark reports under `benchmarks/`
-
-### Replay protection and cleanup
-
-Protected replays are excluded from both manual deletion and retention cleanup until they are explicitly unprotected. `/replay list` can highlight protected entries, and the `Retention.*` settings accept human-readable durations like `30d` and `1h` so scheduled cleanup stays readable for operators.
-
-### Chunk-aware playback
-
-When `Recording.Chunk-Capture.Enabled` is turned on, BetterReplay stores palette-compressed chunk baselines for the captured area around tracked players inside the `.br` archive. During playback, those chunk snapshots are streamed around the viewer as an overlay and then restored back to live world state when the replay window moves or the replay ends.
-
-`Playback.Chunk-Mode` controls how aggressively live chunks are restored. Mode `1` keeps a moving replay chunk window and restores live chunks as they leave it. Mode `2` defers live chunk restore until replay stop, lets Paper and the client unload chunks naturally, and resends replay chunks if the viewer returns after a natural unload. `Playback.Chunk-Send-Limit-Per-Tick` and `Playback.Chunk-Clear-Limit-Per-Tick` both default to `1`, which is safer on mixed live servers; dedicated replay servers can raise them with `Playback.Chunk-View-Radius` to fill and clear larger replay windows faster. Replay-load probing now runs ahead of chunk sends at `10x` the configured send rate so missing-chunk checks do not become the bottleneck when most nearby chunks were never recorded. `Playback.Chunk-Timing-Diagnostics` adds per-stage timing logs for chunk preparation, replay load, and live restore work when you need to profile MSPT spikes.
-
-### Playback controls
-
-Paused replays can step backward or forward one tick group at a time, and active replays support configurable slower/faster controls through `Playback.Speed-Step` and `Playback.Max-Speed`. The current speed multiplier is shown in the action bar so viewers can tell immediately whether they are watching at `1.0x` speed or a faster/slower rate.
-
-## Commands and permissions
-
-Registered command and permissions are defined in:
-- [src/main/resources/plugin.yml](src/main/resources/plugin.yml)
-
-Base command:
-- /replay
-
-Subcommands:
-- start
-- stop
-- play
-- list
-- delete
-- protect
-- unprotect
-- export (hidden admin utility command)
-- benchmark (hidden admin diagnostic command)
-- debug dump (hidden admin dump command)
-- debug info (hidden admin metadata command)
-- reload config without a full server restart for supported settings
-
-Permissions:
-- replay.start
-- replay.stop
-- replay.play
-- replay.list
-- replay.delete
-- replay.protect
-- replay.unprotect
-- replay.export
-- replay.benchmark
-- replay.debug
-- replay.reload
-- replay.*
-
-Reload usage:
-- `/replay reload` reloads `config.yml`, restarts the retention service, applies live-read settings immediately, and reports which changed settings only affect new sessions or still require a restart.
-
-Hidden export usage:
-- `/replay export <name> [player=<name|all>] [start=<tick>] [end=<tick>]` exports a replay to a `.br` file under the plugin `exports/` folder and prints the generated path.
-- Replay names may contain spaces as long as all filter arguments come after the full replay name.
-
-Hidden debug dump usage:
-- `/replay debug dump <name> [start=<tick>] [end=<tick>]` writes a human-readable text dump under the plugin `dumps/` folder and prints the generated path.
-- Replay names may contain spaces as long as all filter arguments come after the full replay name.
-
-Hidden debug info usage:
-- `/replay debug info <name>` prints replay metadata including format, recording timestamp, record count, tick length, compressed/decompressed sizes, and version/index details.
-- Replay names may contain spaces.
-
-Hidden benchmark usage:
-- `/replay benchmark run <small|medium|large|all>` starts an asynchronous synthetic benchmark run and writes both Markdown and JSON reports under the plugin `benchmarks/` folder.
-- `/replay benchmark last` prints the most recent report file paths.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the source map, lifecycle walkthrough, chunk pipeline, viewer safety flow, and threading notes.
 
 ## Configuration
 
-Default config keys and migrations are defined in:
-- [src/main/java/me/justindevb/replay/config/ReplayConfigSetting.java](src/main/java/me/justindevb/replay/config/ReplayConfigSetting.java)
-- [src/main/java/me/justindevb/replay/config/ReplayConfigManager.java](src/main/java/me/justindevb/replay/config/ReplayConfigManager.java)
+Configuration is defined through typed settings in `ReplayConfigSetting`, with explicit runtime reload scopes surfaced by `/replay reload`.
 
-### Storage-Type options
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for defaults, valid values, file/MySQL examples, reload behavior, and operational notes.
 
-Valid values for `General.Storage-Type` are:
+## Commands
 
-- `file`
-  - Stores replay data under the plugin data folder.
-  - New saves now write finalized binary `.br` archives.
-  - The loader still auto-detects legacy JSON payloads and current finalized binary `.br` archives through `ReplayStorageCodec` during the transition period.
-- `mysql`
-  - Stores replay data in a MySQL table (`replays`) using the configured `General.MySQL.*` values.
-  - New saves now store finalized binary `.br` archives as blob data.
-  - The loader still auto-detects legacy JSON payloads and current finalized binary `.br` archives during the transition period.
+All player and admin actions live under `/replay`, including the normal recording/playback workflow plus hidden export, debug, and benchmark utilities.
 
-These values should be lowercase as shown above.
-
-### File storage example
-
-```yaml
-General:
-  Check-Update: true
-  Storage-Type: file
-```
-
-### MySQL storage example
-
-```yaml
-General:
-  Check-Update: true
-  Storage-Type: mysql
-  MySQL:
-    host: 127.0.0.1
-    port: 3306
-    database: betterreplay
-    user: replay_user
-    password: change-me
-```
-
-Additional key used by command pagination:
-
-```yaml
-List:
-  Page-Size: 10
-  Protected-Highlight-Color: "&6"
-```
-
-Playback diagnostics key:
-
-```yaml
-Playback:
-  Speed-Step: 0.2
-  Max-Speed: 1.0
-  Viewer-Safety-Mode: creative
-  Vanish-Viewer: true
-  Restore-Viewer-Location-On-Stop: true
-  Restore-Viewer-GameMode-On-Stop: true
-  Restore-Viewer-Flight-On-Stop: true
-  Restore-Viewer-State-On-Rejoin: true
-  Chunk-Mode: 1
-  Chunk-View-Radius: 3
-  Chunk-Send-Limit-Per-Tick: 1
-  Chunk-Clear-Limit-Per-Tick: 1
-  Chunk-Timing-Diagnostics: false
-```
-
-Chunk baseline capture keys:
-
-```yaml
-Recording:
-  Chunk-Capture:
-    Enabled: false
-    Radius: 1
-    Capture-Interval-Ticks: 20
-    Max-Unique-Chunks-Per-Recording: 20000
-```
-
-Retention cleanup keys:
-
-```yaml
-Retention:
-  Enabled: false
-  Max-Age: 30d
-  Check-Interval: 1h
-  Delete-Partial-Failures: false
-  Log-Deletions: true
-```
-
-Notes:
-- If Storage-Type is invalid, plugin falls back to file storage.
-- MySQL replay names are stored in a VARCHAR(64) primary key column.
-- Binary `.br` payloads require the replay data column to be `LONGBLOB`; the plugin now widens `data` automatically during storage initialization.
-- Chunk baseline capture is stored only in finalized binary `.br` archives; legacy JSON replays remain timeline-only.
-- `Recording.Chunk-Capture.Enabled` captures palette-compressed chunk baselines around tracked players during recording and replays those block states on demand around the viewer.
-- `Recording.Chunk-Capture.Radius` controls the square chunk-interest window around each tracked player.
-- `Recording.Chunk-Capture.Capture-Interval-Ticks` controls how often the plugin recomputes chunk interest and exports newly discovered chunks.
-- `Recording.Chunk-Capture.Max-Unique-Chunks-Per-Recording` bounds capture size; once the cap is reached, recording continues but additional chunk baselines are skipped.
-- `Playback.Chunk-View-Radius` controls the replay viewer's chunk playback radius independently from recording capture radius. Default is `3`.
-- `Playback.Viewer-Safety-Mode` controls how BetterReplay protects the real viewer when a replay starts. Default is `creative`, which switches the viewer into creative before teleporting them into replay space; set it to `off` to preserve the viewer's current mode.
-- `Playback.Vanish-Viewer` hides replay viewers from live players while playback is active. Default is `true`, which prevents staff review teleports from visibly appearing inside live builds.
-- `Playback.Restore-Viewer-Location-On-Stop` returns the viewer to their original live-world location when replay playback ends. Default is `true`.
-- `Playback.Restore-Viewer-GameMode-On-Stop` restores the viewer's original game mode after replay playback ends. Default is `true`.
-- `Playback.Restore-Viewer-Flight-On-Stop` restores the viewer's original `allowFlight` and `flying` flags after replay playback ends. Default is `true`.
-- `Playback.Restore-Viewer-State-On-Rejoin` reapplies the saved live-world location and mode if the viewer disconnects during replay and later rejoins. Default is `true`.
-- `Playback.Chunk-Mode` controls replay chunk teardown semantics. `1` keeps the current moving replay window and restores live chunks as they leave that window. `2` defers live chunk restore until replay stop, lets Paper and the client unload chunks naturally, and resends replay chunks if the viewer returns after a natural unload. Default is `1`.
-- `Playback.Chunk-Send-Limit-Per-Tick` and `Playback.Chunk-Clear-Limit-Per-Tick` control how aggressively packet-friendly chunk playback fills and clears the replay viewer's chunk window. Both default to `1`; dedicated replay servers can raise them to support larger view radii with less concern about live server impact. Replay-load probing runs at `10x` the configured send limit so uncaptured chunks can be ruled out quickly without waiting on the actual packet send rate.
-- If `Playback.Chunk-View-Radius` is larger than `Recording.Chunk-Capture.Radius`, only chunks that were actually captured during recording can be replayed; uncaptured chunks stay on the live world view.
-- `Playback.Chunk-Timing-Diagnostics` logs per-stage replay chunk timing information at runtime so you can inspect async preparation, replay load application, and queued live restore costs while profiling MSPT spikes.
-- `/replay reload` applies `List.*` and viewer restore/safety settings immediately, restarts retention scheduling for `Retention.*`, applies session-scoped playback/recording settings only to newly started recordings or replays, and does not hot-swap `General.Storage-Type` or `General.MySQL.*`.
-- Protected replays are skipped by both retention cleanup and manual delete commands until they are explicitly unprotected.
-- Protection stores required audit metadata: `protectedAt` and `protectedBy`.
-- Protected replays are highlighted in `/replay list` using `List.Protected-Highlight-Color`; the default is gold (`&6`).
-- Retention durations accept `s`, `m`, `h`, and `d` suffixes.
-- Legacy JSON replay support is temporary compatibility only and is planned for removal in a later version; new recordings should stay on `.br`.
-- Older alpha `.br` archives using the pre-`v2` inventory encoding are intentionally unsupported; retain legacy JSON if you need a migration path across that binary format boundary.
-- The hidden `/replay benchmark` command is now always available to senders with `replay.benchmark`, and `General.Enable-Benchmark-Command` has been removed from config
+See [docs/COMMANDS.md](docs/COMMANDS.md) for syntax, permissions, console support, replay-name parsing rules, and output locations.
 
 ## Build from source
 
@@ -287,11 +74,11 @@ mvn -DskipTests package
 ```
 
 Output jar:
-- target/BetterReplay-<version>.jar
+- `target/BetterReplay-<version>.jar`
 
 ## API
 
-BetterReplay provides a public API for other plugins to start/stop recordings, manage replays, and listen for lifecycle events.
+BetterReplay provides a public API for other plugins to start and stop recordings, manage saved replays, and listen for lifecycle events.
 
 Quick example:
 
@@ -302,31 +89,31 @@ manager.stopRecording("demo-session", true);
 manager.startReplay("demo-session", viewerPlayer);
 ```
 
-For full documentation of every method, all events, and a complete example plugin, see the **[API Documentation](docs/API.md)**.
+For full documentation of every method, all events, and a complete example plugin, see [docs/API.md](docs/API.md).
 
 ## Documentation
 
 Primary docs:
 
 - [docs/API.md](docs/API.md) - public API reference
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - component layout, lifecycle, and threading model
+- [docs/CONFIGURATION.md](docs/CONFIGURATION.md) - config keys, defaults, reload scopes, and examples
+- [docs/COMMANDS.md](docs/COMMANDS.md) - command syntax, permissions, and admin utilities
 - [docs/BENCHMARKS.md](docs/BENCHMARKS.md) - benchmark command usage, workload presets, and metric definitions
 - [docs/BINARY_FORMAT_SPEC.md](docs/BINARY_FORMAT_SPEC.md) - binary replay payload and archive structure notes, including the current `v2` inventory/event split
 - [docs/ARCHIVE_MANIFEST_SCHEMA.md](docs/ARCHIVE_MANIFEST_SCHEMA.md) - `manifest.json` field definitions and validation rules
 - [docs/DEPRECATIONS.md](docs/DEPRECATIONS.md) - planned feature and compatibility removals
+- [docs/planning](docs/planning) - design notes, comparisons, and implementation planning documents
 
 Binary replay note:
-- Finalized `.br` archives now store the recording start wall-clock timestamp in `manifest.json` as `recordingStartedAtEpochMillis`.
-- Active temp append-logs also write a fixed file header carrying the same timestamp so final saves can preserve it after crash-safe recovery.
+- Finalized `.br` archives store the recording start wall-clock timestamp in `manifest.json` as `recordingStartedAtEpochMillis`.
+- Active temp append logs also write a fixed file header carrying the same timestamp so final saves can preserve it after crash-safe recovery.
 - Current `.br` archives use format version `2` and store equipment-state and storage-inventory payloads as separate raw item-byte records.
 - Chunk-enabled `.br` archives may also include `chunks/` region entries containing palette-compressed chunk baselines that are decoded lazily during playback.
 
-Planning docs:
-
-- [docs/planning](docs/planning) - design notes, comparisons, and implementation planning documents
-
 ## Changelog
 
-A full history of changes, additions, and fixes is tracked in **[CHANGELOG.md](CHANGELOG.md)**, following the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+A full history of changes, additions, and fixes is tracked in [CHANGELOG.md](CHANGELOG.md), following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Development workflow
 

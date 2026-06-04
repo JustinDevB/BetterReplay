@@ -11,7 +11,7 @@ Follow them every time code, documentation, or configuration is added or changed
 - Language: **Java 21**.
 - Build tool: **Maven**.
 - Packet interception: **PacketEvents**.
-- Storage backends: `file` (JSON) and `MySQL`.
+- Storage backends: `file` and `MySQL`; new saves use finalized binary `.br` archives while legacy JSON remains readable during the migration window.
 - Optional soft-dependency: **Floodgate** (Bedrock player support).
 
 ---
@@ -27,7 +27,14 @@ Follow them every time code, documentation, or configuration is added or changed
   - Build instructions or requirements
   - Public API surface (methods, events, classes)
   - Architecture overview or file references
+- Keep `README.md` concise: it should provide the overview and link to the dedicated reference docs instead of carrying the full architecture, configuration, and command reference inline.
 - Do **not** leave the README describing removed, renamed, or outdated behaviour.
+
+### Dedicated reference docs
+- Update `docs/ARCHITECTURE.md` whenever plugin structure, lifecycle flow, storage flow, or threading expectations change.
+- Update `docs/CONFIGURATION.md` whenever config keys, defaults, valid values, reload scopes, or config examples change.
+- Update `docs/COMMANDS.md` whenever command syntax, permissions, hidden utilities, output locations, or console support change.
+- Do **not** leave these reference docs describing removed, renamed, or outdated behaviour.
 
 ### CHANGELOG.md
 - Every pull request or meaningful commit **must** include a corresponding entry in `CHANGELOG.md`.
@@ -35,6 +42,8 @@ Follow them every time code, documentation, or configuration is added or changed
   - Sections: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`.
   - New work goes under `## [Unreleased]` until a version is tagged.
   - On release: move `[Unreleased]` entries into a dated version block and update the comparison links at the bottom.
+- Within each `[Unreleased]` section, append new entries at the bottom so the list stays chronological.
+- Prefix every `[Unreleased]` bullet with a `YYYY-MM-DD` date. If the exact implementation date is unclear, use the best commit-backed date you can determine from git history.
 - A CHANGELOG entry is **required** for every user-facing or API-facing change, no matter how small.
 
 ---

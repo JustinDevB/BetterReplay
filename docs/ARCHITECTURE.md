@@ -1,0 +1,154 @@
+# BetterReplay Architecture
+
+BetterReplay is organized around a small set of core subsystems: plugin bootstrap, recording, playback, storage, chunk capture/playback, and operator tooling.
+
+This document is the high-level map for the current codebase. For binary archive details, see [BINARY_FORMAT_SPEC.md](BINARY_FORMAT_SPEC.md). For user-facing operations, see [COMMANDS.md](COMMANDS.md) and [CONFIGURATION.md](CONFIGURATION.md).
+
+## Core components
+
+| Area | Responsibility | Key code |
+|---|---|---|
+| Bootstrap | Starts PacketEvents, FoliaLib, config, storage, commands, API, retention, and benchmark services | [Replay.java](../src/main/java/me/justindevb/replay/Replay.java) |
+| Command surface | Dispatches `/replay` subcommands and routes hidden admin tools | [ReplayCommand.java](../src/main/java/me/justindevb/replay/ReplayCommand.java) |
+| Public API | Stable API entry point for integrations and plugins | [ReplayAPI.java](../src/main/java/me/justindevb/replay/api/ReplayAPI.java), [ReplayManager.java](../src/main/java/me/justindevb/replay/api/ReplayManager.java) |
+| Recording coordination | Starts, tracks, stops, and recovers recording sessions | [RecorderManager.java](../src/main/java/me/justindevb/replay/RecorderManager.java), [RecordingSession.java](../src/main/java/me/justindevb/replay/RecordingSession.java) |
+| Replay session lifecycle | Drives a single viewer's playback session, UI, state safety, and teardown | [ReplaySession.java](../src/main/java/me/justindevb/replay/ReplaySession.java), [ReplayViewerStateManager.java](../src/main/java/me/justindevb/replay/playback/ReplayViewerStateManager.java), [ReplayInventoryUI.java](../src/main/java/me/justindevb/replay/playback/ReplayInventoryUI.java) |
+| Playback engine | Applies timeline events, entity updates, block state changes, and chunk overlays | [PlaybackEngine.java](../src/main/java/me/justindevb/replay/playback/PlaybackEngine.java), [ReplayBlockManager.java](../src/main/java/me/justindevb/replay/playback/ReplayBlockManager.java) |
+| Storage | Persists and loads replays from file or MySQL, with format detection and codec abstractions | [ReplayStorage.java](../src/main/java/me/justindevb/replay/storage/ReplayStorage.java), [FileReplayStorage.java](../src/main/java/me/justindevb/replay/storage/FileReplayStorage.java), [MySQLReplayStorage.java](../src/main/java/me/justindevb/replay/storage/MySQLReplayStorage.java), [ReplayStorageCodec.java](../src/main/java/me/justindevb/replay/storage/ReplayStorageCodec.java), [ReplayFormatDetector.java](../src/main/java/me/justindevb/replay/storage/ReplayFormatDetector.java) |
+| Chunk capture and playback | Captures chunk baselines during recording and streams replay chunk overlays during playback | [ChunkCaptureCoordinator.java](../src/main/java/me/justindevb/replay/chunk/ChunkCaptureCoordinator.java), [ReplayChunkSnapshotSender.java](../src/main/java/me/justindevb/replay/playback/ReplayChunkSnapshotSender.java) |
+| Operator tooling | Export, debug, benchmark, and retention services | [ReplayExportCommand.java](../src/main/java/me/justindevb/replay/export/ReplayExportCommand.java), [ReplayDebugCommand.java](../src/main/java/me/justindevb/replay/debug/ReplayDebugCommand.java), [ReplayBenchmarkCommand.java](../src/main/java/me/justindevb/replay/benchmark/ReplayBenchmarkCommand.java), [ReplayRetentionService.java](../src/main/java/me/justindevb/replay/retention/ReplayRetentionService.java) |
+
+## Startup lifecycle
+
+When Paper loads the plugin, [Replay.java](../src/main/java/me/justindevb/replay/Replay.java) coordinates startup in this order:
+
+1. `onLoad()` initializes PacketEvents and registers the packet listener at low priority.
+2. `onEnable()` initializes PacketEvents, prewarms chunk registries needed by PacketEvents chunk playback, and creates the FoliaLib scheduler wrapper.
+3. The plugin constructs the recorder manager and API manager implementation.
+4. Typed configuration is initialized through `ReplayConfigManager`.
+5. Viewer state protection is registered as a Bukkit listener.
+6. The `/replay` command tree is wired, including export, debug, and benchmark handlers.
+7. The public API is exposed through `ReplayAPI.init(...)`.
+8. Storage is initialized from `General.Storage-Type`.
+9. Retention is started from the configured policy.
+10. Pending append logs are recovered so crash-interrupted recordings can still be finalized on startup.
+
+The shutdown path mirrors this: active recordings are shut down, active replay sessions are stopped, retention is stopped, PacketEvents is terminated, and MySQL resources are closed.
+
+## Recording pipeline
+
+Recording starts at the `/replay start` command or through the public `ReplayManager` API.
+
+1. [ReplayCommand.java](../src/main/java/me/justindevb/replay/ReplayCommand.java) or an API caller routes the request into the manager implementation.
+2. [RecorderManager.java](../src/main/java/me/justindevb/replay/RecorderManager.java) creates or looks up a [RecordingSession.java](../src/main/java/me/justindevb/replay/RecordingSession.java).
+3. PacketEvents listeners and Bukkit-side hooks append timeline events for movement, interaction, inventory/equipment updates, blocks, and lifecycle changes.
+4. Optional chunk capture records palette-compressed chunk baselines around tracked players.
+5. Active recordings are written to a crash-safe append-log path first.
+6. On save, the recording is finalized into a binary `.br` archive for the active storage backend.
+
+Important recording characteristics:
+
+- Held-item swaps, equipment snapshots, and storage inventory snapshots are captured as dedicated event types.
+- New binary archives store equipment and storage payloads as separate raw-byte records.
+- Legacy JSON replays can still be read during the migration window, but new saves are finalized as `.br` archives.
+- If the server crashes while recording, startup recovery can resume and finalize orphaned append logs instead of silently losing them.
+
+## Playback pipeline
+
+A replay session is viewer-centric: one [ReplaySession.java](../src/main/java/me/justindevb/replay/ReplaySession.java) coordinates all playback state for one player.
+
+1. The session loads replay playback data from storage, including timeline and optional chunk data.
+2. If the viewer already has an active session, BetterReplay transfers replay inventory and saved viewer state to the new session before stopping the old one.
+3. The viewer's live state is captured.
+4. Viewer safety rules are applied, including safety mode, vanish, and later restoration behavior.
+5. The viewer is teleported asynchronously to the first replay location.
+6. The replay inventory UI is shown, with pause, seek, step, speed, and stop controls.
+7. A FoliaLib timer drives the timeline tick loop, feeding events into `PlaybackEngine` and `ReplayBlockManager`.
+8. On stop, fake entities, block overlays, chunk overlays, and viewer state are restored and the session is removed from the registry.
+
+Playback-specific subsystems:
+
+- `PlaybackEngine` applies timeline events to recorded entities and replay viewers.
+- `ReplayBlockManager` handles block snapshots, break stages, and chunk-overlay coordination.
+- `ReplayInventoryUI` provides pause, seek, step, speed, and stop controls.
+- `ReplayViewerStateManager` preserves the real viewer's live-world location, mode, and flight state and can restore it after disconnect/rejoin.
+
+## Chunk capture and chunk-aware playback
+
+Chunk support is optional and only applies to binary `.br` archives.
+
+During recording:
+
+- `Recording.Chunk-Capture.Enabled` turns baseline capture on.
+- `ChunkCaptureCoordinator` tracks chunk interest around recorded players.
+- Captured chunk baselines are stored in archive chunk regions alongside the replay timeline.
+
+During playback:
+
+- `ReplayBlockManager` and chunk playback helpers stream replay chunk snapshots around the viewer.
+- `Playback.Chunk-Mode` decides whether live chunks are restored immediately when they leave the replay window or only when the replay stops.
+- Packet-friendly send and clear limits smooth out chunk overlay cost across ticks.
+- Timing diagnostics can log replay chunk preparation, replay load, and live restore timings for MSPT troubleshooting.
+
+## Storage model
+
+BetterReplay keeps storage backend selection behind the [ReplayStorage.java](../src/main/java/me/justindevb/replay/storage/ReplayStorage.java) interface.
+
+- `FileReplayStorage` stores replays under the plugin data folder.
+- `MySQLReplayStorage` stores replay payloads in MySQL.
+- `ReplayStorageCodec` and `ReplayFormatDetector` allow the loader to distinguish legacy JSON payloads from finalized binary archives.
+- New saves are written as binary `.br` archives with a manifest, payload entries, and optional chunk regions.
+- Current binary archives use replay format `v2`.
+
+Compatibility notes:
+
+- Legacy JSON replay loading is temporary compatibility support.
+- Older alpha `.br` archives that predate the `v2` inventory/event split are intentionally unsupported by current builds.
+- Binary payload storage in MySQL requires a `LONGBLOB` data column; initialization widens the column automatically when needed.
+
+## Commands, API, and admin tooling
+
+The same core managers back both commands and integrations:
+
+- `/replay` commands route through [ReplayCommand.java](../src/main/java/me/justindevb/replay/ReplayCommand.java).
+- Plugin integrations use [ReplayManager.java](../src/main/java/me/justindevb/replay/api/ReplayManager.java) through [ReplayAPI.java](../src/main/java/me/justindevb/replay/api/ReplayAPI.java).
+- Export, debug, and benchmark utilities are thin operator surfaces over the same storage and codec layers.
+- Retention and replay protection operate on saved replay metadata rather than the active session layer.
+
+See [API.md](API.md) for the public integration surface and [COMMANDS.md](COMMANDS.md) for the operator-facing command reference.
+
+## Threading and safety model
+
+BetterReplay has to cross async and main-thread boundaries carefully because it combines PacketEvents, Bukkit, FoliaLib, and storage operations.
+
+- Bukkit API access must be scheduled back onto the server thread through FoliaLib when reached from async or packet threads.
+- Packet receive/send callbacks can arrive off-thread, so recording code that touches Bukkit state must reschedule safely.
+- Viewer teleports during replay startup use `teleportAsync(...)` through FoliaLib for safer Paper/Folia compatibility.
+- Shared mutable state used across async work, packet listeners, and scheduled tasks must use thread-safe collections.
+- Events that have to be fired synchronously, such as `RecordingStopEvent`, are intentionally dispatched on the main thread.
+
+## Package map
+
+At a package level, the codebase is currently organized like this:
+
+- `api/` public API and events
+- `benchmark/` synthetic workload generation and report writing
+- `chunk/` chunk baseline capture and decoding support
+- `config/` typed config keys, migrations, and reload reporting
+- `debug/` replay inspection and dump tooling
+- `entity/` recorded-entity wrappers used during playback
+- `export/` filtered export support
+- `listeners/` PacketEvents and Bukkit listeners that feed recording or playback support
+- `playback/` viewer UI, block/chunk playback, and viewer state safety
+- `recording/` timeline event types and recording-time structures
+- `retention/` retention cleanup policy and scheduling
+- `storage/` backend implementations, codecs, archive support, and compatibility
+- `util/` supporting cache, update checking, and helpers
+
+## Related documents
+
+- [API.md](API.md)
+- [COMMANDS.md](COMMANDS.md)
+- [CONFIGURATION.md](CONFIGURATION.md)
+- [BINARY_FORMAT_SPEC.md](BINARY_FORMAT_SPEC.md)
+- [ARCHIVE_MANIFEST_SCHEMA.md](ARCHIVE_MANIFEST_SCHEMA.md)
