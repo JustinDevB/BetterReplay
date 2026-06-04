@@ -48,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-05-31: Replay playback now returns viewers to their original location and gameplay state by default, including disconnect and rejoin recovery
 - 2026-06-02: Replay viewers can no longer pick up live world items during playback, preventing replay inventory lockups from stray pickups
 - 2026-06-03: Replay viewer startup teleports now use asynchronous teleports for safer Paper and Folia compatibility
+- 2026-06-04: GitHub Actions publishing was split into separate CI, dev alpha, and main release workflows so dev alpha versions now increment exactly once per published alpha build
 
 ## [1.4.0] - 2026-04-10
 

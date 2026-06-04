@@ -1,0 +1,105 @@
+name: Publish Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  publish-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout git repo
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          java-version: 26
+          distribution: 'temurin'
+
+      - name: Build
+        run: mvn install
+
+      - name: Resolve version
+        id: version
+        run: echo "VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
+
+      - name: Resolve Modrinth changelog
+        id: modrinth_changelog
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+          from pathlib import Path
+
+          changelog_path = Path("CHANGELOG.md")
+          text = changelog_path.read_text(encoding="utf-8")
+          matches = list(re.finditer(r'^## \[(.+?)\](?: - .*)?$', text, re.MULTILINE))
+
+          sections = {}
+          for index, match in enumerate(matches):
+              start = match.end()
+              end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+              sections[match.group(1)] = text[start:end].strip()
+
+          version = os.environ["VERSION"]
+          target = version.split("-", 1)[0]
+          body = sections.get(target)
+
+          if not body:
+              print(f"Unable to find changelog section [{target}] in {changelog_path}.", file=sys.stderr)
+              sys.exit(1)
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write("CHANGELOG<<EOF\n")
+              output.write(f"## [{target}]\n\n{body}\n")
+              output.write("EOF\n")
+          PY
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: BetterReplay-release
+          path: target/*.jar
+
+      - name: Publish to Modrinth
+        if: github.repository == 'justindevb/BetterReplay'
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: ${{ secrets.MODRINTH_PROJECT_ID }}
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+          modrinth-changelog: ${{ steps.modrinth_changelog.outputs.CHANGELOG }}
+          files: target/BetterReplay-*.jar
+          version: ${{ steps.version.outputs.VERSION }}
+          version-type: release
+          loaders: |
+            paper
+            purpur
+            folia
+            spigot
+            bukkit
+          game-versions: |
+            1.21
+            1.21.1
+            1.21.2
+            1.21.3
+            1.21.4
+            1.21.5
+            1.21.6
+            1.21.7
+            1.21.8
+            1.21.9
+            1.21.10
+            1.21.11
+            26.1.1
+            26.1.2
+          dependencies: |
+            packetevents(required)
