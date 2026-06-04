@@ -8,6 +8,7 @@ import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.storage.ReplayDeleteResult;
 import me.justindevb.replay.storage.ReplayProtectionResult;
+import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.storage.ReplayStorageType;
 import me.justindevb.replay.storage.ReplaySummary;
 import org.bukkit.Bukkit;
@@ -35,6 +36,7 @@ class ReplayCommandTest {
     @Mock private ReplayBenchmarkCommand replayBenchmarkCommand;
     @Mock private ReplayExportCommand replayExportCommand;
     @Mock private ReplayDebugCommand replayDebugCommand;
+    @Mock private ReplayStorage replayStorage;
     @Mock private Player player;
     @Mock private Command command;
 
@@ -347,17 +349,24 @@ class ReplayCommandTest {
         void missingArgs_showsUsage() {
             when(player.hasPermission("replay.play")).thenReturn(true);
             replayCommand.onCommand(player, command, "replay", new String[]{"play"});
-            verify(player).sendMessage("§c/replay play <name>");
+            verify(player).sendMessage("§c/replay play <name> [server:<server>]");
         }
 
         @Test
         void validPlay_startsReplay() {
             when(player.hasPermission("replay.play")).thenReturn(true);
-            when(replayManager.startReplay("test", player))
-                    .thenReturn(CompletableFuture.completedFuture(Optional.empty()));
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = immediateReplayPlugin();
+                when(plugin.getReplayStorage()).thenReturn(replayStorage);
+                when(replayStorage.replayExists("test"))
+                        .thenReturn(CompletableFuture.completedFuture(true));
+                when(replayManager.startReplay("test", player))
+                        .thenReturn(CompletableFuture.completedFuture(Optional.empty()));
+                replay.when(Replay::getInstance).thenReturn(plugin);
 
-            replayCommand.onCommand(player, command, "replay", new String[]{"play", "test"});
-            verify(replayManager).startReplay("test", player);
+                replayCommand.onCommand(player, command, "replay", new String[]{"play", "test"});
+                verify(replayManager).startReplay("test", player);
+            }
         }
     }
 
@@ -634,9 +643,9 @@ class ReplayCommandTest {
         Replay plugin = mock(Replay.class);
         com.tcoded.folialib.FoliaLib foliaLib = mock(com.tcoded.folialib.FoliaLib.class);
         com.tcoded.folialib.impl.PlatformScheduler scheduler = mock(com.tcoded.folialib.impl.PlatformScheduler.class);
-        when(plugin.getFoliaLib()).thenReturn(foliaLib);
-        when(foliaLib.getScheduler()).thenReturn(scheduler);
-        doAnswer(invocation -> {
+        lenient().when(plugin.getFoliaLib()).thenReturn(foliaLib);
+        lenient().when(foliaLib.getScheduler()).thenReturn(scheduler);
+        lenient().doAnswer(invocation -> {
             java.util.function.Consumer<?> consumer = invocation.getArgument(0);
             consumer.accept(null);
             return null;

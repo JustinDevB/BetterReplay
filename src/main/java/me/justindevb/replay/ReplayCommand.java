@@ -397,7 +397,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
             }
         }
         if (p.hasPermission("replay.play"))
-            p.sendMessage("§e/replay play <name> §7- Play a saved replay");
+            p.sendMessage("§e/replay play <name> [server:<server>] §7- Play a saved replay");
         if (p.hasPermission("replay.list"))
             p.sendMessage("§e/replay list [page] §7- List saved replays");
         if (p.hasPermission("replay.delete"))
