@@ -42,7 +42,7 @@ jobs:
 
           base = read_maven_version()
           version = None
-          canonical_repo = os.environ.get("GITHUB_REPOSITORY") == "justindevb/BetterReplay"
+          canonical_repo = os.environ.get("GITHUB_REPOSITORY").lower() == "justindevb/betterreplay"
           modrinth_project_id = os.environ.get("MODRINTH_PROJECT_ID", "").strip()
 
           if canonical_repo and modrinth_project_id:
