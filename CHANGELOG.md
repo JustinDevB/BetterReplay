@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-02: Replay viewers can no longer pick up live world items during playback, preventing replay inventory lockups from stray pickups
 - 2026-06-03: Replay viewer startup teleports now use asynchronous teleports for safer Paper and Folia compatibility
 - 2026-06-04: Dev alpha publishing now derives the next `-alpha.N` version from existing Modrinth releases for the current base version instead of `GITHUB_RUN_NUMBER`, so prereleases track the next unreleased line (now `1.5.0-alpha.N`) and workflow renames cannot reset alpha numbering
+- 2026-06-06: Recorded-player menu teleports now use FoliaLib asynchronous teleports instead of direct player teleports
 
 ## [1.4.0] - 2026-04-10
 

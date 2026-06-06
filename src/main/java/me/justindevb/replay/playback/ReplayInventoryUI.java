@@ -1,5 +1,6 @@
 package me.justindevb.replay.playback;
 
+import me.justindevb.replay.Replay;
 import me.justindevb.replay.entity.RecordedEntity;
 import me.justindevb.replay.entity.RecordedPlayer;
 import net.kyori.adventure.text.Component;
@@ -43,6 +44,7 @@ public class ReplayInventoryUI implements Listener {
     }
 
     private final Player viewer;
+    private final Replay replay;
     private final Supplier<Map<UUID, RecordedEntity>> recordedEntitiesSupplier;
     private final SessionControl sessionControl;
 
@@ -50,9 +52,11 @@ public class ReplayInventoryUI implements Listener {
     private ItemStack[] viewerArmor;
     private ItemStack viewerOffHand;
 
-    public ReplayInventoryUI(Player viewer,
+    public ReplayInventoryUI(Replay replay,
+                             Player viewer,
                              Supplier<Map<UUID, RecordedEntity>> recordedEntitiesSupplier,
                              SessionControl sessionControl) {
+        this.replay = replay;
         this.viewer = viewer;
         this.recordedEntitiesSupplier = recordedEntitiesSupplier;
         this.sessionControl = sessionControl;
@@ -339,10 +343,15 @@ public class ReplayInventoryUI implements Listener {
         if (recorded == null)
             return;
 
-        // Teleport needed - use the replay's FoliaLib but accessed via the supplier pattern
-        // The teleportAsync call requires FoliaLib which is on the Replay instance.
-        // We'll rely on the caller providing this capability or use Bukkit's built-in teleport.
-        player.teleport(recorded.getCurrentLocation());
+        Location targetLocation = recorded.getCurrentLocation();
+        if (targetLocation == null || targetLocation.getWorld() == null)
+            return;
+
+        Location teleportLocation = targetLocation.clone();
+        if (teleportLocation == null)
+            return;
+
+        replay.getFoliaLib().getScheduler().teleportAsync(player, teleportLocation);
     }
 
     @EventHandler

@@ -87,7 +87,7 @@ public class ReplaySession implements Listener, PacketListener {
 
         this.blockManager = new ReplayBlockManager(viewer, replay, chunkData);
         this.playbackEngine = new PlaybackEngine(viewer, replay, trackedEntityIds, deadEntities, recordedEntities, blockManager);
-        this.inventoryUI = new ReplayInventoryUI(viewer, () -> recordedEntities, new ReplayInventoryUI.SessionControl() {
+        this.inventoryUI = new ReplayInventoryUI(replay, viewer, () -> recordedEntities, new ReplayInventoryUI.SessionControl() {
             @Override public void togglePause() {
                 paused = !paused;
                 if (paused) {
