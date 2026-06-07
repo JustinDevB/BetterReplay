@@ -3,6 +3,9 @@ package me.justindevb.replay.velocity;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.config.ReplayConfigSetting;
+import net.kyori.adventure.text.Component;
+import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 
 public class ReplayTransferManager {
