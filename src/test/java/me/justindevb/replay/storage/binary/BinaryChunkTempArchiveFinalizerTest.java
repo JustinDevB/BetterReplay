@@ -23,49 +23,52 @@ class BinaryChunkTempArchiveFinalizerTest {
 
     @Test
     void finalizeArtifacts_convertsTempRegionFilesIntoArchiveEntries() throws Exception {
-        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
-        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 1, 2, 3 }));
-        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 1, 1), new byte[] { 4, 5 }));
+        try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 1, 2, 3 }));
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 1, 1), new byte[] { 4, 5 }));
 
-        ReplayChunkData chunkData = finalizer.finalizeArtifacts(writer.snapshotArtifacts());
+            ReplayChunkData chunkData = finalizer.finalizeArtifacts(writer.snapshotArtifacts());
 
-        assertTrue(chunkData.hasChunkData());
-        assertEquals(1, chunkData.metadata().chunkRegionEntryCount());
-        assertEquals(2, chunkData.metadata().chunkEntryCount());
-        assertEquals(1, chunkData.regionEntries().size());
+            assertTrue(chunkData.hasChunkData());
+            assertEquals(1, chunkData.metadata().chunkRegionEntryCount());
+            assertEquals(2, chunkData.metadata().chunkEntryCount());
+            assertEquals(1, chunkData.regionEntries().size());
 
-        Map.Entry<String, byte[]> entry = chunkData.regionEntries().entrySet().iterator().next();
-        assertEquals("chunks/world/r.0.0.brregion", entry.getKey());
-        assertEquals(2, regionCodec.decode(entry.getValue()).entries().size());
+            Map.Entry<String, byte[]> entry = chunkData.regionEntries().entrySet().iterator().next();
+            assertEquals("chunks/world/r.0.0.brregion", entry.getKey());
+            assertEquals(2, regionCodec.decode(entry.getValue()).entries().size());
+        }
     }
 
     @Test
     void finalizeArtifacts_keepsLastChunkRecordWhenTempRegionContainsDuplicates() throws Exception {
         Path root = tempDir.resolve("artifacts");
-        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(root);
-        ChunkCoordinate coordinate = new ChunkCoordinate("world", 0, 0);
-        writer.append(new CapturedChunkBaseline(coordinate, new byte[] { 1 }));
-        writer.append(new CapturedChunkBaseline(coordinate, new byte[] { 1, 2, 3, 4 }));
+        try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(root)) {
+            ChunkCoordinate coordinate = new ChunkCoordinate("world", 0, 0);
+            writer.append(new CapturedChunkBaseline(coordinate, new byte[] { 1 }));
+            writer.append(new CapturedChunkBaseline(coordinate, new byte[] { 1, 2, 3, 4 }));
 
-        ReplayChunkData chunkData = finalizer.finalizeArtifacts(new ChunkRecordingArtifacts(root, 2, 1));
-        BinaryChunkRegionEntry entry = regionCodec.decode(chunkData.regionEntries().values().iterator().next()).entries().getFirst();
+            ReplayChunkData chunkData = finalizer.finalizeArtifacts(new ChunkRecordingArtifacts(root, 2, 1));
+            BinaryChunkRegionEntry entry = regionCodec.decode(chunkData.regionEntries().values().iterator().next()).entries().getFirst();
 
-        assertEquals(1, chunkData.metadata().chunkEntryCount());
-        assertEquals(4, entry.uncompressedLength());
+            assertEquals(1, chunkData.metadata().chunkEntryCount());
+            assertEquals(4, entry.uncompressedLength());
+        }
     }
 
     @Test
     void finalizeArtifacts_preservesChunkPayloadFormatInMetadata() throws Exception {
-        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir);
-        writer.append(new CapturedChunkBaseline(
-                new ChunkCoordinate("world", 0, 0),
-                new byte[] { 1, 2, 3 },
-                BinaryChunkPayloadFormat.BRCP));
+        try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
+            writer.append(new CapturedChunkBaseline(
+                    new ChunkCoordinate("world", 0, 0),
+                    new byte[] { 1, 2, 3 },
+                    BinaryChunkPayloadFormat.BRCP));
 
-        ReplayChunkData chunkData = finalizer.finalizeArtifacts(writer.snapshotArtifacts());
+            ReplayChunkData chunkData = finalizer.finalizeArtifacts(writer.snapshotArtifacts());
 
-        assertEquals(BinaryChunkPayloadFormat.BRCP, chunkData.metadata().payloadFormat());
-        assertEquals(BinaryChunkPayloadFormat.BRCP.manifestValue(), chunkData.metadata().chunkPayloadFormat());
-        assertEquals(1, chunkData.metadata().chunkPayloadVersion());
+            assertEquals(BinaryChunkPayloadFormat.BRCP, chunkData.metadata().payloadFormat());
+            assertEquals(BinaryChunkPayloadFormat.BRCP.manifestValue(), chunkData.metadata().chunkPayloadFormat());
+            assertEquals(1, chunkData.metadata().chunkPayloadVersion());
+        }
     }
 }

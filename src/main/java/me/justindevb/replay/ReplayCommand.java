@@ -7,13 +7,11 @@ import me.justindevb.replay.config.ReplayConfigSetting;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.storage.ReplayDeleteResult;
-import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplaySummary;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -28,6 +26,10 @@ import java.util.stream.Collectors;
 import java.util.logging.Level;
 
 public class ReplayCommand implements CommandExecutor, TabCompleter {
+    private static final String DEFAULT_LIST_PROTECTED_COLOR = "\u00A76";
+    private static final char LEGACY_COLOR_CODE_CHAR = '\u00A7';
+    private static final String LEGACY_COLOR_CODES = "0123456789AaBbCcDdEeFfKkLlMmNnOoRrXx";
+
     private final ReplayManager replayManager;
     private final ReplayBenchmarkCommand replayBenchmarkCommand;
     private final ReplayExportCommand replayExportCommand;
@@ -478,13 +480,30 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
     }
 
     private String resolveConfiguredColor(String configuredColor) {
-        String defaultColor = ChatColor.GOLD.toString();
         if (configuredColor == null || configuredColor.isBlank()) {
-            return defaultColor;
+            return DEFAULT_LIST_PROTECTED_COLOR;
         }
 
-        String translated = ChatColor.translateAlternateColorCodes('&', configuredColor.trim());
-        return translated.contains(String.valueOf(ChatColor.COLOR_CHAR)) ? translated : defaultColor;
+        String translated = translateLegacyColorCodes(configuredColor.trim());
+        return translated.indexOf(LEGACY_COLOR_CODE_CHAR) >= 0 ? translated : DEFAULT_LIST_PROTECTED_COLOR;
+    }
+
+    private String translateLegacyColorCodes(String input) {
+        StringBuilder translated = new StringBuilder(input.length());
+        for (int index = 0; index < input.length(); index++) {
+            char current = input.charAt(index);
+            if (current == '&' && index + 1 < input.length() && isLegacyColorCode(input.charAt(index + 1))) {
+                translated.append(LEGACY_COLOR_CODE_CHAR).append(Character.toLowerCase(input.charAt(index + 1)));
+                index++;
+                continue;
+            }
+            translated.append(current);
+        }
+        return translated.toString();
+    }
+
+    private boolean isLegacyColorCode(char code) {
+        return LEGACY_COLOR_CODES.indexOf(code) >= 0;
     }
 
     private boolean handleProtect(CommandSender sender, String[] args, String protectedBy) {

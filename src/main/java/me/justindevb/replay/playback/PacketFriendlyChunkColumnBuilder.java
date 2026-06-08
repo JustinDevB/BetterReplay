@@ -14,7 +14,6 @@ import com.github.retrooper.packetevents.protocol.world.chunk.Column;
 import com.github.retrooper.packetevents.protocol.world.chunk.LightData;
 import com.github.retrooper.packetevents.protocol.world.chunk.TileEntity;
 import com.github.retrooper.packetevents.protocol.world.chunk.impl.v_1_18.Chunk_v1_18;
-import com.github.retrooper.packetevents.protocol.world.chunk.palette.DataPalette;
 import com.github.retrooper.packetevents.protocol.world.states.WrappedBlockState;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec;
@@ -22,7 +21,6 @@ import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec
 import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -40,6 +38,8 @@ final class PacketFriendlyChunkColumnBuilder {
     private static final byte[][] EMPTY_LIGHT_ARRAYS = new byte[0][];
     private static final Map<ClientVersion, Map<String, Integer>> BLOCK_STATE_ID_CACHE = new ConcurrentHashMap<>();
     private static final Map<ClientVersion, Integer> AIR_BLOCK_STATE_ID_CACHE = new ConcurrentHashMap<>();
+    private static final Method GET_BIOME_DATA_METHOD = resolveChunkMethod("getBiomeData");
+    private static final Method SET_PALETTE_VALUE_METHOD = resolvePaletteSetMethod();
 
     record PreparedChunkPacket(Column column, LightData lightData) {
         PreparedChunkPacket {
@@ -95,44 +95,33 @@ final class PacketFriendlyChunkColumnBuilder {
             BinaryPacketFriendlyChunkPayloadCodec.SectionPayload section,
             ClientVersion clientVersion
     ) throws IOException {
-        DataPalette chunkData = DataPalette.createForChunk();
-        DataPalette biomeData = DataPalette.createForBiome();
+        Chunk_v1_18 chunk = new Chunk_v1_18(clientVersion);
 
         int[] resolvedBlockPalette = resolveBlockPaletteStateIds(clientVersion, section.blockPalette());
-        boolean[] fluidPaletteStates = resolveFluidPaletteStates(section.blockPalette());
-        int airId = resolveAirBlockStateId(clientVersion);
-        int blockCount = 0;
-        int fluidCount = 0;
         for (int y = 0; y < 16; y++) {
             for (int z = 0; z < 16; z++) {
                 for (int x = 0; x < 16; x++) {
                     int logicalIndex = (y << 8) | (z << 4) | x;
                     int paletteIndex = decodePackedIndex(section.blockBitsPerEntry(), section.blockWords(), logicalIndex);
                     int resolvedPaletteIndex = Math.min(paletteIndex, resolvedBlockPalette.length - 1);
-                    int blockStateId = resolvedBlockPalette[resolvedPaletteIndex];
-                    chunkData.set(x, y, z, blockStateId);
-                    if (blockStateId != airId) {
-                        blockCount++;
-                    }
-                    if (fluidPaletteStates[resolvedPaletteIndex]) {
-                        fluidCount++;
-                    }
+                    chunk.set(x, y, z, resolvedBlockPalette[resolvedPaletteIndex]);
                 }
             }
         }
 
+        Object biomeData = getBiomeData(chunk);
         int[] resolvedBiomePalette = resolveBiomePaletteIds(clientVersion, section.biomePalette());
         for (int y = 0; y < 4; y++) {
             for (int z = 0; z < 4; z++) {
                 for (int x = 0; x < 4; x++) {
                     int logicalIndex = (y << 4) | (z << 2) | x;
                     int paletteIndex = decodePackedIndex(section.biomeBitsPerEntry(), section.biomeWords(), logicalIndex);
-                    biomeData.set(x, y, z, resolvedBiomePalette[Math.min(paletteIndex, resolvedBiomePalette.length - 1)]);
+                    setPaletteValue(biomeData, x, y, z, resolvedBiomePalette[Math.min(paletteIndex, resolvedBiomePalette.length - 1)]);
                 }
             }
         }
 
-        return createSectionChunk(clientVersion, blockCount, fluidCount, chunkData, biomeData);
+        return chunk;
     }
 
     private TileEntity[] buildTileEntities(
@@ -254,108 +243,36 @@ final class PacketFriendlyChunkColumnBuilder {
                 || blockStateString.contains("waterlogged=true");
     }
 
-    static Chunk_v1_18 createSectionChunk(
-            ClientVersion clientVersion,
-            int blockCount,
-            int fluidCount,
-            DataPalette chunkData,
-            DataPalette biomeData
-    ) throws IOException {
+    private static Object getBiomeData(Chunk_v1_18 chunk) throws IOException {
         try {
-            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
-                    ClientVersion.class,
-                    int.class,
-                    int.class,
-                    DataPalette.class,
-                    DataPalette.class);
-            return constructor.newInstance(clientVersion, blockCount, fluidCount, chunkData, biomeData);
-        } catch (NoSuchMethodException ignored) {
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
-            throw new IOException("Failed to instantiate chunk section", ex);
-        }
-
-        try {
-            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
-                    int.class,
-                    int.class,
-                    DataPalette.class,
-                    DataPalette.class);
-            return constructor.newInstance(blockCount, fluidCount, chunkData, biomeData);
-        } catch (NoSuchMethodException ignored) {
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
-            throw new IOException("Failed to instantiate chunk section", ex);
-        }
-
-        try {
-            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
-                    ClientVersion.class,
-                    int.class,
-                    DataPalette.class,
-                    DataPalette.class);
-            Chunk_v1_18 chunk = constructor.newInstance(clientVersion, blockCount, chunkData, biomeData);
-            applyFluidCount(chunk, fluidCount);
-            return chunk;
-        } catch (NoSuchMethodException ignored) {
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
-            throw new IOException("Failed to instantiate chunk section", ex);
-        }
-
-        try {
-            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor(
-                    int.class,
-                    DataPalette.class,
-                    DataPalette.class);
-            Chunk_v1_18 chunk = constructor.newInstance(blockCount, chunkData, biomeData);
-            applyFluidCount(chunk, fluidCount);
-            return chunk;
-        } catch (NoSuchMethodException ignored) {
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
-            throw new IOException("Failed to instantiate chunk section", ex);
-        }
-
-        try {
-            Constructor<Chunk_v1_18> constructor = Chunk_v1_18.class.getConstructor();
-            Chunk_v1_18 chunk = constructor.newInstance();
-            applyBlockCount(chunk, blockCount);
-            applyFluidCount(chunk, fluidCount);
-            applyPalette(chunk, "setChunkData", chunkData);
-            applyPalette(chunk, "setBiomeData", biomeData);
-            return chunk;
-        } catch (NoSuchMethodException ignored) {
-        } catch (InstantiationException | IllegalAccessException | InvocationTargetException ex) {
-            throw new IOException("Failed to instantiate chunk section", ex);
-        }
-
-        throw new IOException("No compatible Chunk_v1_18 constructor was found at runtime");
-    }
-
-    private static void applyBlockCount(Chunk_v1_18 chunk, int blockCount) throws IOException {
-        try {
-            Method method = Chunk_v1_18.class.getMethod("setBlockCount", int.class);
-            method.invoke(chunk, blockCount);
-        } catch (NoSuchMethodException ignored) {
+            return GET_BIOME_DATA_METHOD.invoke(chunk);
         } catch (IllegalAccessException | InvocationTargetException ex) {
-            throw new IOException("Failed to set block count on chunk section", ex);
+            throw new IOException("Failed to read biome palette from chunk section", ex);
         }
     }
 
-    private static void applyFluidCount(Chunk_v1_18 chunk, int fluidCount) throws IOException {
+    private static void setPaletteValue(Object palette, int x, int y, int z, int value) throws IOException {
         try {
-            Method method = Chunk_v1_18.class.getMethod("setFluidCount", int.class);
-            method.invoke(chunk, fluidCount);
-        } catch (NoSuchMethodException ignored) {
-        } catch (IllegalAccessException | InvocationTargetException ex) {
-            throw new IOException("Failed to set fluid count on chunk section", ex);
-        }
-    }
-
-    private static void applyPalette(Chunk_v1_18 chunk, String methodName, DataPalette palette) throws IOException {
-        try {
-            Method method = Chunk_v1_18.class.getMethod(methodName, DataPalette.class);
-            method.invoke(chunk, palette);
-        } catch (NoSuchMethodException ignored) {
+            SET_PALETTE_VALUE_METHOD.invoke(palette, x, y, z, value);
         } catch (IllegalAccessException | InvocationTargetException ex) {
             throw new IOException("Failed to set palette data on chunk section", ex);
+        }
+    }
+
+    private static Method resolveChunkMethod(String name, Class<?>... parameterTypes) {
+        try {
+            return Chunk_v1_18.class.getMethod(name, parameterTypes);
+        } catch (NoSuchMethodException ex) {
+            throw new ExceptionInInitializerError(ex);
+        }
+    }
+
+    private static Method resolvePaletteSetMethod() {
+        try {
+            Class<?> paletteClass = GET_BIOME_DATA_METHOD.getReturnType();
+            return paletteClass.getMethod("set", int.class, int.class, int.class, int.class);
+        } catch (NoSuchMethodException ex) {
+            throw new ExceptionInInitializerError(ex);
         }
     }
 

@@ -367,13 +367,6 @@ final class BinaryReplayAppendLogCodec {
         };
     }
 
-    private static void writeNullableStringList(ByteArrayOutputStream out, StringIndexer stringIndexer, List<String> values) throws IOException {
-        writeVarInt(out, values.size());
-        for (String value : values) {
-            writeNullableStringRef(out, stringIndexer, value);
-        }
-    }
-
     private static void writeSerializedItemList(ByteArrayOutputStream out, List<SerializedItemData> values) {
         writeVarInt(out, values.size());
         for (SerializedItemData value : values) {
@@ -410,10 +403,6 @@ final class BinaryReplayAppendLogCodec {
 
     private static void writeInt(ByteArrayOutputStream out, int value) {
         writeBytes(out, ByteBuffer.allocate(Integer.BYTES).order(BinaryReplayFormat.PRIMITIVE_BYTE_ORDER).putInt(value).array());
-    }
-
-    private static void writeLong(ByteArrayOutputStream out, long value) {
-        writeBytes(out, ByteBuffer.allocate(Long.BYTES).order(BinaryReplayFormat.PRIMITIVE_BYTE_ORDER).putLong(value).array());
     }
 
     private static void writeFloat(ByteArrayOutputStream out, float value) {

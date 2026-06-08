@@ -74,7 +74,6 @@ public class ReplaySession implements Listener, PacketListener {
     }
 
     public ReplaySession(ReplayPlaybackData replayData, Player viewer, Replay replay) {
-        this.timeline = timeline;
         this.viewer = viewer;
         this.replay = replay;
         this.timeline = replayData.timeline();

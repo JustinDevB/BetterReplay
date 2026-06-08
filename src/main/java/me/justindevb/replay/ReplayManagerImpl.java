@@ -3,7 +3,6 @@ package me.justindevb.replay;
 import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.api.ReplayManager;
 import me.justindevb.replay.storage.ReplayDeleteResult;
-import me.justindevb.replay.storage.ReplayPlaybackData;
 import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.storage.ReplayStorage;

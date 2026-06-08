@@ -28,12 +28,14 @@ class BlockEntityNbtReflectionSupportTest {
     }
 
     private static final class SnapshotHolder {
+        @SuppressWarnings("unused")
         public FakeCompound getSnapshotNBT() {
             return new FakeCompound();
         }
     }
 
     private static final class FakeCompound {
+        @SuppressWarnings("unused")
         public void write(DataOutput out) throws IOException {
             out.writeByte(0x01);
             out.writeShort(1);

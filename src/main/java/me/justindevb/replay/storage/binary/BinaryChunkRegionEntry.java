@@ -1,6 +1,5 @@
 package me.justindevb.replay.storage.binary;
 
-import java.util.Arrays;
 import java.util.Objects;
 
 /**

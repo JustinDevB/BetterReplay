@@ -54,7 +54,6 @@ public class ReplayBlockManager {
     private final Replay replay;
     private final ReplayChunkPlaybackCache chunkPlaybackCache;
     private final BinaryChunkPayloadFormat chunkPayloadFormat;
-    private final BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec;
     private final WorldChunkPacketFriendlyCaptureService liveChunkCaptureService;
     private final ReplayChunkSnapshotSender replayChunkSnapshotSender;
     private final ReplayChunkPacketPreparer replayChunkPacketPreparer;
@@ -149,7 +148,6 @@ public class ReplayBlockManager {
         this.replay = replay;
         this.chunkPlaybackCache = new ReplayChunkPlaybackCache(replayChunkData);
         this.chunkPayloadFormat = replayChunkData.metadata().payloadFormat();
-        this.packetFriendlyPayloadCodec = packetFriendlyPayloadCodec;
         this.liveChunkCaptureService = new WorldChunkPacketFriendlyCaptureService(packetFriendlyPayloadCodec);
         PacketFriendlyChunkColumnBuilder chunkColumnBuilder = new PacketFriendlyChunkColumnBuilder();
         this.replayChunkPacketPreparer = chunkColumnBuilder::prepare;
@@ -202,7 +200,6 @@ public class ReplayBlockManager {
             Replay replay,
             ReplayChunkPlaybackCache chunkPlaybackCache,
             BinaryChunkPayloadFormat chunkPayloadFormat,
-            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
             WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
             ReplayChunkSnapshotSender replayChunkSnapshotSender
     ) {
@@ -211,7 +208,6 @@ public class ReplayBlockManager {
                 replay,
                 chunkPlaybackCache,
                 chunkPayloadFormat,
-                packetFriendlyPayloadCodec,
                 liveChunkCaptureService,
                 replayChunkSnapshotSender,
                 new PacketFriendlyChunkColumnBuilder()::prepare,
@@ -233,7 +229,6 @@ public class ReplayBlockManager {
             Replay replay,
             ReplayChunkPlaybackCache chunkPlaybackCache,
             BinaryChunkPayloadFormat chunkPayloadFormat,
-            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
             WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
             ReplayChunkSnapshotSender replayChunkSnapshotSender,
             Logger logger
@@ -243,7 +238,6 @@ public class ReplayBlockManager {
             replay,
             chunkPlaybackCache,
             chunkPayloadFormat,
-            packetFriendlyPayloadCodec,
             liveChunkCaptureService,
             replayChunkSnapshotSender,
                 new PacketFriendlyChunkColumnBuilder()::prepare,
@@ -265,7 +259,6 @@ public class ReplayBlockManager {
             Replay replay,
             ReplayChunkPlaybackCache chunkPlaybackCache,
             BinaryChunkPayloadFormat chunkPayloadFormat,
-            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
             WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
             ReplayChunkSnapshotSender replayChunkSnapshotSender,
             ReplayChunkPacketPreparer replayChunkPacketPreparer,
@@ -282,7 +275,6 @@ public class ReplayBlockManager {
                 replay,
                 chunkPlaybackCache,
                 chunkPayloadFormat,
-                packetFriendlyPayloadCodec,
                 liveChunkCaptureService,
                 replayChunkSnapshotSender,
                 replayChunkPacketPreparer,
@@ -302,9 +294,8 @@ public class ReplayBlockManager {
             ReplayBlockManager(
                 Player viewer,
                 Replay replay,
-                ReplayChunkPlaybackCache chunkPlaybackCache,
-                BinaryChunkPayloadFormat chunkPayloadFormat,
-                BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
+            ReplayChunkPlaybackCache chunkPlaybackCache,
+            BinaryChunkPayloadFormat chunkPayloadFormat,
                 WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
                 ReplayChunkSnapshotSender replayChunkSnapshotSender,
                 ReplayChunkPacketPreparer replayChunkPacketPreparer,
@@ -323,7 +314,6 @@ public class ReplayBlockManager {
                 replay,
                 chunkPlaybackCache,
                 chunkPayloadFormat,
-                packetFriendlyPayloadCodec,
                 liveChunkCaptureService,
                 replayChunkSnapshotSender,
                 replayChunkPacketPreparer,
@@ -345,7 +335,6 @@ public class ReplayBlockManager {
             Replay replay,
             ReplayChunkPlaybackCache chunkPlaybackCache,
             BinaryChunkPayloadFormat chunkPayloadFormat,
-            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
             WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
             ReplayChunkSnapshotSender replayChunkSnapshotSender,
             ReplayChunkPacketPreparer replayChunkPacketPreparer,
@@ -364,7 +353,6 @@ public class ReplayBlockManager {
                 replay,
                 chunkPlaybackCache,
                 chunkPayloadFormat,
-                packetFriendlyPayloadCodec,
                 liveChunkCaptureService,
                 replayChunkSnapshotSender,
                 replayChunkPacketPreparer,
@@ -386,7 +374,6 @@ public class ReplayBlockManager {
             Replay replay,
             ReplayChunkPlaybackCache chunkPlaybackCache,
             BinaryChunkPayloadFormat chunkPayloadFormat,
-            BinaryPacketFriendlyChunkPayloadCodec packetFriendlyPayloadCodec,
             WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
             ReplayChunkSnapshotSender replayChunkSnapshotSender,
             ReplayChunkPacketPreparer replayChunkPacketPreparer,
@@ -406,7 +393,6 @@ public class ReplayBlockManager {
         this.replay = replay;
         this.chunkPlaybackCache = Objects.requireNonNull(chunkPlaybackCache, "chunkPlaybackCache");
         this.chunkPayloadFormat = Objects.requireNonNull(chunkPayloadFormat, "chunkPayloadFormat");
-        this.packetFriendlyPayloadCodec = Objects.requireNonNull(packetFriendlyPayloadCodec, "packetFriendlyPayloadCodec");
         this.liveChunkCaptureService = Objects.requireNonNull(liveChunkCaptureService, "liveChunkCaptureService");
         this.replayChunkSnapshotSender = Objects.requireNonNull(replayChunkSnapshotSender, "replayChunkSnapshotSender");
         this.replayChunkPacketPreparer = Objects.requireNonNull(replayChunkPacketPreparer, "replayChunkPacketPreparer");

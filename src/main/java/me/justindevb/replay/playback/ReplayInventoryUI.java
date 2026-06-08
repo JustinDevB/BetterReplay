@@ -21,6 +21,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -144,15 +145,18 @@ public class ReplayInventoryUI implements Listener {
 
     public void showSpeedControls(double currentSpeed) {
         String speedText = String.format("%.1fx", currentSpeed);
+        List<Component> speedLore = List.of(Component.text("Current: " + speedText, NamedTextColor.GRAY));
 
         ItemStack slower = new ItemStack(Material.ORANGE_DYE);
         ItemMeta slowerMeta = slower.getItemMeta();
         slowerMeta.displayName(Component.text("\u23EA Slower", NamedTextColor.GOLD));
+        slowerMeta.lore(speedLore);
         slower.setItemMeta(slowerMeta);
 
         ItemStack faster = new ItemStack(Material.LIGHT_BLUE_DYE);
         ItemMeta fasterMeta = faster.getItemMeta();
         fasterMeta.displayName(Component.text("\u23E9 Faster", NamedTextColor.BLUE));
+        fasterMeta.lore(speedLore);
         faster.setItemMeta(fasterMeta);
 
         viewer.getInventory().setItem(5, slower);

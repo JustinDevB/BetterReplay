@@ -174,10 +174,10 @@ class MySQLReplayStorageTest {
 
     @Test
     void saveReplay_withChunkArtifacts_roundTripsChunkPlaybackData() throws Exception {
-        BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-artifacts"));
-        writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
-
-        storage.saveReplay("binary-chunks", new ReplaySaveRequest(sampleTimeline(), 1_700_000_000_000L, writer.snapshotArtifacts())).get();
+        try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-artifacts"))) {
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+            storage.saveReplay("binary-chunks", new ReplaySaveRequest(sampleTimeline(), 1_700_000_000_000L, writer.snapshotArtifacts())).get();
+        }
 
         ArgumentCaptor<byte[]> dataCaptor = ArgumentCaptor.forClass(byte[].class);
         verify(saveStatement).setBytes(org.mockito.ArgumentMatchers.eq(2), dataCaptor.capture());

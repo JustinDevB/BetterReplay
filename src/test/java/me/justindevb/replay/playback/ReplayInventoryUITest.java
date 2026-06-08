@@ -46,7 +46,6 @@ class ReplayInventoryUITest {
     @Mock private org.bukkit.Location targetLocationClone;
 
     private final Supplier<Map<UUID, RecordedEntity>> emptyEntities = Collections::emptyMap;
-    private Supplier<Map<UUID, RecordedEntity>> entitiesSupplier;
     private final ReplayInventoryUI.SessionControl noOpControl = new ReplayInventoryUI.SessionControl() {
         @Override public void togglePause() {}
         @Override public void skipSeconds(int seconds) {}
@@ -61,7 +60,6 @@ class ReplayInventoryUITest {
         lenient().when(viewer.getInventory()).thenReturn(playerInventory);
         lenient().when(replay.getFoliaLib()).thenReturn(foliaLib);
         lenient().when(foliaLib.getScheduler()).thenReturn(scheduler);
-        entitiesSupplier = Collections::emptyMap;
     }
 
     @Test
