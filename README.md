@@ -43,6 +43,7 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 - Viewer safety controls, viewer state restoration, and optional live-player vanish during playback
 - API-first integration support for other plugins
 - Optional Floodgate soft dependency support
+- Velocity support for alternate server playback. Auto return to original server when replay finishes
 
 ## Architecture
 

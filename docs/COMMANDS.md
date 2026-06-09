@@ -18,7 +18,7 @@ If a player runs `/replay` with no subcommand, BetterReplay prints a permission-
 |---|---|---|---|
 | `/replay start <name> <player1 player2 ...> [seconds]` | `replay.start` | No | Starts a new recording. If the final token parses as an integer, it is treated as the duration in seconds. Omit it for an indefinite recording. |
 | `/replay stop <name>` | `replay.stop` | No | Stops and saves an active recording session |
-| `/replay play <name>` | `replay.play` | No | Starts replay playback for the executing player |
+| `/replay play <name> [server:<server>]` | `replay.play` | No | Starts replay playback for the executing player. Optional `server:` routes the player to a different Velocity backend before playback starts |
 | `/replay list [page]` | `replay.list` | No | Lists saved replays with clickable previous/next page controls |
 | `/replay delete <name>` | `replay.delete` | No | Deletes a saved replay unless it is protected |
 | `/replay protect <name>` | `replay.protect` | Yes | Protects a saved replay from deletion and retention cleanup |
@@ -28,7 +28,9 @@ If a player runs `/replay` with no subcommand, BetterReplay prints a permission-
 Main workflow notes:
 
 - `/replay start` uses a single-token recording name. The code reads the session name from the second argument directly.
-- Commands that operate on saved replay names such as `stop`, `play`, `delete`, `protect`, and `unprotect` join the remaining arguments back into one name, so saved replay names can contain spaces.
+- Commands that operate on saved replay names such as `stop`, `delete`, `protect`, and `unprotect` join the remaining arguments back into one name, so those saved replay names can contain spaces.
+- `/replay play` currently reads the replay name from the next token only, then optionally accepts `server:<server>` after it. Example: `/replay play Test server:Replays`.
+- The optional `server:` target is intended for Velocity setups where replay playback can be launched on another backend connected to the same BetterReplay MySQL database.
 - `/replay list` page size and protected replay color come from `List.Page-Size` and `List.Protected-Highlight-Color`.
 - Saved replay listings and replay-name tab completion use a shared 5-second cache; stale list reads refresh from the active storage backend and update the cache.
 - `/replay delete` reports whether a replay was deleted, protected, or not found.
