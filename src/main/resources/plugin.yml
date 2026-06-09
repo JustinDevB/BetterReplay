@@ -1,7 +1,7 @@
 name: ${project.artifactId}
 main: ${mainClass}
 version: ${project.version}
-author: ${author}
+authors: [JustinDevB, DriftN2Forty]
 depend: [packetevents]
 softdepend: [Floodgate]
 api-version: 1.13

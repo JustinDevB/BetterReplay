@@ -13,7 +13,6 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <mainClass>me.justindevb.replay.Replay</mainClass>
-        <author>JustinDevB</author>
         <mockito.version>5.23.0</mockito.version>
     </properties>
 
