@@ -88,6 +88,20 @@ class TimelineBackwardCompatTest {
         }
 
         @Test
+        void legacyInventoryUpdate_allowsNullContentSlots() throws Exception {
+            String json = """
+                    {"type":"inventory_update","tick":0,"uuid":"u","contents":[null,null,null]}
+                    """;
+
+            List<TimelineEvent> events = codec.decodeTimeline(json.getBytes(StandardCharsets.UTF_8), "1.4.0");
+
+            assertEquals(2, events.size());
+            TimelineEvent.InventoryStorageUpdate storage = (TimelineEvent.InventoryStorageUpdate) events.get(1);
+            assertEquals(36, storage.storage().size());
+            assertTrue(storage.storage().stream().allMatch(SerializedItemData::isEmpty));
+        }
+
+        @Test
         void attack_noTargetUuid() {
             String json = """
                     {"type":"attack","tick":0,"uuid":"u","entityUuid":"eu","entityType":"ZOMBIE"}

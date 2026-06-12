@@ -52,6 +52,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-04: Dev alpha publishing now derives the next `-alpha.N` version from existing Modrinth releases for the current base version instead of `GITHUB_RUN_NUMBER`, so prereleases track the next unreleased line (now `1.5.0-alpha.N`) and workflow renames cannot reset alpha numbering
 - 2026-06-06: Recorded-player menu teleports now use FoliaLib asynchronous teleports instead of direct player teleports
 - 2026-06-08: Fixed all compiler warnings. Maven build and test runs no longer emit unused annotation-processing or Mockito self-attach agent warnings
+- 2026-06-12: Legacy JSON replays whose inventory snapshots upgrade into split equipment/storage events now recreate recorded players correctly after replay seek/skip state reconstruction
+- 2026-06-12: Legacy JSON replay loading now accepts `null` inventory content slots from older `inventory_update` snapshots
 
 ## [1.4.0] - 2026-04-10
 

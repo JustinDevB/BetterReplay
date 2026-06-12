@@ -379,6 +379,7 @@ public class ReplaySession implements Listener, PacketListener {
 
     private void syncEntityStatesAtIndex(int targetIndex) {
         Map<UUID, TimelineEvent> firstEventByUUID = new LinkedHashMap<>();
+        Map<UUID, TimelineEvent> creationEventByUUID = collectEntityCreationEventsForSeek(timeline, targetIndex);
         Map<UUID, TimelineEvent> lastLocationByUUID = new LinkedHashMap<>();
         Map<UUID, TimelineEvent.InventoryStorageUpdate> lastInventoryByUUID = new LinkedHashMap<>();
         Map<UUID, TimelineEvent.EquipmentStateUpdate> lastEquipmentByUUID = new LinkedHashMap<>();
@@ -431,7 +432,8 @@ public class ReplaySession implements Listener, PacketListener {
             if (recordedEntities.containsKey(uuid)) continue;
             if (!lastLocationByUUID.containsKey(uuid)) continue;
 
-            TimelineEvent firstEvent = firstEventByUUID.get(uuid);
+            TimelineEvent firstEvent = creationEventByUUID.get(uuid);
+            if (firstEvent == null) continue;
             TimelineEvent locEvent = lastLocationByUUID.get(uuid);
 
             Location loc = locationFromEvent(locEvent);
@@ -466,6 +468,29 @@ public class ReplaySession implements Listener, PacketListener {
                 rp.updateEquipment(entry.getValue());
             }
         }
+    }
+
+    static Map<UUID, TimelineEvent> collectEntityCreationEventsForSeek(List<TimelineEvent> timeline, int targetIndex) {
+        Map<UUID, TimelineEvent> creationEventByUUID = new LinkedHashMap<>();
+        int end = Math.min(targetIndex, timeline.size());
+        for (int i = 0; i < end; i++) {
+            TimelineEvent event = timeline.get(i);
+            if (!isEntityCreationEvent(event)) continue;
+
+            String uuidStr = event.uuid();
+            if (uuidStr == null) continue;
+            try {
+                creationEventByUUID.putIfAbsent(UUID.fromString(uuidStr), event);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return creationEventByUUID;
+    }
+
+    private static boolean isEntityCreationEvent(TimelineEvent event) {
+        return event instanceof TimelineEvent.PlayerMove
+                || event instanceof TimelineEvent.EntityMove
+                || event instanceof TimelineEvent.EntitySpawn;
     }
 
     // -- Helpers --

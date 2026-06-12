@@ -18,6 +18,7 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -291,7 +292,7 @@ public final class JsonReplayStorageCodec implements ReplayStorageCodec {
         for (JsonElement element : object.getAsJsonArray(key)) {
             values.add(element.isJsonNull() ? null : element.getAsString());
         }
-        return List.copyOf(values);
+        return Collections.unmodifiableList(values);
     }
 
     private static List<SerializedItemData> readSerializedItemList(JsonObject object, String key) {
