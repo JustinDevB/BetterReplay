@@ -323,7 +323,7 @@ player.sendMessage("Active replays: " + replays.size());
 
 ### listSavedReplays
 
-Lists the names of all saved replays in storage.
+Lists the names of all saved replays. Results are served from a shared 5-second replay-list cache when fresh; stale reads refresh from the active storage backend and update the cache.
 
 ```java
 CompletableFuture<List<String>> listSavedReplays()
@@ -348,7 +348,7 @@ manager.listSavedReplays().thenAccept(names -> {
 
 ### listSavedReplaySummaries
 
-Lists replay metadata for administrative, retention, and protection-aware workflows.
+Lists replay metadata for administrative, retention, and protection-aware workflows. Results are served from a shared 5-second replay-list cache when fresh; stale reads refresh from the active storage backend and update the cache.
 
 ```java
 CompletableFuture<List<ReplaySummary>> listSavedReplaySummaries()

@@ -54,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-08: Fixed all compiler warnings. Maven build and test runs no longer emit unused annotation-processing or Mockito self-attach agent warnings
 - 2026-06-12: Legacy JSON replays whose inventory snapshots upgrade into split equipment/storage events now recreate recorded players correctly after replay seek/skip state reconstruction
 - 2026-06-12: Legacy JSON replay loading now accepts `null` inventory content slots from older `inventory_update` snapshots
+- 2026-06-12: Saved replay listings and replay-name tab completion now share a 5-second cache that refreshes from storage when stale, and MySQL replay overwrites now update `created_at` so recent listings reflect replaced recordings
 
 ## [1.4.0] - 2026-04-10
 

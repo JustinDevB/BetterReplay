@@ -115,10 +115,10 @@ public class MySQLReplayStorage implements ReplayStorage {
         return CompletableFuture.runAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement("""
-                 INSERT INTO replays (name, data)
-                 VALUES (?, ?)
-                 ON DUPLICATE KEY UPDATE data = VALUES(data)
-             """)) {
+                  INSERT INTO replays (name, data)
+                  VALUES (?, ?)
+                  ON DUPLICATE KEY UPDATE data = VALUES(data), created_at = CURRENT_TIMESTAMP
+              """)) {
 
                 byte[] data = encodeForStorage(name, request);
 

@@ -6,6 +6,7 @@ import me.justindevb.replay.storage.ReplayDeleteResult;
 import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.storage.ReplayStorage;
+import me.justindevb.replay.util.ReplayCache;
 import me.justindevb.replay.util.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -16,8 +17,11 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.logging.Level;
 
 public class ReplayManagerImpl implements ReplayManager {
+
+    private static final long REPLAY_LIST_CACHE_TTL_MILLIS = 5_000L;
 
     private final Replay replay;
     private final RecorderManager recorderManager;
@@ -44,10 +48,8 @@ public class ReplayManagerImpl implements ReplayManager {
                 return stopped;
             }
 
-            storage.listReplays().thenAccept(names ->
-                    replay.getReplayCache().setReplays(names)
-            ).exceptionally(ex -> {
-                replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to refresh replay cache", ex);
+            refreshReplayNames(storage).exceptionally(ex -> {
+                replay.getLogger().log(Level.SEVERE, "Failed to refresh replay cache", ex);
                 return null;
             });
         }
@@ -133,7 +135,11 @@ public class ReplayManagerImpl implements ReplayManager {
         if (storage == null) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return storage.listReplays();
+        ReplayCache cache = replay.getReplayCache();
+        if (cache.hasFreshReplays(REPLAY_LIST_CACHE_TTL_MILLIS)) {
+            return CompletableFuture.completedFuture(cache.getReplays());
+        }
+        return refreshReplayNames(storage);
     }
 
     @Override
@@ -142,7 +148,11 @@ public class ReplayManagerImpl implements ReplayManager {
         if (storage == null) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return storage.listReplaySummaries();
+        ReplayCache cache = replay.getReplayCache();
+        if (cache.hasFreshReplaySummaries(REPLAY_LIST_CACHE_TTL_MILLIS)) {
+            return CompletableFuture.completedFuture(cache.getReplaySummaries());
+        }
+        return refreshReplaySummaries(storage);
     }
 
     @Override
@@ -161,14 +171,13 @@ public class ReplayManagerImpl implements ReplayManager {
                     if (result != ReplayDeleteResult.DELETED) {
                         return CompletableFuture.completedFuture(result);
                     }
-                    return storage.listReplays()
+                    return refreshReplayNames(storage)
                             .thenApply(names -> {
-                                replay.getReplayCache().setReplays(names);
                                 return result;
                             });
                 })
                 .exceptionally(ex -> {
-                    replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to delete replay: " + name, ex);
+                    replay.getLogger().log(Level.SEVERE, "Failed to delete replay: " + name, ex);
                     return ReplayDeleteResult.NOT_FOUND;
                 });
     }
@@ -185,8 +194,9 @@ public class ReplayManagerImpl implements ReplayManager {
         }
 
         return storage.protectReplay(name, Instant.now(), protectedBy)
+                .thenCompose(result -> refreshReplaySummariesAfterProtectionChange(storage, result))
                 .exceptionally(ex -> {
-                    replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to protect replay: " + name, ex);
+                    replay.getLogger().log(Level.SEVERE, "Failed to protect replay: " + name, ex);
                     return ReplayProtectionResult.NOT_FOUND;
                 });
     }
@@ -203,15 +213,54 @@ public class ReplayManagerImpl implements ReplayManager {
         }
 
         return storage.unprotectReplay(name)
+                .thenCompose(result -> refreshReplaySummariesAfterProtectionChange(storage, result))
                 .exceptionally(ex -> {
-                    replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to unprotect replay: " + name, ex);
+                    replay.getLogger().log(Level.SEVERE, "Failed to unprotect replay: " + name, ex);
                     return ReplayProtectionResult.NOT_FOUND;
                 });
     }
 
     @Override
     public List<String> getCachedReplayNames() {
-        return replay.getReplayCache().getReplays();
+        ReplayCache cache = replay.getReplayCache();
+        ReplayStorage storage = replay.getReplayStorage();
+        if (storage != null && !cache.hasFreshReplays(REPLAY_LIST_CACHE_TTL_MILLIS)) {
+            refreshReplayNames(storage).exceptionally(ex -> {
+                replay.getLogger().log(Level.WARNING, "Failed to refresh replay cache for tab completion", ex);
+                return null;
+            });
+        }
+        return cache.getReplays();
+    }
+
+    private CompletableFuture<List<String>> refreshReplayNames(ReplayStorage storage) {
+        return storage.listReplays().thenApply(names -> {
+            replay.getReplayCache().setReplays(names);
+            return names;
+        });
+    }
+
+    private CompletableFuture<List<ReplaySummary>> refreshReplaySummaries(ReplayStorage storage) {
+        return storage.listReplaySummaries().thenApply(summaries -> {
+            replay.getReplayCache().setReplaySummaries(summaries);
+            return summaries;
+        });
+    }
+
+    private CompletableFuture<ReplayProtectionResult> refreshReplaySummariesAfterProtectionChange(
+            ReplayStorage storage,
+            ReplayProtectionResult result
+    ) {
+        if (result != ReplayProtectionResult.UPDATED) {
+            return CompletableFuture.completedFuture(result);
+        }
+        return refreshReplaySummaries(storage)
+                .handle((ignored, ex) -> {
+                    if (ex != null) {
+                        replay.getLogger().log(Level.WARNING, "Failed to refresh replay summary cache", ex);
+                    }
+                    return result;
+                });
     }
 
     @Override

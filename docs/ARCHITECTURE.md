@@ -99,6 +99,7 @@ BetterReplay keeps storage backend selection behind the [ReplayStorage.java](../
 - `ReplayStorageCodec` and `ReplayFormatDetector` allow the loader to distinguish legacy JSON payloads from finalized binary archives.
 - New saves are written as binary `.br` archives with a manifest, payload entries, and optional chunk regions.
 - Current binary archives use replay format `v2`.
+- Replay-name and replay-summary listings flow through a shared 5-second cache in `ReplayCache`; stale manager reads refresh the active storage backend and update the cache for commands, tab completion, and API callers.
 
 Compatibility notes:
 

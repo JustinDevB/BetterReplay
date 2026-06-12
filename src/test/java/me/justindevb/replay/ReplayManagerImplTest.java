@@ -95,6 +95,19 @@ class ReplayManagerImplTest {
 
         List<String> result = manager.listSavedReplays().join();
         assertEquals(List.of("r1", "r2"), result);
+        verify(replayCache).setReplays(List.of("r1", "r2"));
+    }
+
+    @Test
+    void listSavedReplays_usesFreshCache() {
+        ReplayCache realCache = new ReplayCache();
+        realCache.setReplays(List.of("cached"));
+        when(plugin.getReplayCache()).thenReturn(realCache);
+
+        List<String> result = manager.listSavedReplays().join();
+
+        assertEquals(List.of("cached"), result);
+        verify(storage, never()).listReplays();
     }
 
     @Test
@@ -114,6 +127,21 @@ class ReplayManagerImplTest {
         List<ReplaySummary> result = manager.listSavedReplaySummaries().join();
 
         assertEquals(List.of(summary), result);
+        verify(replayCache).setReplaySummaries(List.of(summary));
+    }
+
+    @Test
+    void listSavedReplaySummaries_refreshesSummaryAndNameCaches() {
+        ReplayCache realCache = new ReplayCache();
+        when(plugin.getReplayCache()).thenReturn(realCache);
+        ReplaySummary summary = new ReplaySummary("r1", java.time.Instant.now(), 1L, false, null, null, ReplayStorageType.FILE);
+        when(storage.listReplaySummaries()).thenReturn(CompletableFuture.completedFuture(List.of(summary)));
+
+        List<ReplaySummary> result = manager.listSavedReplaySummaries().join();
+
+        assertEquals(List.of(summary), result);
+        assertEquals(List.of(summary), realCache.getReplaySummaries());
+        assertEquals(List.of("r1"), realCache.getReplays());
     }
 
     @Test
@@ -161,6 +189,7 @@ class ReplayManagerImplTest {
     void protectSavedReplay_delegatesToStorage() {
         when(storage.protectReplay(eq("test"), any(), eq("console")))
                 .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+        when(storage.listReplaySummaries()).thenReturn(CompletableFuture.completedFuture(List.of()));
 
         ReplayProtectionResult result = manager.protectSavedReplay("test", "console").join();
 
@@ -171,6 +200,7 @@ class ReplayManagerImplTest {
     void unprotectSavedReplay_delegatesToStorage() {
         when(storage.unprotectReplay("test"))
                 .thenReturn(CompletableFuture.completedFuture(ReplayProtectionResult.UPDATED));
+        when(storage.listReplaySummaries()).thenReturn(CompletableFuture.completedFuture(List.of()));
 
         ReplayProtectionResult result = manager.unprotectSavedReplay("test").join();
 
@@ -184,9 +214,22 @@ class ReplayManagerImplTest {
 
     @Test
     void getCachedReplayNames_delegatesToCache() {
+        when(replayCache.hasFreshReplays(anyLong())).thenReturn(true);
         when(replayCache.getReplays()).thenReturn(List.of("cached1", "cached2"));
 
         assertEquals(List.of("cached1", "cached2"), manager.getCachedReplayNames());
+    }
+
+    @Test
+    void getCachedReplayNames_refreshesStaleCache() {
+        ReplayCache realCache = new ReplayCache();
+        when(plugin.getReplayCache()).thenReturn(realCache);
+        when(storage.listReplays()).thenReturn(CompletableFuture.completedFuture(List.of("fresh")));
+
+        List<String> result = manager.getCachedReplayNames();
+
+        assertEquals(List.of("fresh"), result);
+        assertEquals(List.of("fresh"), realCache.getReplays());
     }
 
     @Test

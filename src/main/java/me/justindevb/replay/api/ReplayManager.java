@@ -59,13 +59,15 @@ public interface ReplayManager {
     Collection<?> getActiveReplays();
 
     /**
-     * List of all saved replays
+     * List of all saved replays. Uses a short-lived cache and refreshes
+     * the active storage backend when the cache is stale.
      * @return
      */
     CompletableFuture<List<String>> listSavedReplays();
 
     /**
-     * List metadata for all saved replays.
+     * List metadata for all saved replays. Uses a short-lived cache and refreshes
+     * the active storage backend when the cache is stale.
      *
      * @return replay summaries for administrative and retention flows
      */
@@ -98,8 +100,8 @@ public interface ReplayManager {
 
     /**
      * Get a cached snapshot of saved replay names for synchronous access
-     * (e.g. tab completion). The cache is refreshed automatically after
-     * saves and deletes.
+     * (e.g. tab completion). If the cache is stale, a refresh is started
+     * from the active storage backend before the current snapshot is returned.
      */
     List<String> getCachedReplayNames();
 

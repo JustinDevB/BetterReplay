@@ -10,6 +10,7 @@ It records player and nearby entity activity on the server, stores that timeline
 - Uses PacketEvents for packet interception and replay entity updates
 - Uses FoliaLib for scheduler and teleport compatibility
 - Supports file and MySQL storage backends
+- Uses a short-lived replay-list cache for saved replay commands and API listing calls
 - New saves use finalized binary `.br` archives; legacy JSON replays remain readable during the migration window, but pre-`v2` alpha `.br` inventory archives are intentionally unsupported
 
 ## How this differs from client-side replay mods

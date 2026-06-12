@@ -30,6 +30,7 @@ Main workflow notes:
 - `/replay start` uses a single-token recording name. The code reads the session name from the second argument directly.
 - Commands that operate on saved replay names such as `stop`, `play`, `delete`, `protect`, and `unprotect` join the remaining arguments back into one name, so saved replay names can contain spaces.
 - `/replay list` page size and protected replay color come from `List.Page-Size` and `List.Protected-Highlight-Color`.
+- Saved replay listings and replay-name tab completion use a shared 5-second cache; stale list reads refresh from the active storage backend and update the cache.
 - `/replay delete` reports whether a replay was deleted, protected, or not found.
 
 ## Hidden operator utilities

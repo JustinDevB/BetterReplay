@@ -173,6 +173,14 @@ class MySQLReplayStorageTest {
     }
 
     @Test
+    void saveReplay_refreshesCreatedAtWhenReplacingExistingReplay() throws Exception {
+        storage.saveReplay("binary", sampleTimeline()).get();
+
+        verify(connection).prepareStatement(contains(
+                "ON DUPLICATE KEY UPDATE data = VALUES(data), created_at = CURRENT_TIMESTAMP"));
+    }
+
+    @Test
     void saveReplay_withChunkArtifacts_roundTripsChunkPlaybackData() throws Exception {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-artifacts"))) {
             writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
