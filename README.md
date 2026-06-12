@@ -41,9 +41,15 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 - Optional chunk-aware recording and playback for block baselines around recorded players
 - Playback controls with pause stepping, variable speed, and live speed feedback
 - Viewer safety controls, viewer state restoration, and optional live-player vanish during playback
+- Velocity replay handoff for launching playback on a dedicated backend server and returning viewers afterward
 - API-first integration support for other plugins
 - Optional Floodgate soft dependency support
-- Velocity support for alternate server playback. Auto return to original server when replay finishes
+
+## Velocity replay handoff
+
+BetterReplay can move viewers to another Velocity backend for playback with `/replay play <name> server:<backend>`, then return them to their original server when the replay ends.
+
+This lets a network keep replay viewing isolated on dedicated replay servers while production servers continue recording. Shared MySQL storage is recommended so the origin and replay backend can access the same saved replay list and payloads.
 
 ## Architecture
 

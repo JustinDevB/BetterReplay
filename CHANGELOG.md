@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-02: `/replay reload` command to re-read `config.yml`, restart retention scheduling, and report which changed settings apply immediately, only to new sessions, on future checks, or after restart
 - 2026-06-02: New config key `Playback.Vanish-Viewer` (default `true`) to hide replay viewers from live players during playback
 - 2026-06-04: Expanded bStats telemetry with SimplePie charts for storage type, recording chunk capture, playback viewer safety and chunk playback settings, vanish-viewer, and retention state plus retention age normalization to days when cleanup is disabled
+- 2026-06-12: Velocity replay handoff support via `/replay play <name> server:<backend>`, including remote replay launch and return-to-origin flow after playback stops
 
 ### Changed
 - 2026-04-11: `RecordingStopEvent` now fires synchronously to fix async AntiCheatReplay compatibility

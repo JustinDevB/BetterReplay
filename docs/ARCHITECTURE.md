@@ -90,6 +90,18 @@ During playback:
 - Packet-friendly send and clear limits smooth out chunk overlay cost across ticks.
 - Timing diagnostics can log replay chunk preparation, replay load, and live restore timings for MSPT troubleshooting.
 
+## Velocity replay handoff
+
+Velocity-network playback uses the plugin messaging channel `betterreplay:proxy` to move a viewer to another backend before playback starts.
+
+1. `/replay play <name> server:<backend>` verifies that the replay exists from the origin server.
+2. `ReplayTransferManager` sends a `START_REPLAY` plugin message containing the replay name and requested backend.
+3. When the viewer joins the target backend, `ReplayJoinListener` asks the proxy for any pending replay launch.
+4. `ReplayLaunchMessageListener` receives `REPLAY_LAUNCH`, starts playback on that backend, and remembers the origin server.
+5. When `ReplayStopEvent` fires, the listener sends `REPLAY_FINISHED` so the viewer can be returned to the origin server.
+
+This flow is intended for networks where replay playback runs on a dedicated backend while recordings continue elsewhere. Shared MySQL storage is the practical deployment model because the origin and target backend must both resolve the same replay name and payload.
+
 ## Storage model
 
 BetterReplay keeps storage backend selection behind the [ReplayStorage.java](../src/main/java/me/justindevb/replay/storage/ReplayStorage.java) interface.
@@ -145,6 +157,7 @@ At a package level, the codebase is currently organized like this:
 - `retention/` retention cleanup policy and scheduling
 - `storage/` backend implementations, codecs, archive support, and compatibility
 - `util/` supporting cache, update checking, and helpers
+- `velocity/` plugin-message helpers for Velocity backend replay handoff and return flow
 
 ## Related documents
 
