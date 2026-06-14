@@ -38,6 +38,11 @@ public class ReplayLaunchMessageListener implements PluginMessageListener, Liste
 
         String type = in.readUTF();
 
+        if (type.equals(ReplayTransferManager.REPLAY_TRANSFER_FAILED)) {
+            handleTransferFailure(player, in);
+            return;
+        }
+
         if (!type.equals("REPLAY_LAUNCH"))
             return;
 
@@ -48,6 +53,18 @@ public class ReplayLaunchMessageListener implements PluginMessageListener, Liste
             replayCache.add(player.getUniqueId());
 
         plugin.getReplayManagerImpl().startReplay(replayName, player);
+    }
+
+    private void handleTransferFailure(Player player, ByteArrayDataInput in) {
+        String targetServer = "";
+        String reason = "";
+        try {
+            targetServer = in.readUTF();
+            reason = in.readUTF();
+        } catch (IllegalStateException ignored) {
+            // Older or malformed proxy responses still produce a clear player-facing failure below.
+        }
+        plugin.getTransferManager().completeReplayTransferFailure(player, targetServer, reason);
     }
 
     @EventHandler

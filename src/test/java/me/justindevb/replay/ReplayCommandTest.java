@@ -11,6 +11,7 @@ import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.storage.ReplayStorageType;
 import me.justindevb.replay.storage.ReplaySummary;
+import me.justindevb.replay.velocity.ReplayTransferManager;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.entity.Player;
@@ -368,6 +369,49 @@ class ReplayCommandTest {
                 verify(replayManager).startReplay("test", player);
             }
         }
+
+        @Test
+        void validPlay_withConfiguredDefaultServer_requestsTransfer() {
+            when(player.hasPermission("replay.play")).thenReturn(true);
+            ReplayTransferManager transferManager = mock(ReplayTransferManager.class);
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = immediateReplayPlugin();
+                when(plugin.getConfig()).thenReturn(configWithDefaultReplayServer("replays"));
+                when(plugin.getReplayStorage()).thenReturn(replayStorage);
+                when(plugin.getTransferManager()).thenReturn(transferManager);
+                when(replayStorage.replayExists("test"))
+                        .thenReturn(CompletableFuture.completedFuture(true));
+                when(transferManager.requestReplayTransfer(player, "test", "replays")).thenReturn(true);
+                replay.when(Replay::getInstance).thenReturn(plugin);
+
+                replayCommand.onCommand(player, command, "replay", new String[]{"play", "test"});
+
+                verify(transferManager).requestReplayTransfer(player, "test", "replays");
+                verify(player).sendMessage("§aConnecting to replay server §ereplays§a...");
+                verify(replayManager, never()).startReplay(anyString(), any(Player.class));
+            }
+        }
+
+        @Test
+        void validPlay_withExplicitServer_overridesConfiguredDefaultServer() {
+            when(player.hasPermission("replay.play")).thenReturn(true);
+            ReplayTransferManager transferManager = mock(ReplayTransferManager.class);
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = immediateReplayPlugin();
+                when(plugin.getReplayStorage()).thenReturn(replayStorage);
+                when(plugin.getTransferManager()).thenReturn(transferManager);
+                when(replayStorage.replayExists("test"))
+                        .thenReturn(CompletableFuture.completedFuture(true));
+                when(transferManager.requestReplayTransfer(player, "test", "requested-replays")).thenReturn(true);
+                replay.when(Replay::getInstance).thenReturn(plugin);
+
+                replayCommand.onCommand(player, command, "replay", new String[]{"play", "test", "server:requested-replays"});
+
+                verify(transferManager).requestReplayTransfer(player, "test", "requested-replays");
+                verify(player).sendMessage("§aConnecting to replay server §erequested-replays§a...");
+                verify(replayManager, never()).startReplay(anyString(), any(Player.class));
+            }
+        }
     }
 
     // ── Delete ────────────────────────────────────────────────
@@ -650,6 +694,15 @@ class ReplayCommandTest {
             consumer.accept(null);
             return null;
         }).when(scheduler).runNextTick(any());
+        lenient().doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            long delayTicks = invocation.getArgument(1);
+            if (delayTicks == 1L) {
+                runnable.run();
+            }
+            return null;
+        }).when(scheduler).runLater(any(Runnable.class), anyLong());
+        lenient().when(plugin.getConfig()).thenReturn(new org.bukkit.configuration.file.YamlConfiguration());
         return plugin;
     }
 
@@ -657,6 +710,12 @@ class ReplayCommandTest {
         org.bukkit.configuration.file.YamlConfiguration config = new org.bukkit.configuration.file.YamlConfiguration();
         config.set("List.Page-Size", 10);
         config.set("List.Protected-Highlight-Color", color);
+        return config;
+    }
+
+    private org.bukkit.configuration.file.FileConfiguration configWithDefaultReplayServer(String server) {
+        org.bukkit.configuration.file.YamlConfiguration config = new org.bukkit.configuration.file.YamlConfiguration();
+        config.set("Velocity.Default-Replay-Server", server);
         return config;
     }
 }

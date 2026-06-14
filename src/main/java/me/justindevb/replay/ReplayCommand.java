@@ -183,10 +183,12 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     }
                 }
 
-                // Must be effectively final for lambda usage
-                final String targetServer = foundTargetServer;
-
                 Replay plugin = Replay.getInstance();
+
+                // Must be effectively final for lambda usage
+                final String targetServer = foundTargetServer != null
+                        ? foundTargetServer
+                        : configuredDefaultReplayServer(plugin);
 
                 plugin.getReplayStorage()
                         .replayExists(replayName)
@@ -217,12 +219,16 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                                 return;
                             }
 
-                            plugin.getTransferManager()
+                            boolean transferRequested = plugin.getTransferManager()
                                     .requestReplayTransfer(
                                             p,
                                             replayName,
                                             targetServer
                                     );
+
+                            if (!transferRequested) {
+                                return;
+                            }
 
                             plugin.getFoliaLib()
                                     .getScheduler()
@@ -572,6 +578,14 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
         return settings.stream()
                 .map(ReplayConfigSetting::getKey)
                 .collect(Collectors.joining(", "));
+    }
+
+    private String configuredDefaultReplayServer(Replay plugin) {
+        String configured = ReplayConfigSetting.VELOCITY_DEFAULT_REPLAY_SERVER.getString(plugin.getConfig());
+        if (configured == null || configured.isBlank()) {
+            return null;
+        }
+        return configured.trim();
     }
 
     private String formatReplayListName(ReplaySummary replay, String protectedHighlightColor) {

@@ -19,7 +19,7 @@ This document covers the supported keys, defaults, valid values, and runtime rel
 
 In practice:
 
-- Viewer safety, viewer restore, vanish, list formatting, and similar live-read settings are immediate.
+- Viewer safety, viewer restore, vanish, Velocity default replay-server routing, list formatting, and similar live-read settings are immediate.
 - Retention settings restart the retention service.
 - Playback speed and chunk capture/playback settings affect newly started sessions only.
 - Storage backend and MySQL connection changes still require restart.
@@ -83,6 +83,9 @@ Retention:
 List:
   Page-Size: 10
   Protected-Highlight-Color: "&6"
+
+Velocity:
+  Default-Replay-Server: ""
 ```
 
 ## Settings reference
@@ -91,7 +94,7 @@ List:
 
 | Key | Default | Reload scope | Notes |
 |---|---|---|---|
-| `Config-Version` | `7` | `INTERNAL` | Internal migration version written by the plugin |
+| `Config-Version` | `8` | `INTERNAL` | Internal migration version written by the plugin |
 
 ### General
 
@@ -156,6 +159,19 @@ Playback notes:
 - `Playback.Chunk-Send-Limit-Per-Tick` and `Playback.Chunk-Clear-Limit-Per-Tick` default to conservative values for mixed live servers.
 - Replay-load probing runs ahead of chunk sends at `10x` the configured send rate so missing replay chunks do not bottleneck playback.
 - If `Playback.Chunk-View-Radius` is larger than `Recording.Chunk-Capture.Radius`, only chunks actually captured during recording can be replayed; uncaptured chunks remain live.
+
+### Velocity
+
+| Key | Default | Reload scope | Notes |
+|---|---|---|---|
+| `Velocity.Default-Replay-Server` | `""` | `IMMEDIATE` | Default backend used by `/replay play <name>` when no `server:<server>` argument is provided |
+
+Velocity notes:
+
+- Leave `Velocity.Default-Replay-Server` blank to keep the current behavior: `/replay play <name>` starts playback on the current server unless the command includes `server:<server>`.
+- Set `Velocity.Default-Replay-Server` to a backend name such as `replays` to route ordinary `/replay play <name>` requests through Velocity automatically.
+- An explicit `/replay play <name> server:<server>` target overrides the configured default for that command run.
+- If the transfer request cannot be sent, the proxy reports a transfer failure, or the proxy does not respond, the viewer receives a chat message explaining that BetterReplay could not connect to the replay server.
 
 ### Retention
 

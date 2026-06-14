@@ -30,8 +30,10 @@ Main workflow notes:
 - `/replay start` uses a single-token recording name. The code reads the session name from the second argument directly.
 - Commands that operate on saved replay names such as `stop`, `delete`, `protect`, and `unprotect` join the remaining arguments back into one name, so those saved replay names can contain spaces.
 - `/replay play` currently reads the replay name from the next token only, then optionally accepts `server:<server>` after it. Example: `/replay play Test server:Replays`.
-- The optional `server:` target is intended for Velocity setups where replay playback can be launched on another backend connected to the same BetterReplay MySQL database.
+- If `Velocity.Default-Replay-Server` is set, `/replay play <name>` routes to that backend automatically. An explicit `server:<server>` command argument overrides the configured default.
+- The `server:` target and `Velocity.Default-Replay-Server` setting are intended for Velocity setups where replay playback can be launched on another backend connected to the same BetterReplay MySQL database.
 - When `server:<server>` is used, BetterReplay verifies the replay exists before asking the proxy to move the viewer. The replay backend starts playback after the viewer arrives and requests its pending replay launch.
+- When remote handoff cannot be sent, fails at the proxy, or receives no proxy response, BetterReplay sends the viewer a chat error identifying the replay server target.
 - Remote replay handoff returns the viewer to the origin server when the replay session stops.
 - `/replay list` page size and protected replay color come from `List.Page-Size` and `List.Protected-Highlight-Color`.
 - Saved replay listings and replay-name tab completion use a shared 5-second cache; stale list reads refresh from the active storage backend and update the cache.

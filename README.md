@@ -47,9 +47,9 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 
 ## Velocity replay handoff
 
-BetterReplay can move viewers to another Velocity backend for playback with `/replay play <name> server:<backend>`, then return them to their original server when the replay ends.
+BetterReplay can move viewers to another Velocity backend for playback with `/replay play <name> server:<backend>` or a configured `Velocity.Default-Replay-Server`, then return them to their original server when the replay ends.
 
-This lets a network keep replay viewing isolated on dedicated replay servers while production servers continue recording. Shared MySQL storage is recommended so the origin and replay backend can access the same saved replay list and payloads.
+This lets a network keep replay viewing isolated on dedicated replay servers while production servers continue recording. Shared MySQL storage is recommended so the origin and replay backend can access the same saved replay list and payloads. Failed or unacknowledged handoffs report a chat error to the viewer.
 
 ## Architecture
 

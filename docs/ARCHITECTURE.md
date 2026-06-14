@@ -94,13 +94,13 @@ During playback:
 
 Velocity-network playback uses the plugin messaging channel `betterreplay:proxy` to move a viewer to another backend before playback starts.
 
-1. `/replay play <name> server:<backend>` verifies that the replay exists from the origin server.
-2. `ReplayTransferManager` sends a `START_REPLAY` plugin message containing the replay name and requested backend.
+1. `/replay play <name> server:<backend>` verifies that the replay exists from the origin server. If no `server:` argument is supplied, `Velocity.Default-Replay-Server` can provide the backend target.
+2. `ReplayTransferManager` sends a `START_REPLAY` plugin message containing the replay name and requested backend, tracks the pending transfer, and reports a chat failure if the request cannot be sent or the proxy does not respond.
 3. When the viewer joins the target backend, `ReplayJoinListener` asks the proxy for any pending replay launch.
 4. `ReplayLaunchMessageListener` receives `REPLAY_LAUNCH`, starts playback on that backend, and remembers the origin server.
 5. When `ReplayStopEvent` fires, the listener sends `REPLAY_FINISHED` so the viewer can be returned to the origin server.
 
-This flow is intended for networks where replay playback runs on a dedicated backend while recordings continue elsewhere. Shared MySQL storage is the practical deployment model because the origin and target backend must both resolve the same replay name and payload.
+The proxy can send `REPLAY_TRANSFER_FAILED` with the target backend and reason when it cannot move the viewer; the origin server turns that response into a clear chat error. This flow is intended for networks where replay playback runs on a dedicated backend while recordings continue elsewhere. Shared MySQL storage is the practical deployment model because the origin and target backend must both resolve the same replay name and payload.
 
 ## Storage model
 

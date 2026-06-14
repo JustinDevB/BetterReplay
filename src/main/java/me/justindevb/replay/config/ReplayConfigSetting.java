@@ -3,7 +3,7 @@ package me.justindevb.replay.config;
 import org.bukkit.configuration.file.FileConfiguration;
 
 public enum ReplayConfigSetting {
-        CONFIG_VERSION("Config-Version", 7, ReplayConfigReloadScope.INTERNAL,
+        CONFIG_VERSION("Config-Version", 8, ReplayConfigReloadScope.INTERNAL,
             "Internal config migration version. Do not edit unless instructed."),
     CHECK_UPDATE("General.Check-Update", true, ReplayConfigReloadScope.FUTURE_ONLY,
             "Check for plugin updates on startup."),
@@ -19,6 +19,9 @@ public enum ReplayConfigSetting {
             "MySQL username."),
     MYSQL_PASSWORD("General.MySQL.password", "password", ReplayConfigReloadScope.RESTART_REQUIRED,
             "MySQL password."),
+    VELOCITY_DEFAULT_REPLAY_SERVER("Velocity.Default-Replay-Server", "", ReplayConfigReloadScope.IMMEDIATE,
+            "Default Velocity backend used by /replay play when no server:<backend> argument is provided.",
+            "Leave blank to play replays on the current server unless the command specifies a server."),
     CHUNK_CAPTURE_ENABLED("Recording.Chunk-Capture.Enabled", false, ReplayConfigReloadScope.NEW_SESSIONS_ONLY,
             "Enable chunk baseline capture for binary .br replays."),
     CHUNK_CAPTURE_RADIUS("Recording.Chunk-Capture.Radius", 1, ReplayConfigReloadScope.NEW_SESSIONS_ONLY,

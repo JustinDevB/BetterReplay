@@ -15,7 +15,7 @@ import java.util.Set;
 
 public class ReplayConfigManager {
 
-    private static final int CURRENT_CONFIG_VERSION = 7;
+    private static final int CURRENT_CONFIG_VERSION = 8;
     private static final String OBSOLETE_COMPRESS_REPLAYS_KEY = "General.Compress-Replays";
     private static final String OBSOLETE_COMPRESS_REPLAYS_COMMENT = "GZIP compress replay data to save disk space.";
     private static final String LEGACY_LIST_PAGE_SIZE_KEY = "list-page-size";
