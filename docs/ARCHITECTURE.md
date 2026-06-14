@@ -137,6 +137,7 @@ BetterReplay has to cross async and main-thread boundaries carefully because it 
 - Bukkit API access must be scheduled back onto the server thread through FoliaLib when reached from async or packet threads.
 - Packet receive/send callbacks can arrive off-thread, so recording code that touches Bukkit state must reschedule safely.
 - Viewer teleports during replay startup use `teleportAsync(...)` through FoliaLib for safer Paper/Folia compatibility.
+- Replay cleanup reads live block and chunk state through FoliaLib location tasks so Folia runs the read on the owning region.
 - Shared mutable state used across async work, packet listeners, and scheduled tasks must use thread-safe collections.
 - Events that have to be fired synchronously, such as `RecordingStopEvent`, are intentionally dispatched on the main thread.
 

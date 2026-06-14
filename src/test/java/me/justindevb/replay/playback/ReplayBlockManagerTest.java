@@ -8,6 +8,8 @@ import com.github.retrooper.packetevents.manager.server.ServerVersion;
 import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.chunk.Column;
 import com.github.retrooper.packetevents.protocol.world.chunk.LightData;
+import com.tcoded.folialib.FoliaLib;
+import com.tcoded.folialib.impl.PlatformScheduler;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.chunk.ChunkCoordinate;
@@ -33,6 +35,7 @@ import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
 import java.io.ByteArrayOutputStream;
@@ -46,6 +49,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.function.Consumer;
 import java.util.logging.Handler;
 import java.util.logging.Level;
 import java.util.logging.LogRecord;
@@ -53,11 +57,13 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -305,6 +311,53 @@ class ReplayBlockManagerTest {
 
         verify(snapshotSender, times(1)).send(eq(viewer), eq(chunkCoordinate), eq(replayPreparedChunk));
         verify(liveChunkCaptureService, times(0)).captureDetachedSnapshot(any());
+    }
+
+    @Test
+    void restoreSessionBaseline_schedulesLiveBlockReadAtBlockLocation() throws Exception {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        FoliaLib foliaLib = mock(FoliaLib.class);
+        PlatformScheduler scheduler = mock(PlatformScheduler.class);
+        World world = mock(World.class);
+        Block block = mock(Block.class);
+        BlockData liveData = mock(BlockData.class);
+
+        when(replay.getFoliaLib()).thenReturn(foliaLib);
+        when(foliaLib.getScheduler()).thenReturn(scheduler);
+        when(scheduler.runAtLocation(any(Location.class), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(world.getName()).thenReturn("world");
+        when(world.getBlockAt(1, 64, 1)).thenReturn(block);
+        when(block.getBlockData()).thenReturn(liveData);
+        when(liveData.getAsString()).thenReturn("minecraft:dirt");
+
+        ReplayBlockManager manager = new ReplayBlockManager(viewer, replay, replayChunkData());
+        sessionBaseline(manager).put(new ReplayBlockManager.BlockKey("world", 1, 64, 1), "minecraft:stone");
+
+        try (MockedStatic<Bukkit> bukkit = org.mockito.Mockito.mockStatic(Bukkit.class)) {
+            bukkit.when(() -> Bukkit.getWorld("world")).thenReturn(world);
+            bukkit.when(() -> Bukkit.createBlockData("minecraft:dirt")).thenReturn(liveData);
+
+            manager.restoreSessionBaseline();
+
+            verify(world, never()).getBlockAt(1, 64, 1);
+
+            ArgumentCaptor<Location> locationCaptor = ArgumentCaptor.forClass(Location.class);
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<Consumer<WrappedTask>> taskCaptor = ArgumentCaptor.forClass(Consumer.class);
+            verify(scheduler).runAtLocation(locationCaptor.capture(), taskCaptor.capture());
+
+            Location scheduledLocation = locationCaptor.getValue();
+            assertSame(world, scheduledLocation.getWorld());
+            assertEquals(1, scheduledLocation.getBlockX());
+            assertEquals(64, scheduledLocation.getBlockY());
+            assertEquals(1, scheduledLocation.getBlockZ());
+
+            taskCaptor.getValue().accept(mock(WrappedTask.class));
+        }
+
+        verify(world).getBlockAt(1, 64, 1);
+        verify(viewer).sendBlockChange(any(Location.class), eq(liveData));
     }
 
     @Test
@@ -1196,6 +1249,13 @@ class ReplayBlockManagerTest {
         Field field = ReplayBlockManager.class.getDeclaredField("pendingLiveChunkRestorePrepares");
         field.setAccessible(true);
         return (Map<ChunkCoordinate, CompletableFuture<?>>) field.get(manager);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<ReplayBlockManager.BlockKey, String> sessionBaseline(ReplayBlockManager manager) throws Exception {
+        Field field = ReplayBlockManager.class.getDeclaredField("sessionBaseline");
+        field.setAccessible(true);
+        return (Map<ReplayBlockManager.BlockKey, String>) field.get(manager);
     }
 
     private static Object preparedReplayChunkRecord(PacketFriendlyChunkColumnBuilder.PreparedChunkPacket packet) throws Exception {

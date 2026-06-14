@@ -60,6 +60,7 @@ public class ReplayBlockManager {
     private final Executor replayChunkPreparationExecutor;
     private final Function<Player, ClientVersion> clientVersionResolver;
     private final LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler;
+    private final LiveWorldTaskScheduler liveWorldTaskScheduler;
     private final PlaybackChunkMode chunkPlaybackMode;
     private final ChunkSentStateResolver chunkSentStateResolver;
     private final int chunkPlaybackRadius;
@@ -113,6 +114,11 @@ public class ReplayBlockManager {
         WrappedTask schedule(Runnable task);
     }
 
+    @FunctionalInterface
+    interface LiveWorldTaskScheduler {
+        void schedule(Location location, Runnable task);
+    }
+
     enum PlaybackChunkMode {
         MOVING_WINDOW(1),
         DEFERRED_RESTORE(2);
@@ -158,6 +164,9 @@ public class ReplayBlockManager {
         this.liveChunkRestoreDrainScheduler = replay != null && replay.getFoliaLib() != null
                 ? task -> replay.getFoliaLib().getScheduler().runTimer(task, 1L, 1L)
                 : null;
+        this.liveWorldTaskScheduler = replay != null && replay.getFoliaLib() != null
+                ? (location, task) -> replay.getFoliaLib().getScheduler().runAtLocation(location, ignored -> task.run())
+                : (location, task) -> task.run();
         this.chunkPlaybackMode = replay != null
             && replay.getConfig() != null
             ? PlaybackChunkMode.fromConfiguredValue(ReplayConfigSetting.PLAYBACK_CHUNK_MODE.getInt(replay.getConfig()))
@@ -214,6 +223,7 @@ public class ReplayBlockManager {
                 Runnable::run,
                 player -> ClientVersion.V_1_21_11,
                 null,
+                runInlineLiveWorldTaskScheduler(),
                 1,
                 DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
                 DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
@@ -242,10 +252,11 @@ public class ReplayBlockManager {
             replayChunkSnapshotSender,
                 new PacketFriendlyChunkColumnBuilder()::prepare,
             Runnable::run,
-            player -> ClientVersion.V_1_21_11,
-            null,
-            1,
-            DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
+                player -> ClientVersion.V_1_21_11,
+                null,
+                runInlineLiveWorldTaskScheduler(),
+                1,
+                DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
             DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
             computeMaxReplayChunkPreparesInFlight(1),
             computeMaxLiveChunkRestorePreparesInFlight(1),
@@ -281,6 +292,7 @@ public class ReplayBlockManager {
                 replayChunkPreparationExecutor,
                 clientVersionResolver,
                 liveChunkRestoreDrainScheduler,
+                runInlineLiveWorldTaskScheduler(),
                 chunkPlaybackRadius,
                 DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
                 DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
@@ -320,6 +332,7 @@ public class ReplayBlockManager {
                 replayChunkPreparationExecutor,
                 clientVersionResolver,
                 liveChunkRestoreDrainScheduler,
+                runInlineLiveWorldTaskScheduler(),
                 chunkPlaybackRadius,
                 maxReplayChunkAppliesPerRefresh,
                 maxLiveChunkRestoresPerRefresh,
@@ -359,9 +372,52 @@ public class ReplayBlockManager {
                 replayChunkPreparationExecutor,
                 clientVersionResolver,
                 liveChunkRestoreDrainScheduler,
+                runInlineLiveWorldTaskScheduler(),
                 chunkPlaybackRadius,
                 DEFAULT_BRCP_CHUNK_SEND_LIMIT_PER_TICK,
                 DEFAULT_BRCP_CHUNK_CLEAR_LIMIT_PER_TICK,
+                maxReplayChunkPreparesInFlight,
+                maxLiveChunkRestorePreparesInFlight,
+                logger,
+                chunkPlaybackMode,
+                chunkSentStateResolver);
+    }
+
+    ReplayBlockManager(
+            Player viewer,
+            Replay replay,
+            ReplayChunkPlaybackCache chunkPlaybackCache,
+            BinaryChunkPayloadFormat chunkPayloadFormat,
+            WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
+            ReplayChunkSnapshotSender replayChunkSnapshotSender,
+            ReplayChunkPacketPreparer replayChunkPacketPreparer,
+            Executor replayChunkPreparationExecutor,
+            Function<Player, ClientVersion> clientVersionResolver,
+            LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler,
+            int chunkPlaybackRadius,
+            int maxReplayChunkAppliesPerRefresh,
+            int maxLiveChunkRestoresPerRefresh,
+            int maxReplayChunkPreparesInFlight,
+            int maxLiveChunkRestorePreparesInFlight,
+            Logger logger,
+            PlaybackChunkMode chunkPlaybackMode,
+            ChunkSentStateResolver chunkSentStateResolver
+    ) {
+        this(
+                viewer,
+                replay,
+                chunkPlaybackCache,
+                chunkPayloadFormat,
+                liveChunkCaptureService,
+                replayChunkSnapshotSender,
+                replayChunkPacketPreparer,
+                replayChunkPreparationExecutor,
+                clientVersionResolver,
+                liveChunkRestoreDrainScheduler,
+                runInlineLiveWorldTaskScheduler(),
+                chunkPlaybackRadius,
+                maxReplayChunkAppliesPerRefresh,
+                maxLiveChunkRestoresPerRefresh,
                 maxReplayChunkPreparesInFlight,
                 maxLiveChunkRestorePreparesInFlight,
                 logger,
@@ -380,6 +436,7 @@ public class ReplayBlockManager {
             Executor replayChunkPreparationExecutor,
             Function<Player, ClientVersion> clientVersionResolver,
             LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler,
+            LiveWorldTaskScheduler liveWorldTaskScheduler,
             int chunkPlaybackRadius,
             int maxReplayChunkAppliesPerRefresh,
             int maxLiveChunkRestoresPerRefresh,
@@ -399,6 +456,7 @@ public class ReplayBlockManager {
         this.replayChunkPreparationExecutor = Objects.requireNonNull(replayChunkPreparationExecutor, "replayChunkPreparationExecutor");
         this.clientVersionResolver = Objects.requireNonNull(clientVersionResolver, "clientVersionResolver");
         this.liveChunkRestoreDrainScheduler = liveChunkRestoreDrainScheduler;
+        this.liveWorldTaskScheduler = Objects.requireNonNull(liveWorldTaskScheduler, "liveWorldTaskScheduler");
         this.chunkPlaybackMode = Objects.requireNonNull(chunkPlaybackMode, "chunkPlaybackMode");
         this.chunkSentStateResolver = Objects.requireNonNull(chunkSentStateResolver, "chunkSentStateResolver");
         this.chunkPlaybackRadius = Math.max(0, chunkPlaybackRadius);
@@ -642,12 +700,7 @@ public class ReplayBlockManager {
         }
 
         for (BlockKey key : sessionBaseline.keySet()) {
-            World world = Bukkit.getWorld(key.world());
-            if (world == null) {
-                continue;
-            }
-            String realBlockData = world.getBlockAt(key.x(), key.y(), key.z()).getBlockData().getAsString();
-            sendBlockStateToViewer(world, key.x(), key.y(), key.z(), realBlockData);
+            restoreLiveBlockState(key);
         }
         chunkBaseline.clear();
         chunkBlocksByCoordinate.clear();
@@ -684,6 +737,40 @@ public class ReplayBlockManager {
         }
         pendingLiveChunkRestorePrepares.clear();
         queuedLiveChunkRestores.clear();
+    }
+
+    private void restoreLiveBlockState(BlockKey key) {
+        World world = findWorld(key.world());
+        if (world == null) {
+            return;
+        }
+
+        Location location = new Location(world, key.x(), key.y(), key.z());
+        scheduleLiveWorldTask(location, () -> {
+            World liveWorld = findWorld(key.world());
+            if (liveWorld == null) {
+                return;
+            }
+
+            String realBlockData = liveWorld.getBlockAt(key.x(), key.y(), key.z()).getBlockData().getAsString();
+            sendBlockStateToViewer(liveWorld, key.x(), key.y(), key.z(), realBlockData);
+        }, "restore live block state at " + key);
+    }
+
+    private boolean scheduleLiveWorldTask(Location location, Runnable task, String description) {
+        try {
+            liveWorldTaskScheduler.schedule(location, () -> {
+                try {
+                    task.run();
+                } catch (RuntimeException ex) {
+                    logger.log(Level.WARNING, "Failed to " + description, ex);
+                }
+            });
+            return true;
+        } catch (RuntimeException ex) {
+            logger.log(Level.WARNING, "Failed to schedule " + description, ex);
+            return false;
+        }
     }
 
     private void cancelPendingReplayChunkPrepares() {
@@ -1371,18 +1458,26 @@ public class ReplayBlockManager {
     }
 
     private void restoreLiveChunkPacket(ChunkCoordinate coordinate) {
-        try {
+        World world = findWorld(coordinate.worldName());
+        if (world == null) {
+            return;
+        }
+
+        Location location = chunkTaskLocation(world, coordinate);
+        scheduleLiveWorldTask(location, () -> {
+            try {
             WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedSnapshot = liveChunkCaptureService.captureDetachedSnapshot(coordinate);
             BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = liveChunkCaptureService.buildPayload(capturedSnapshot);
             replayChunkSnapshotSender.send(
                     viewer,
                     coordinate,
                     replayChunkPacketPreparer.prepare(coordinate, payload, clientVersionResolver.apply(viewer)));
-        } catch (IOException | RuntimeException ex) {
+            } catch (IOException | RuntimeException ex) {
             logger.log(Level.WARNING,
                     "Failed to restore live chunk snapshot for " + coordinate,
                     ex);
-        }
+            }
+        }, "restore live chunk snapshot for " + coordinate);
     }
 
     private void queueLiveChunkRestore(ChunkCoordinate coordinate) {
@@ -1437,24 +1532,15 @@ public class ReplayBlockManager {
                     continue;
                 }
                 long captureStartedAt = chunkTimingDiagnosticsEnabled ? System.nanoTime() : 0L;
-                try {
-                    WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedSnapshot = liveChunkCaptureService.captureDetachedSnapshot(coordinate);
-                    captureNanos += elapsedNanos(captureStartedAt);
-                    if (clientVersion == null) {
-                        clientVersion = clientVersionResolver.apply(viewer);
-                    }
-                    pendingLiveChunkRestorePrepares.put(
-                            coordinate,
-                            prepareLiveChunkRestoreAsync(coordinate, capturedSnapshot, clientVersion));
-                    availablePrepareSlots--;
-                    capturesStarted++;
-                } catch (IOException | RuntimeException ex) {
-                    captureNanos += elapsedNanos(captureStartedAt);
-                    iterator.remove();
-                    logger.log(Level.WARNING,
-                            "Failed to capture live chunk snapshot for " + coordinate,
-                            ex);
+                if (clientVersion == null) {
+                    clientVersion = clientVersionResolver.apply(viewer);
                 }
+                pendingLiveChunkRestorePrepares.put(
+                        coordinate,
+                        captureAndPrepareLiveChunkRestore(coordinate, clientVersion));
+                captureNanos += elapsedNanos(captureStartedAt);
+                availablePrepareSlots--;
+                capturesStarted++;
                 continue;
             }
             if (!pending.isDone()) {
@@ -1495,6 +1581,45 @@ public class ReplayBlockManager {
         return CompletableFuture.supplyAsync(
                 () -> prepareLiveChunkRestore(coordinate, capturedSnapshot, clientVersion),
                 replayChunkPreparationExecutor);
+    }
+
+    private CompletableFuture<PreparedReplayChunk> captureAndPrepareLiveChunkRestore(
+            ChunkCoordinate coordinate,
+            ClientVersion clientVersion
+    ) {
+        CompletableFuture<WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot> capturedSnapshotFuture = new CompletableFuture<>();
+        World world = findWorld(coordinate.worldName());
+        Location location = world != null ? chunkTaskLocation(world, coordinate) : null;
+        boolean scheduled = scheduleLiveWorldTask(location, () -> {
+                try {
+                    capturedSnapshotFuture.complete(liveChunkCaptureService.captureDetachedSnapshot(coordinate));
+                } catch (IOException | RuntimeException ex) {
+                    capturedSnapshotFuture.completeExceptionally(ex);
+                }
+            }, "capture live chunk snapshot for " + coordinate);
+        if (!scheduled) {
+            capturedSnapshotFuture.completeExceptionally(
+                    new IllegalStateException("Failed to schedule live chunk snapshot capture for " + coordinate));
+        }
+
+        return capturedSnapshotFuture.thenCompose(capturedSnapshot ->
+                prepareLiveChunkRestoreAsync(coordinate, capturedSnapshot, clientVersion));
+    }
+
+    private static Location chunkTaskLocation(World world, ChunkCoordinate coordinate) {
+        return new Location(world, coordinate.chunkX() << 4, 0, coordinate.chunkZ() << 4);
+    }
+
+    private static World findWorld(String worldName) {
+        try {
+            return Bukkit.getWorld(worldName);
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private static LiveWorldTaskScheduler runInlineLiveWorldTaskScheduler() {
+        return (location, task) -> task.run();
     }
 
     private PreparedReplayChunk prepareLiveChunkRestore(
