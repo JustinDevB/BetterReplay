@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-12: Saved replay listings and replay-name tab completion now share a 5-second cache that refreshes from storage when stale, and MySQL replay overwrites now update `created_at` so recent listings reflect replaced recordings
 - 2026-06-14: Velocity replay handoff failures now send a clear chat error when the transfer request cannot be sent, the proxy reports a failure, or the proxy does not respond
 - 2026-06-14: Replay stop cleanup now schedules live block and chunk restore reads on their owning Folia region to avoid asynchronous world access failures
+- 2026-06-16: Recording chunk baseline capture now schedules live chunk reads on the owning Folia region to avoid async chunk retrieval failures when chunk recording is enabled
 
 ## [1.4.0] - 2026-04-10
 

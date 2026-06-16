@@ -3,9 +3,11 @@ package me.justindevb.replay;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.event.PacketListenerCommon;
 import com.github.retrooper.packetevents.event.PacketListenerPriority;
+import me.justindevb.replay.chunk.ChunkBaselineCaptureService;
 import me.justindevb.replay.chunk.ChunkCaptureConfig;
 import me.justindevb.replay.chunk.ChunkCaptureCoordinator;
 import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
+import me.justindevb.replay.chunk.FoliaRegionChunkBaselineCaptureService;
 import me.justindevb.replay.chunk.RadiusChunkInterestTracker;
 import me.justindevb.replay.chunk.WorldChunkPacketFriendlyCaptureService;
 import me.justindevb.replay.recording.EntityTracker;
@@ -111,7 +113,7 @@ public class RecordingSession {
                     ? new ChunkCaptureCoordinator(
                             chunkCaptureConfig,
                             new RadiusChunkInterestTracker(),
-                            new WorldChunkPacketFriendlyCaptureService(new BinaryPacketFriendlyChunkPayloadCodec()),
+                            createChunkBaselineCaptureService(),
                             new BinaryChunkTempRegionFileWriter(chunkCaptureDirectory.toPath()))
                     : null;
         } catch (IOException e) {
@@ -380,6 +382,15 @@ public class RecordingSession {
             resolveLogger().log(Level.SEVERE, "Failed to capture chunk baselines for recording: " + name, e);
             closeChunkCapture();
         }
+    }
+
+    private ChunkBaselineCaptureService createChunkBaselineCaptureService() {
+        ChunkBaselineCaptureService captureService = new WorldChunkPacketFriendlyCaptureService(
+                new BinaryPacketFriendlyChunkPayloadCodec());
+        if (replay.getFoliaLib() != null && replay.getFoliaLib().isFolia()) {
+            return new FoliaRegionChunkBaselineCaptureService(replay.getFoliaLib(), captureService);
+        }
+        return captureService;
     }
 
     private ChunkRecordingArtifacts closeChunkCapture() {
