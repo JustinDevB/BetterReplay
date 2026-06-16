@@ -16,6 +16,8 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 
 import java.util.List;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -85,11 +87,39 @@ class EntityTrackerTest {
     }
 
     @Test
+    void trackedEntitiesIterator_allowsConcurrentEntityTrackingChanges() {
+        UUID firstEntityUuid = UUID.randomUUID();
+        tracker.trackEntity(firstEntityUuid, EntityType.SKELETON);
+
+        Iterator<Map.Entry<UUID, EntityType>> iterator = tracker.getTrackedEntities().entrySet().iterator();
+        tracker.trackEntity(UUID.randomUUID(), EntityType.ZOMBIE);
+        tracker.removeEntity(firstEntityUuid);
+
+        assertDoesNotThrow(() -> {
+            while (iterator.hasNext()) {
+                iterator.next();
+            }
+        });
+    }
+
+    @Test
     void removePlayer_removesFromTracked() {
         tracker.removePlayer(uuid1);
 
         assertFalse(tracker.isTrackedPlayer(uuid1));
         assertTrue(tracker.isTrackedPlayer(uuid2));
+    }
+
+    @Test
+    void trackedPlayersIterator_allowsConcurrentPlayerRemoval() {
+        Iterator<UUID> iterator = tracker.getTrackedPlayers().iterator();
+        tracker.removePlayer(uuid1);
+
+        assertDoesNotThrow(() -> {
+            while (iterator.hasNext()) {
+                iterator.next();
+            }
+        });
     }
 
     @Test

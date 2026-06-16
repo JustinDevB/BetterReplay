@@ -40,6 +40,7 @@ import org.bukkit.event.HandlerList;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -76,8 +77,8 @@ public class RecordingSession {
     private final SharedEquipmentCaptureCache standaloneEquipmentCaptureCache = new SharedEquipmentCaptureCache();
     private final Map<UUID, CapturedInventoryStorageSnapshot> lastInventoryStorageSnapshot = new HashMap<>();
     private final Map<UUID, CapturedEquipmentState> lastEquipmentState = new HashMap<>();
-    private final Set<UUID> inventoryDirtyPlayers = new HashSet<>();
-    private final Set<UUID> equipmentDirtyPlayers = new HashSet<>();
+    private final Set<UUID> inventoryDirtyPlayers = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> equipmentDirtyPlayers = ConcurrentHashMap.newKeySet();
     private int tick = 0;
     private int durationTicks = -1;
     private boolean stopped = false;

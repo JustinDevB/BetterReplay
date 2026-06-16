@@ -3,13 +3,13 @@ package me.justindevb.replay.recording.inventory;
 import me.justindevb.replay.recording.inventory.InventoryCaptureService.CapturedInventoryStorageSnapshot;
 import org.bukkit.entity.Player;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class SharedStorageCaptureCache {
 
-    private final Map<UUID, CachedStorageSnapshot> cachedStorage = new HashMap<>();
+    private final Map<UUID, CachedStorageSnapshot> cachedStorage = new ConcurrentHashMap<>();
 
     public CapturedInventoryStorageSnapshot captureStorage(Player player,
                                                            int currentTick,

@@ -8,6 +8,7 @@ import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Tracks which players and entities are being recorded.
@@ -16,12 +17,12 @@ import java.util.*;
 public class EntityTracker {
 
     private final Set<UUID> trackedPlayers;
-    private final Map<UUID, EntityType> trackedEntities = new HashMap<>();
+    private final Map<UUID, EntityType> trackedEntities = new ConcurrentHashMap<>();
 
     private static final double NEARBY_RADIUS_SQUARED = 32.0 * 32.0;
 
     public EntityTracker(Collection<Player> players) {
-        this.trackedPlayers = new HashSet<>();
+        this.trackedPlayers = ConcurrentHashMap.newKeySet();
         for (Player p : players) {
             this.trackedPlayers.add(p.getUniqueId());
         }

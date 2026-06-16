@@ -61,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-14: Replay stop cleanup now schedules live block and chunk restore reads on their owning Folia region to avoid asynchronous world access failures
 - 2026-06-16: Recording chunk baseline capture now schedules live chunk reads on the owning Folia region to avoid async chunk retrieval failures when chunk recording is enabled
 - 2026-06-16: Chunk recording and chunk replay now move tracked-player chunk discovery, replay chunk refresh, legacy live block comparisons, and viewer packet sends onto the proper Folia entity or region scheduler
+- 2026-06-16: Recording session entity/player tracking and dirty inventory cache state now use concurrent collections to avoid Folia tick `ConcurrentModificationException` crashes during live recordings
 
 ## [1.4.0] - 2026-04-10
 
