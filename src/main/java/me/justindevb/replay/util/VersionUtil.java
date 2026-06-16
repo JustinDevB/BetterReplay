@@ -14,18 +14,10 @@ public final class VersionUtil {
 
     /**
      * Returns true if {@code running} is greater than or equal to {@code required}.
-     * Compares dot-separated integer segments (e.g. "1.4.0" >= "1.4.0").
+     * Supports alpha pre-release ordering (e.g. "1.4.0" >= "1.4.0-alpha.5").
      */
     public static boolean isAtLeast(String running, String required) {
-        String[] r = running.split("\\.");
-        String[] q = required.split("\\.");
-        int len = Math.max(r.length, q.length);
-        for (int i = 0; i < len; i++) {
-            int rv = i < r.length ? parseSegment(r[i]) : 0;
-            int qv = i < q.length ? parseSegment(q[i]) : 0;
-            if (rv != qv) return rv > qv;
-        }
-        return true;
+        return compareVersions(running, required) >= 0;
     }
 
     /**

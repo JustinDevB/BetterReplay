@@ -378,8 +378,7 @@ public class MySQLReplayStorage implements ReplayStorage {
                     return codec.inspectReplay(name, data, replay.getPluginMeta().getVersion());
                 }
             } catch (Exception e) {
-                replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to inspect replay file: " + name, e);
-                return null;
+                throw new RuntimeException("Failed to inspect replay file: " + name, e);
             }
         });
     }
@@ -401,8 +400,7 @@ public class MySQLReplayStorage implements ReplayStorage {
                     return replayDumpWriter.writeDump(name, codec.decodeTimeline(data, replay.getPluginMeta().getVersion()), query);
                 }
             } catch (Exception e) {
-                replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to dump replay file: " + name, e);
-                return null;
+                throw new RuntimeException("Failed to dump replay file: " + name, e);
             }
         });
     }

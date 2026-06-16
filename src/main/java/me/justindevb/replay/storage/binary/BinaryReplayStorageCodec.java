@@ -131,7 +131,34 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
     public ReplayInspection inspectReplay(String replayName, byte[] storedBytes, String runningVersion) throws IOException {
         ArchiveEntries archiveEntries = readArchiveEntries(storedBytes);
         BinaryReplayManifest manifest = parseManifest(archiveEntries.manifestBytes());
-        validateManifest(manifest, archiveEntries.replayBytes(), runningVersion);
+        try {
+            validateManifest(manifest, archiveEntries.replayBytes(), runningVersion);
+        } catch (VersionUtil.ReplayVersionMismatchException ex) {
+            // Still surface manifest metadata so operators can inspect incompatible replays.
+            InspectedChunkData inspectedChunkData = inspectChunkData(manifest, archiveEntries.chunkEntries());
+            return new ReplayInspection(
+                    replayName,
+                    format(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    storedBytes.length,
+                    archiveEntries.replayBytes().length,
+                    0,
+                    inspectedChunkData.chunkRegionEntryCount(),
+                    inspectedChunkData.chunkEntryCount(),
+                    inspectedChunkData.compressedChunkPayloadBytes(),
+                    inspectedChunkData.decompressedChunkPayloadBytes(),
+                    manifest.recordingStartedAtEpochMillis(),
+                    manifest.recordedWithVersion(),
+                    manifest.minimumViewerVersion(),
+                    0,
+                    0,
+                    false,
+                    0);
+        }
 
         byte[] payload = decompress(archiveEntries.replayBytes());
         validatePayloadHeader(payload);

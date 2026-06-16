@@ -28,6 +28,16 @@ class VersionUtilTest {
         }
 
         @Test
+        void releaseMeetsSameBaseAlphaRequirement() {
+            assertTrue(VersionUtil.isAtLeast("1.5.0", "1.5.0-alpha.9"));
+        }
+
+        @Test
+        void alphaDoesNotMeetSameBaseReleaseRequirement() {
+            assertFalse(VersionUtil.isAtLeast("1.5.0-alpha.9", "1.5.0"));
+        }
+
+        @Test
         void runningHigherMajor() {
             assertTrue(VersionUtil.isAtLeast("2.0.0", "1.4.0"));
         }
@@ -55,6 +65,11 @@ class VersionUtilTest {
         @Test
         void runningLowerPatch() {
             assertFalse(VersionUtil.isAtLeast("1.4.0", "1.4.1"));
+        }
+
+        @Test
+        void olderAlphaBuildDoesNotMeetNewerAlphaRequirement() {
+            assertFalse(VersionUtil.isAtLeast("1.5.0-alpha.9", "1.5.0-alpha.10"));
         }
 
         @Test

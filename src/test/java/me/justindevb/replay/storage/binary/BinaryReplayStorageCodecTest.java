@@ -210,6 +210,39 @@ class BinaryReplayStorageCodecTest {
     }
 
     @Test
+    void inspectReplay_returnsManifestMetadataWhenViewerVersionIsTooOld() throws Exception {
+        byte[] archive = codec.finalizeReplay("inspect-versioned", sampleTimeline(), "1.4.0", RECORDING_STARTED_AT);
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(
+                new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+                BinaryReplayManifest.class);
+
+        entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(new BinaryReplayManifest(
+                manifest.formatVersion(),
+                "1.5.0-alpha.9",
+                "9.0.0",
+                manifest.recordingStartedAtEpochMillis(),
+                manifest.payloadChecksum(),
+                manifest.payloadChecksumAlgorithm(),
+                manifest.hasChunkData(),
+                manifest.chunkRegionEntryCount(),
+                manifest.chunkEntryCount(),
+                manifest.chunkCoordinateHash(),
+                manifest.chunkPayloadFormat(),
+                manifest.chunkPayloadVersion())).getBytes(StandardCharsets.UTF_8));
+
+        me.justindevb.replay.storage.ReplayInspection inspection = codec.inspectReplay("inspect-versioned", writeArchive(entries), "1.4.0");
+
+        assertEquals("1.5.0-alpha.9", inspection.recordedWithVersion());
+        assertEquals("9.0.0", inspection.minimumViewerVersion());
+        assertEquals(0, inspection.recordCount());
+        assertEquals(0, inspection.seekCheckpointCount());
+        assertFalse(inspection.indexedPayload());
+        assertTrue(inspection.storedBytes() > 0);
+        assertTrue(inspection.compressedPayloadBytes() > 0);
+    }
+
+    @Test
     void finalizeReplay_withPacketFriendlyChunkArtifacts_tagsManifestWithBrcp() throws Exception {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
             writer.append(new CapturedChunkBaseline(

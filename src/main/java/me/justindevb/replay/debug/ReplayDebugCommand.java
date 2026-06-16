@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -140,8 +141,9 @@ public final class ReplayDebugCommand {
     private void notifyInfoCompletion(CommandSender sender, String replayName, ReplayInspection info, Throwable throwable) {
         foliaLib.getScheduler().runNextTick(task -> {
             if (throwable != null) {
-                logger.log(Level.SEVERE, "Replay info failed for " + replayName, throwable);
-                sender.sendMessage("§cReplay info failed: " + throwable.getMessage());
+                Throwable cause = unwrapThrowable(throwable);
+                logger.log(Level.SEVERE, "Replay info failed for " + replayName, cause);
+                sender.sendMessage("§cReplay info failed: " + cause.getMessage());
                 return;
             }
             if (info == null) {
@@ -170,8 +172,9 @@ public final class ReplayDebugCommand {
     private void notifyCompletion(CommandSender sender, String replayName, File file, Throwable throwable) {
         foliaLib.getScheduler().runNextTick(task -> {
             if (throwable != null) {
-                logger.log(Level.SEVERE, "Replay dump failed for " + replayName, throwable);
-                sender.sendMessage("§cReplay dump failed: " + throwable.getMessage());
+                Throwable cause = unwrapThrowable(throwable);
+                logger.log(Level.SEVERE, "Replay dump failed for " + replayName, cause);
+                sender.sendMessage("§cReplay dump failed: " + cause.getMessage());
                 return;
             }
             if (file == null || !file.exists()) {
@@ -180,6 +183,20 @@ public final class ReplayDebugCommand {
             }
             sender.sendMessage("§aReplay dump finished: " + file.getAbsolutePath());
         });
+    }
+
+    private static Throwable unwrapThrowable(Throwable throwable) {
+        Throwable cause = throwable;
+        while ((cause instanceof CompletionException || cause instanceof RuntimeException)
+                && cause.getCause() != null
+                && cause.getMessage() != null
+                && cause.getMessage().startsWith("java.")) {
+            cause = cause.getCause();
+        }
+        while (cause instanceof CompletionException && cause.getCause() != null) {
+            cause = cause.getCause();
+        }
+        return cause;
     }
 
     private static ParsedInfoRequest parseInfoRequest(String[] args) {

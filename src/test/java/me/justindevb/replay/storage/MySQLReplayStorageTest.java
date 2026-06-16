@@ -38,6 +38,7 @@ import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -258,6 +259,18 @@ class MySQLReplayStorageTest {
         assertTrue(info.compressedPayloadBytes() > 0);
         assertTrue(info.decompressedPayloadBytes() > info.compressedPayloadBytes());
         assertTrue(info.indexedPayload());
+    }
+
+    @Test
+    void getReplayDumpFile_propagatesDecodeFailures() throws Exception {
+        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("dump-versioned", sampleTimeline(), "9.0.0", 123456789L);
+        when(selectResultSet.next()).thenReturn(true);
+        when(selectResultSet.getBytes("data")).thenReturn(archive);
+
+        RuntimeException exception = assertThrows(RuntimeException.class,
+                () -> storage.getReplayDumpFile("dump-versioned", new ReplayDumpQuery(null, null)).join());
+
+        assertTrue(exception.getMessage().contains("Failed to dump replay file: dump-versioned"));
     }
 
     @Test

@@ -19,6 +19,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -112,6 +113,25 @@ class ReplayDebugCommandTest {
         verify(sender).sendMessage("§7Replay: §fCompressed 256 B §8| §fDecompressed 1.00 KiB");
         verify(sender).sendMessage("§7Chunks: §fCompressed 96 B §8| §fDecompressed 192 B");
         verify(sender).sendMessage("§7Chunk data: §f1 region / 2 chunks");
+    }
+
+    @Test
+    void failedInfo_unwrapsUnderlyingCauseMessage() {
+        lenient().when(foliaLib.getScheduler()).thenReturn(scheduler);
+        lenient().doAnswer(invocation -> {
+            java.util.function.Consumer<WrappedTask> consumer = invocation.getArgument(0);
+            consumer.accept(mock(WrappedTask.class));
+            return null;
+        }).when(scheduler).runNextTick(any());
+        when(sender.hasPermission("replay.debug")).thenReturn(true);
+        when(replay.getReplayStorage()).thenReturn(replayStorage);
+        when(replayStorage.getReplayInfo("demo replay")).thenReturn(CompletableFuture.failedFuture(
+                new CompletionException(new IllegalStateException("root cause message"))));
+
+        boolean handled = command.handle(sender, new String[]{"debug", "info", "demo", "replay"});
+
+        assertTrue(handled);
+        verify(sender).sendMessage("§cReplay info failed: root cause message");
     }
 
     @Test
