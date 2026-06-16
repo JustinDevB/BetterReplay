@@ -9,6 +9,7 @@ import com.github.retrooper.packetevents.protocol.player.ClientVersion;
 import com.github.retrooper.packetevents.protocol.world.chunk.Column;
 import com.github.retrooper.packetevents.protocol.world.chunk.LightData;
 import com.tcoded.folialib.FoliaLib;
+import com.tcoded.folialib.enums.EntityTaskResult;
 import com.tcoded.folialib.impl.PlatformScheduler;
 import com.tcoded.folialib.wrapper.task.WrappedTask;
 import me.justindevb.replay.Replay;
@@ -358,6 +359,40 @@ class ReplayBlockManagerTest {
 
         verify(world).getBlockAt(1, 64, 1);
         verify(viewer).sendBlockChange(any(Location.class), eq(liveData));
+    }
+
+    @Test
+    void refreshVisibleChunkBaselines_onFoliaReadsViewerStateInsideEntityTask() {
+        Player viewer = mock(Player.class);
+        Replay replay = mock(Replay.class);
+        FoliaLib foliaLib = mock(FoliaLib.class);
+        PlatformScheduler scheduler = mock(PlatformScheduler.class);
+        World world = mock(World.class);
+        CompletableFuture<EntityTaskResult> entityTaskFuture = new CompletableFuture<>();
+
+        when(replay.getFoliaLib()).thenReturn(foliaLib);
+        when(foliaLib.isFolia()).thenReturn(true);
+        when(foliaLib.getScheduler()).thenReturn(scheduler);
+        when(scheduler.isOwnedByCurrentRegion(viewer)).thenReturn(false);
+        when(scheduler.runAtEntity(eq(viewer), any())).thenReturn(entityTaskFuture);
+        when(viewer.isOnline()).thenReturn(true);
+        when(viewer.getWorld()).thenReturn(world);
+        when(viewer.getLocation()).thenReturn(new Location(world, 0, 64, 0));
+        when(world.getName()).thenReturn("world");
+
+        ReplayBlockManager manager = new ReplayBlockManager(viewer, replay, ReplayChunkData.NONE);
+
+        manager.refreshVisibleChunkBaselines();
+
+        verify(viewer, never()).getLocation();
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Consumer<WrappedTask>> taskCaptor = ArgumentCaptor.forClass(Consumer.class);
+        verify(scheduler).runAtEntity(eq(viewer), taskCaptor.capture());
+
+        taskCaptor.getValue().accept(mock(WrappedTask.class));
+        entityTaskFuture.complete(null);
+
+        verify(viewer).getLocation();
     }
 
     @Test

@@ -26,6 +26,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.*;
 import java.util.function.Function;
 import java.util.function.IntSupplier;
@@ -61,6 +62,7 @@ public class ReplayBlockManager {
     private final Function<Player, ClientVersion> clientVersionResolver;
     private final LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler;
     private final LiveWorldTaskScheduler liveWorldTaskScheduler;
+    private final ViewerTaskScheduler viewerTaskScheduler;
     private final PlaybackChunkMode chunkPlaybackMode;
     private final ChunkSentStateResolver chunkSentStateResolver;
     private final int chunkPlaybackRadius;
@@ -84,6 +86,8 @@ public class ReplayBlockManager {
     private final Map<ChunkCoordinate, PreparedReplayChunk> preparedReplayChunkCache = new ConcurrentHashMap<>();
     private final Map<ChunkCoordinate, CompletableFuture<PreparedReplayChunk>> pendingLiveChunkRestorePrepares = new ConcurrentHashMap<>();
     private final Set<ChunkCoordinate> unavailableReplayChunks = ConcurrentHashMap.newKeySet();
+    private final AtomicBoolean refreshVisibleChunksScheduled = new AtomicBoolean();
+    private final AtomicBoolean drainLiveRestoresScheduled = new AtomicBoolean();
     private WrappedTask liveChunkRestoreDrainTask;
     private int blockBreakMutationEpoch = 0;
     private ChunkCoordinate currentChunkCenter;
@@ -117,6 +121,12 @@ public class ReplayBlockManager {
     @FunctionalInterface
     interface LiveWorldTaskScheduler {
         void schedule(Location location, Runnable task);
+    }
+
+    interface ViewerTaskScheduler {
+        CompletableFuture<?> schedule(Runnable task);
+
+        boolean isOwnedByCurrentThread();
     }
 
     enum PlaybackChunkMode {
@@ -167,6 +177,7 @@ public class ReplayBlockManager {
         this.liveWorldTaskScheduler = replay != null && replay.getFoliaLib() != null
                 ? (location, task) -> replay.getFoliaLib().getScheduler().runAtLocation(location, ignored -> task.run())
                 : (location, task) -> task.run();
+        this.viewerTaskScheduler = createViewerTaskScheduler(viewer, replay);
         this.chunkPlaybackMode = replay != null
             && replay.getConfig() != null
             ? PlaybackChunkMode.fromConfiguredValue(ReplayConfigSetting.PLAYBACK_CHUNK_MODE.getInt(replay.getConfig()))
@@ -457,6 +468,7 @@ public class ReplayBlockManager {
         this.clientVersionResolver = Objects.requireNonNull(clientVersionResolver, "clientVersionResolver");
         this.liveChunkRestoreDrainScheduler = liveChunkRestoreDrainScheduler;
         this.liveWorldTaskScheduler = Objects.requireNonNull(liveWorldTaskScheduler, "liveWorldTaskScheduler");
+        this.viewerTaskScheduler = runInlineViewerTaskScheduler();
         this.chunkPlaybackMode = Objects.requireNonNull(chunkPlaybackMode, "chunkPlaybackMode");
         this.chunkSentStateResolver = Objects.requireNonNull(chunkSentStateResolver, "chunkSentStateResolver");
         this.chunkPlaybackRadius = Math.max(0, chunkPlaybackRadius);
@@ -623,6 +635,10 @@ public class ReplayBlockManager {
     }
 
     public void applyReplayBlockChange(TimelineEvent event, boolean immediateBreakRemoval) {
+        runViewerTask("apply replay block change", () -> applyReplayBlockChangeOnViewer(event, immediateBreakRemoval));
+    }
+
+    private void applyReplayBlockChangeOnViewer(TimelineEvent event, boolean immediateBreakRemoval) {
         String worldName;
         int x, y, z;
         switch (event) {
@@ -669,13 +685,18 @@ public class ReplayBlockManager {
                     if (mutationEpoch != blockBreakMutationEpoch) {
                         return;
                     }
-                    viewer.sendBlockChange(blockLoc, Material.AIR.createBlockData());
+                    runViewerTask("apply delayed replay block removal",
+                            () -> viewer.sendBlockChange(blockLoc, Material.AIR.createBlockData()));
                 },
                 3L
         );
     }
 
     public void restoreSessionBaseline() {
+        runViewerTask("restore replay session baseline", this::restoreSessionBaselineOnViewer);
+    }
+
+    private void restoreSessionBaselineOnViewer() {
         cancelLiveChunkRestoreDrainTask();
         refreshReplayChunkResidencyFromViewer();
         Set<ChunkCoordinate> chunksToRestore = new LinkedHashSet<>(renderedChunks);
@@ -719,6 +740,11 @@ public class ReplayBlockManager {
     }
 
     private void drainLiveChunkRestoresDuringTeardown() {
+        runViewerTask("drain live chunk restores during teardown", drainLiveRestoresScheduled,
+                this::drainLiveChunkRestoresDuringTeardownOnViewer);
+    }
+
+    private void drainLiveChunkRestoresDuringTeardownOnViewer() {
         if (viewer == null || !viewer.isOnline() || viewer.getWorld() == null) {
             clearPendingLiveChunkRestores();
             cancelLiveChunkRestoreDrainTask();
@@ -758,6 +784,10 @@ public class ReplayBlockManager {
     }
 
     private boolean scheduleLiveWorldTask(Location location, Runnable task, String description) {
+        if (location == null) {
+            logger.log(Level.WARNING, "Failed to schedule " + description + ": location is unavailable");
+            return false;
+        }
         try {
             liveWorldTaskScheduler.schedule(location, () -> {
                 try {
@@ -770,6 +800,45 @@ public class ReplayBlockManager {
         } catch (RuntimeException ex) {
             logger.log(Level.WARNING, "Failed to schedule " + description, ex);
             return false;
+        }
+    }
+
+    private void runViewerTask(String description, Runnable task) {
+        runViewerTask(description, null, task);
+    }
+
+    private void runViewerTask(String description, AtomicBoolean gate, Runnable task) {
+        if (viewerTaskScheduler.isOwnedByCurrentThread()) {
+            runLoggedViewerTask(description, task);
+            return;
+        }
+        if (gate != null && !gate.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            viewerTaskScheduler.schedule(() -> runLoggedViewerTask(description, task))
+                    .whenComplete((ignored, ex) -> {
+                        if (gate != null) {
+                            gate.set(false);
+                        }
+                        if (ex != null) {
+                            logger.log(Level.WARNING, "Failed to " + description, ex);
+                        }
+                    });
+        } catch (RuntimeException ex) {
+            if (gate != null) {
+                gate.set(false);
+            }
+            logger.log(Level.WARNING, "Failed to schedule " + description, ex);
+        }
+    }
+
+    private void runLoggedViewerTask(String description, Runnable task) {
+        try {
+            task.run();
+        } catch (RuntimeException ex) {
+            logger.log(Level.WARNING, "Failed to " + description, ex);
+            throw ex;
         }
     }
 
@@ -789,6 +858,10 @@ public class ReplayBlockManager {
     }
 
     public void refreshVisibleChunkBaselines() {
+        runViewerTask("refresh visible chunk baselines", refreshVisibleChunksScheduled, this::refreshVisibleChunkBaselinesOnViewer);
+    }
+
+    private void refreshVisibleChunkBaselinesOnViewer() {
         if (viewer == null || !viewer.isOnline() || viewer.getWorld() == null) {
             return;
         }
@@ -919,6 +992,10 @@ public class ReplayBlockManager {
     }
 
     public void showGlobalBlockBreakStage(TimelineEvent.BlockBreakStage event) {
+        runViewerTask("show global block break stage", () -> showGlobalBlockBreakStageOnViewer(event));
+    }
+
+    private void showGlobalBlockBreakStageOnViewer(TimelineEvent.BlockBreakStage event) {
         String worldName = event.world();
         if (worldName != null && !worldName.equals(viewer.getWorld().getName())) {
             return;
@@ -1016,27 +1093,31 @@ public class ReplayBlockManager {
     }
 
     private void sendBlockStateToViewer(World world, int x, int y, int z, String blockData) {
-        try {
-            viewer.sendBlockChange(new Location(world, x, y, z), Bukkit.createBlockData(blockData));
-        } catch (IllegalArgumentException ignored) {
-        }
+        runViewerTask("send replay block state", () -> {
+            try {
+                viewer.sendBlockChange(new Location(world, x, y, z), Bukkit.createBlockData(blockData));
+            } catch (IllegalArgumentException ignored) {
+            }
+        });
     }
 
     private void sendBlockBreakParticles(World world, int x, int y, int z, String blockData) {
-        try {
-            Location center = new Location(world, x + 0.5, y + 0.5, z + 0.5);
-            viewer.spawnParticle(
-                    Particle.BLOCK,
-                    center,
-                    24,
-                    0.25,
-                    0.25,
-                    0.25,
-                    0.02,
-                    Bukkit.createBlockData(blockData)
-            );
-        } catch (IllegalArgumentException ignored) {
-        }
+        runViewerTask("send replay block break particles", () -> {
+            try {
+                Location center = new Location(world, x + 0.5, y + 0.5, z + 0.5);
+                viewer.spawnParticle(
+                        Particle.BLOCK,
+                        center,
+                        24,
+                        0.25,
+                        0.25,
+                        0.25,
+                        0.02,
+                        Bukkit.createBlockData(blockData)
+                );
+            } catch (IllegalArgumentException ignored) {
+            }
+        });
     }
 
     private boolean hasNativeStagesBetween(List<Integer> stageTicks, int startTick, int endTick) {
@@ -1277,29 +1358,53 @@ public class ReplayBlockManager {
     }
 
     private void applyPreparedReplayChunk(ChunkCoordinate coordinate, PreparedReplayChunk preparedChunk) {
-        try {
-            replayChunkSnapshotSender.send(viewer, coordinate, preparedChunk.packet());
-            renderedChunks.add(coordinate);
-            residentReplayChunks.add(coordinate);
-        } catch (IOException | RuntimeException ex) {
-            logger.log(Level.WARNING,
-                    "Failed to send replay chunk snapshot for " + coordinate,
-                    ex);
-        }
+        sendPreparedReplayChunkToViewer(coordinate, preparedChunk, "send replay chunk snapshot");
+        renderedChunks.add(coordinate);
+        residentReplayChunks.add(coordinate);
 
         reapplyHistoricalChunkMutations(coordinate);
+    }
+
+    private void sendPreparedReplayChunkToViewer(
+            ChunkCoordinate coordinate,
+            PreparedReplayChunk preparedChunk,
+            String description
+    ) {
+        runViewerTask(description + " for " + coordinate, () -> {
+            try {
+                replayChunkSnapshotSender.send(viewer, coordinate, preparedChunk.packet());
+            } catch (IOException | RuntimeException ex) {
+                logger.log(Level.WARNING,
+                        "Failed to " + description + " for " + coordinate,
+                        ex);
+            }
+        });
     }
 
     private void applyLegacyChunkBaseline(
             ChunkCoordinate coordinate,
             BinaryChunkPayloadCodec.DecodedChunkPayload payload
     ) {
-        World world = Bukkit.getWorld(coordinate.worldName());
+        World world = findWorldForCoordinate(coordinate);
+        if (world == null) {
+            return;
+        }
+
+        scheduleLiveWorldTask(chunkTaskLocation(world, coordinate), () -> applyLegacyChunkBaselineAtLocation(coordinate, payload),
+                "apply legacy chunk baseline for " + coordinate);
+    }
+
+    private void applyLegacyChunkBaselineAtLocation(
+            ChunkCoordinate coordinate,
+            BinaryChunkPayloadCodec.DecodedChunkPayload payload
+    ) {
+        World world = findWorldForCoordinate(coordinate);
         if (world == null) {
             return;
         }
 
         Set<BlockKey> changedBlocks = new HashSet<>();
+        Map<BlockKey, String> liveBaseline = new HashMap<>();
         short[] stateIndexes = payload.stateIndexes();
         int height = payload.height();
         int index = 0;
@@ -1317,7 +1422,7 @@ public class ReplayBlockManager {
                         continue;
                     }
                     BlockKey key = new BlockKey(coordinate.worldName(), worldX, y, worldZ);
-                    chunkBaseline.putIfAbsent(key, liveBlockData);
+                    liveBaseline.putIfAbsent(key, liveBlockData);
                     changedBlocks.add(key);
                     sendBlockStateToViewer(world, worldX, y, worldZ, replayBlockData);
                 }
@@ -1325,8 +1430,13 @@ public class ReplayBlockManager {
         }
 
         if (!changedBlocks.isEmpty()) {
-            chunkBlocksByCoordinate.put(coordinate, changedBlocks);
-            renderedChunks.add(coordinate);
+            synchronized (this) {
+                for (Map.Entry<BlockKey, String> entry : liveBaseline.entrySet()) {
+                    chunkBaseline.putIfAbsent(entry.getKey(), entry.getValue());
+                }
+                chunkBlocksByCoordinate.put(coordinate, changedBlocks);
+                renderedChunks.add(coordinate);
+            }
         }
     }
 
@@ -1335,10 +1445,10 @@ public class ReplayBlockManager {
             BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload
     ) {
         try {
-            replayChunkSnapshotSender.send(
-                    viewer,
+            sendPreparedReplayChunkToViewer(
                     coordinate,
-                    replayChunkPacketPreparer.prepare(coordinate, payload, clientVersionResolver.apply(viewer)));
+                    new PreparedReplayChunk(replayChunkPacketPreparer.prepare(coordinate, payload, clientVersionResolver.apply(viewer))),
+                    "send replay chunk snapshot");
             renderedChunks.add(coordinate);
                     residentReplayChunks.add(coordinate);
         } catch (IOException | RuntimeException ex) {
@@ -1410,13 +1520,13 @@ public class ReplayBlockManager {
                 try {
                     PreparedReplayChunk preparedChunk = pendingRestore.join();
                     if (preparedChunk != null) {
-                        replayChunkSnapshotSender.send(viewer, coordinate, preparedChunk.packet());
+                        sendPreparedReplayChunkToViewer(coordinate, preparedChunk, "restore live chunk snapshot");
                     }
                 } catch (CompletionException | CancellationException ex) {
                     logger.log(Level.WARNING,
                             "Failed to restore live chunk snapshot for " + coordinate,
                             ex.getCause() != null ? ex.getCause() : ex);
-                } catch (IOException | RuntimeException ex) {
+                } catch (RuntimeException ex) {
                     logger.log(Level.WARNING,
                             "Failed to restore live chunk snapshot for " + coordinate,
                             ex);
@@ -1458,20 +1568,21 @@ public class ReplayBlockManager {
     }
 
     private void restoreLiveChunkPacket(ChunkCoordinate coordinate) {
-        World world = findWorld(coordinate.worldName());
+        World world = findWorldForCoordinate(coordinate);
         if (world == null) {
             return;
         }
 
+        ClientVersion clientVersion = clientVersionResolver.apply(viewer);
         Location location = chunkTaskLocation(world, coordinate);
         scheduleLiveWorldTask(location, () -> {
             try {
             WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot capturedSnapshot = liveChunkCaptureService.captureDetachedSnapshot(coordinate);
             BinaryPacketFriendlyChunkPayloadCodec.PacketFriendlyChunkPayload payload = liveChunkCaptureService.buildPayload(capturedSnapshot);
-            replayChunkSnapshotSender.send(
-                    viewer,
+            sendPreparedReplayChunkToViewer(
                     coordinate,
-                    replayChunkPacketPreparer.prepare(coordinate, payload, clientVersionResolver.apply(viewer)));
+                    new PreparedReplayChunk(replayChunkPacketPreparer.prepare(coordinate, payload, clientVersion)),
+                    "restore live chunk snapshot");
             } catch (IOException | RuntimeException ex) {
             logger.log(Level.WARNING,
                     "Failed to restore live chunk snapshot for " + coordinate,
@@ -1555,7 +1666,7 @@ public class ReplayBlockManager {
             try {
                 PreparedReplayChunk preparedChunk = pending.join();
                 if (preparedChunk != null) {
-                    replayChunkSnapshotSender.send(viewer, coordinate, preparedChunk.packet());
+                    sendPreparedReplayChunkToViewer(coordinate, preparedChunk, "restore live chunk snapshot");
                     residentReplayChunks.remove(coordinate);
                     renderedChunks.remove(coordinate);
                 }
@@ -1564,7 +1675,7 @@ public class ReplayBlockManager {
                 logger.log(Level.WARNING,
                         "Failed to restore live chunk snapshot for " + coordinate,
                         ex.getCause() != null ? ex.getCause() : ex);
-            } catch (IOException | RuntimeException ex) {
+            } catch (RuntimeException ex) {
                 logger.log(Level.WARNING,
                         "Failed to restore live chunk snapshot for " + coordinate,
                         ex);
@@ -1588,7 +1699,7 @@ public class ReplayBlockManager {
             ClientVersion clientVersion
     ) {
         CompletableFuture<WorldChunkPacketFriendlyCaptureService.CapturedChunkSnapshot> capturedSnapshotFuture = new CompletableFuture<>();
-        World world = findWorld(coordinate.worldName());
+        World world = findWorldForCoordinate(coordinate);
         Location location = world != null ? chunkTaskLocation(world, coordinate) : null;
         boolean scheduled = scheduleLiveWorldTask(location, () -> {
                 try {
@@ -1618,8 +1729,57 @@ public class ReplayBlockManager {
         }
     }
 
+    private World findWorldForCoordinate(ChunkCoordinate coordinate) {
+        if (viewer != null) {
+            try {
+                World viewerWorld = viewer.getWorld();
+                if (viewerWorld != null && coordinate.worldName().equals(viewerWorld.getName())) {
+                    return viewerWorld;
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return findWorld(coordinate.worldName());
+    }
+
     private static LiveWorldTaskScheduler runInlineLiveWorldTaskScheduler() {
         return (location, task) -> task.run();
+    }
+
+    private static ViewerTaskScheduler createViewerTaskScheduler(Player viewer, Replay replay) {
+        if (viewer == null || replay == null || replay.getFoliaLib() == null || !replay.getFoliaLib().isFolia()) {
+            return runInlineViewerTaskScheduler();
+        }
+        return new ViewerTaskScheduler() {
+            @Override
+            public CompletableFuture<?> schedule(Runnable task) {
+                return replay.getFoliaLib().getScheduler().runAtEntity(viewer, ignored -> task.run());
+            }
+
+            @Override
+            public boolean isOwnedByCurrentThread() {
+                try {
+                    return replay.getFoliaLib().getScheduler().isOwnedByCurrentRegion(viewer);
+                } catch (RuntimeException ex) {
+                    return false;
+                }
+            }
+        };
+    }
+
+    private static ViewerTaskScheduler runInlineViewerTaskScheduler() {
+        return new ViewerTaskScheduler() {
+            @Override
+            public CompletableFuture<?> schedule(Runnable task) {
+                task.run();
+                return CompletableFuture.completedFuture(null);
+            }
+
+            @Override
+            public boolean isOwnedByCurrentThread() {
+                return true;
+            }
+        };
     }
 
     private PreparedReplayChunk prepareLiveChunkRestore(

@@ -6,11 +6,13 @@ import com.github.retrooper.packetevents.event.PacketListenerPriority;
 import me.justindevb.replay.chunk.ChunkBaselineCaptureService;
 import me.justindevb.replay.chunk.ChunkCaptureConfig;
 import me.justindevb.replay.chunk.ChunkCaptureCoordinator;
+import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import me.justindevb.replay.chunk.FoliaRegionChunkBaselineCaptureService;
 import me.justindevb.replay.chunk.RadiusChunkInterestTracker;
 import me.justindevb.replay.chunk.WorldChunkPacketFriendlyCaptureService;
 import me.justindevb.replay.recording.EntityTracker;
+import me.justindevb.replay.recording.FoliaTrackedChunkCollector;
 import me.justindevb.replay.recording.RecordingEventHandler;
 import me.justindevb.replay.recording.RecordingPacketHandler;
 import me.justindevb.replay.recording.TimelineBuilder;
@@ -63,6 +65,7 @@ public class RecordingSession {
     private final RecordingPacketHandler packetHandler;
     private final ChunkCaptureConfig chunkCaptureConfig;
     private final ChunkCaptureCoordinator chunkCaptureCoordinator;
+    private final TrackedChunkCollector trackedChunkCollector;
     private final SharedStorageCaptureCache sharedStorageCaptureCache;
     private PacketListenerCommon packetListenerHandle;
 
@@ -99,6 +102,7 @@ public class RecordingSession {
         this.sharedStorageCaptureCache = sharedStorageCaptureCache;
         FileConfiguration config = replay.getConfig();
         this.chunkCaptureConfig = config != null ? ChunkCaptureConfig.from(config) : ChunkCaptureConfig.disabled();
+        this.trackedChunkCollector = createTrackedChunkCollector();
 
         try {
             this.appendLogWriter = new BinaryReplayAppendLogWriter(
@@ -376,7 +380,7 @@ public class RecordingSession {
 
     private void captureChunkBaselines() {
         try {
-            chunkCaptureCoordinator.captureTrackedChunks(tracker.collectTrackedPlayerChunks());
+            chunkCaptureCoordinator.captureTrackedChunks(trackedChunkCollector.collect(tracker));
         } catch (IOException | RuntimeException e) {
             chunkCaptureFailed = true;
             resolveLogger().log(Level.SEVERE, "Failed to capture chunk baselines for recording: " + name, e);
@@ -391,6 +395,19 @@ public class RecordingSession {
             return new FoliaRegionChunkBaselineCaptureService(replay.getFoliaLib(), captureService);
         }
         return captureService;
+    }
+
+    private TrackedChunkCollector createTrackedChunkCollector() {
+        if (replay.getFoliaLib() != null && replay.getFoliaLib().isFolia()) {
+            FoliaTrackedChunkCollector collector = new FoliaTrackedChunkCollector(replay.getFoliaLib());
+            return collector::collectTrackedPlayerChunks;
+        }
+        return EntityTracker::collectTrackedPlayerChunks;
+    }
+
+    @FunctionalInterface
+    private interface TrackedChunkCollector {
+        Set<ChunkCoordinate> collect(EntityTracker tracker) throws IOException;
     }
 
     private ChunkRecordingArtifacts closeChunkCapture() {
