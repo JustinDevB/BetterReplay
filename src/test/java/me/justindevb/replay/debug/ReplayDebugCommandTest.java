@@ -90,6 +90,16 @@ class ReplayDebugCommandTest {
     }
 
     @Test
+    void invalidReplayName_showsUsage() {
+        when(sender.hasPermission("replay.debug")).thenReturn(true);
+
+        command.handle(sender, new String[]{"debug", "dump", "bad/name"});
+
+        verify(sender).sendMessage("§cReplay names may not contain any of \\ / : * ? \" < > | or §");
+        verify(sender).sendMessage("§cUsage: /replay debug dump <name> [start=<tick>] [end=<tick>]");
+    }
+
+    @Test
     void validInfo_withReplayNameContainingSpaces_printsMetadata() {
         lenient().when(foliaLib.getScheduler()).thenReturn(scheduler);
         lenient().doAnswer(invocation -> {

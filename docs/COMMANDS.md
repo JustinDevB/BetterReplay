@@ -30,6 +30,7 @@ Main workflow notes:
 - `/replay start` uses a single-token recording name. The code reads the session name from the second argument directly.
 - Commands that operate on saved replay names such as `stop`, `delete`, `protect`, and `unprotect` join the remaining arguments back into one name, so those saved replay names can contain spaces.
 - `/replay play` currently reads the replay name from the next token only, then optionally accepts `server:<server>` after it. Example: `/replay play Test server:Replays`.
+- Replay and recording names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
 - If `Velocity.Default-Replay-Server` is set, `/replay play <name>` routes to that backend automatically. An explicit `server:<server>` command argument overrides the configured default.
 - The `server:` target and `Velocity.Default-Replay-Server` setting are intended for Velocity setups where replay playback can be launched on another backend connected to the same BetterReplay MySQL database.
 - When `server:<server>` is used, BetterReplay verifies the replay exists before asking the proxy to move the viewer. The replay backend starts playback after the viewer arrives and requests its pending replay launch.
@@ -66,6 +67,7 @@ The export and debug dump parsers follow the same rules:
 - Valid debug dump filters are `start=` and `end=`.
 - Tick filters must be non-negative integers.
 - Replay names may contain spaces as long as all filters come after the full name.
+- Replay names still have the same character restrictions as the main workflow commands.
 
 `/replay debug info` does not accept filters.
 

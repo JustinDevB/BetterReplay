@@ -5,6 +5,7 @@ import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.debug.ReplayDumpQuery;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
+import me.justindevb.replay.util.ReplayNames;
 import me.justindevb.replay.util.io.ReplayCompressor;
 
 import javax.sql.DataSource;
@@ -112,6 +113,10 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<Void> saveReplay(String name, ReplaySaveRequest request) {
+        Optional<String> invalidName = ReplayNames.validateReplayName(name);
+        if (invalidName.isPresent()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(invalidName.get()));
+        }
         return CompletableFuture.runAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement("""
@@ -140,6 +145,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<ReplayPlaybackData> loadReplayData(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
@@ -164,6 +172,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<Boolean> replayExists(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(false);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
@@ -186,6 +197,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<ReplayDeleteResult> deleteReplay(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(ReplayDeleteResult.NOT_FOUND);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement(
@@ -243,6 +257,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<ReplayProtectionResult> protectReplay(String name, Instant protectedAt, String protectedBy) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection()) {
                 Optional<Boolean> protectionState = getProtectionState(conn, name);
@@ -270,6 +287,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<ReplayProtectionResult> unprotectReplay(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection()) {
                 Optional<Boolean> protectionState = getProtectionState(conn, name);
@@ -317,6 +337,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<File> getReplayFile(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                 PreparedStatement ps = conn.prepareStatement("SELECT data FROM replays WHERE name=?")) {
@@ -339,6 +362,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<File> getReplayFile(String name, ReplayExportQuery query) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement("SELECT data FROM replays WHERE name=?")) {
@@ -363,6 +389,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<ReplayInspection> getReplayInfo(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement("SELECT data FROM replays WHERE name=?")) {
@@ -385,6 +414,9 @@ public class MySQLReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<File> getReplayDumpFile(String name, ReplayDumpQuery query) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(null);
+        }
         return CompletableFuture.supplyAsync(() -> {
             try (Connection conn = dataSource.getConnection();
                  PreparedStatement ps = conn.prepareStatement("SELECT data FROM replays WHERE name=?")) {

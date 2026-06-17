@@ -1,6 +1,7 @@
 package me.justindevb.replay.entity;
 
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.util.ReplayMessages;
 
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerDestroyEntities;
@@ -68,7 +69,7 @@ public abstract class RecordedEntity {
         if (fakeEntityId == 0) return;
 
         if (this instanceof RecordedPlayer rp) {
-            viewer.sendMessage("[BetterReplay] " + rp.getName() + " died");
+            ReplayMessages.send(viewer, "[BetterReplay] " + rp.getName() + " died");
         }
 
         WrapperPlayServerEntityStatus packet = new WrapperPlayServerEntityStatus(fakeEntityId, (byte) 3);

@@ -3,6 +3,8 @@ package me.justindevb.replay.export;
 import com.tcoded.folialib.FoliaLib;
 import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.api.ReplayManager;
+import me.justindevb.replay.util.ReplayMessages;
+import me.justindevb.replay.util.ReplayNames;
 import org.bukkit.command.CommandSender;
 
 import java.io.File;
@@ -51,7 +53,7 @@ public final class ReplayExportCommand {
         }
 
         CompletableFuture<Optional<File>> future = replayManager.getSavedReplayFile(request.replayName(), request.query());
-        sender.sendMessage("§eReplay export started for: " + request.replayName());
+        ReplayMessages.send(sender, "§eReplay export started for: " + request.replayName());
         future.whenComplete((file, throwable) -> notifyCompletion(sender, request.replayName(), file, throwable));
         return true;
     }
@@ -96,14 +98,14 @@ public final class ReplayExportCommand {
         foliaLib.getScheduler().runNextTick(task -> {
             if (throwable != null) {
                 logger.log(Level.SEVERE, "Replay export failed for " + replayName, throwable);
-                sender.sendMessage("§cReplay export failed: " + throwable.getMessage());
+                ReplayMessages.send(sender, "§cReplay export failed: " + throwable.getMessage());
                 return;
             }
             if (file == null || file.isEmpty()) {
-                sender.sendMessage("§cReplay not found or export failed: " + replayName);
+                ReplayMessages.send(sender, "§cReplay not found or export failed: " + replayName);
                 return;
             }
-            sender.sendMessage("§aReplay export finished: " + file.get().getAbsolutePath());
+            ReplayMessages.send(sender, "§aReplay export finished: " + file.get().getAbsolutePath());
         });
     }
 
@@ -139,6 +141,9 @@ public final class ReplayExportCommand {
         }
 
         String replayName = String.join(" ", nameTokens);
+        ReplayNames.validateReplayName(replayName).ifPresent(message -> {
+            throw new IllegalArgumentException(message);
+        });
         return new ParsedExportRequest(replayName, new ReplayExportQuery(player, startTick, endTick));
     }
 

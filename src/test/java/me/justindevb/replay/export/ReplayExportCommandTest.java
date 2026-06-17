@@ -87,6 +87,16 @@ class ReplayExportCommandTest {
     }
 
     @Test
+    void invalidReplayName_showsUsage() {
+        when(sender.hasPermission("replay.export")).thenReturn(true);
+
+        command.handle(sender, new String[]{"export", "bad/name"});
+
+        verify(sender).sendMessage("§cReplay names may not contain any of \\ / : * ? \" < > | or §");
+        verify(sender).sendMessage("§cUsage: /replay export <name> [player=<name|all>] [start=<tick>] [end=<tick>]");
+    }
+
+    @Test
     void tabComplete_suggestsReplayNamesAndFilterKeys() {
         when(sender.hasPermission("replay.export")).thenReturn(true);
         when(replayManager.getCachedReplayNames()).thenReturn(List.of("alpha", "beta replay"));

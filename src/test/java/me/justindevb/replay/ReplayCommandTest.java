@@ -12,6 +12,8 @@ import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.storage.ReplayStorageType;
 import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.velocity.ReplayTransferManager;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.entity.Player;
@@ -32,6 +34,8 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ReplayCommandTest {
+
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
 
     @Mock private ReplayManager replayManager;
     @Mock private ReplayBenchmarkCommand replayBenchmarkCommand;
@@ -222,9 +226,19 @@ class ReplayCommandTest {
                 replayCommand.onCommand(player, command, "replay",
                         new String[]{"start", "test", "Nobody"});
 
-                verify(player).sendMessage("§cPlayer not found: Nobody");
+                verify(player).sendMessage(componentMatching("§cPlayer not found: Nobody"));
                 verify(player).sendMessage("§cNo valid players to record.");
             }
+        }
+
+        @Test
+        void invalidSessionName_showsValidationMessage() {
+            when(player.hasPermission("replay.start")).thenReturn(true);
+
+            replayCommand.onCommand(player, command, "replay", new String[]{"start", "bad/name", "Steve"});
+
+            verify(player).sendMessage("§cRecording names may not contain any of \\ / : * ? \" < > | or §");
+            verify(replayManager, never()).startRecording(anyString(), anyCollection(), anyInt());
         }
 
         @Test
@@ -268,7 +282,7 @@ class ReplayCommandTest {
             when(replayManager.stopRecording("test-session", true)).thenReturn(true);
 
             replayCommand.onCommand(player, command, "replay", new String[]{"stop", "test-session"});
-            verify(player).sendMessage("§aStopped recording session: test-session");
+            verify(player).sendMessage(componentMatching("§aStopped recording session: test-session"));
         }
 
         @Test
@@ -387,7 +401,7 @@ class ReplayCommandTest {
                 replayCommand.onCommand(player, command, "replay", new String[]{"play", "test"});
 
                 verify(transferManager).requestReplayTransfer(player, "test", "replays");
-                verify(player).sendMessage("§aConnecting to replay server §ereplays§a...");
+                verify(player).sendMessage(componentMatching("§aConnecting to replay server §ereplays§a..."));
                 verify(replayManager, never()).startReplay(anyString(), any(Player.class));
             }
         }
@@ -408,9 +422,20 @@ class ReplayCommandTest {
                 replayCommand.onCommand(player, command, "replay", new String[]{"play", "test", "server:requested-replays"});
 
                 verify(transferManager).requestReplayTransfer(player, "test", "requested-replays");
-                verify(player).sendMessage("§aConnecting to replay server §erequested-replays§a...");
+                verify(player).sendMessage(componentMatching("§aConnecting to replay server §erequested-replays§a..."));
                 verify(replayManager, never()).startReplay(anyString(), any(Player.class));
             }
+        }
+
+        @Test
+        void invalidReplayName_showsValidationMessage() {
+            when(player.hasPermission("replay.play")).thenReturn(true);
+
+            replayCommand.onCommand(player, command, "replay", new String[]{"play", "bad/name"});
+
+            verify(player).sendMessage("§cReplay names may not contain any of \\ / : * ? \" < > | or §");
+            verify(replayManager, never()).startReplay(anyString(), any(Player.class));
+            verify(replayStorage, never()).replayExists(anyString());
         }
     }
 
@@ -445,7 +470,7 @@ class ReplayCommandTest {
 
                 replayCommand.onCommand(player, command, "replay", new String[]{"delete", "demo"});
 
-                verify(player).sendMessage("§aDeleted replay: demo");
+                verify(player).sendMessage(componentMatching("§aDeleted replay: demo"));
             }
         }
 
@@ -461,8 +486,18 @@ class ReplayCommandTest {
 
                 replayCommand.onCommand(player, command, "replay", new String[]{"delete", "demo"});
 
-                verify(player).sendMessage("§cReplay is protected and must be unprotected before deletion: demo");
+                verify(player).sendMessage(componentMatching("§cReplay is protected and must be unprotected before deletion: demo"));
             }
+        }
+
+        @Test
+        void invalidReplayName_showsValidationMessage() {
+            when(player.hasPermission("replay.delete")).thenReturn(true);
+
+            replayCommand.onCommand(player, command, "replay", new String[]{"delete", "bad/name"});
+
+            verify(player).sendMessage("§cReplay names may not contain any of \\ / : * ? \" < > | or §");
+            verify(replayManager, never()).deleteSavedReplay(anyString());
         }
     }
 
@@ -503,8 +538,8 @@ class ReplayCommandTest {
                 replayCommand.onCommand(player, command, "replay", new String[]{"list"});
 
                 verify(replayManager).listSavedReplaySummaries();
-                verify(player).sendMessage("§e- §fnormal");
-                verify(player).sendMessage("§e- §cprotected");
+                verify(player).sendMessage(componentMatching("§e- §fnormal"));
+                verify(player).sendMessage(componentMatching("§e- §cprotected"));
             }
         }
     }
@@ -515,7 +550,7 @@ class ReplayCommandTest {
     void unknownSubcommand_showsError() {
         when(player.hasPermission(anyString())).thenReturn(false);
         replayCommand.onCommand(player, command, "replay", new String[]{"foobar"});
-        verify(player).sendMessage("§cUnknown subcommand: §ffoobar");
+        verify(player).sendMessage(componentMatching("§cUnknown subcommand: §ffoobar"));
     }
 
     // ── Tab completion ────────────────────────────────────────
@@ -642,8 +677,18 @@ class ReplayCommandTest {
                 replayCommand.onCommand(player, command, "replay", new String[]{"protect", "demo"});
 
                 verify(replayManager).protectSavedReplay("demo", "Steve");
-                verify(player).sendMessage("§aProtected replay: demo");
+                verify(player).sendMessage(componentMatching("§aProtected replay: demo"));
             }
+        }
+
+        @Test
+        void invalidReplayName_showsValidationMessage() {
+            when(player.hasPermission("replay.protect")).thenReturn(true);
+
+            replayCommand.onCommand(player, command, "replay", new String[]{"protect", "bad/name"});
+
+            verify(player).sendMessage("§cReplay names may not contain any of \\ / : * ? \" < > | or §");
+            verify(replayManager, never()).protectSavedReplay(anyString(), anyString());
         }
     }
 
@@ -662,8 +707,18 @@ class ReplayCommandTest {
                 replayCommand.onCommand(player, command, "replay", new String[]{"unprotect", "demo"});
 
                 verify(replayManager).unprotectSavedReplay("demo");
-                verify(player).sendMessage("§aUnprotected replay: demo");
+                verify(player).sendMessage(componentMatching("§aUnprotected replay: demo"));
             }
+        }
+
+        @Test
+        void invalidReplayName_showsValidationMessage() {
+            when(player.hasPermission("replay.unprotect")).thenReturn(true);
+
+            replayCommand.onCommand(player, command, "replay", new String[]{"unprotect", "bad/name"});
+
+            verify(player).sendMessage("§cReplay names may not contain any of \\ / : * ? \" < > | or §");
+            verify(replayManager, never()).unprotectSavedReplay(anyString());
         }
     }
 
@@ -717,5 +772,9 @@ class ReplayCommandTest {
         org.bukkit.configuration.file.YamlConfiguration config = new org.bukkit.configuration.file.YamlConfiguration();
         config.set("Velocity.Default-Replay-Server", server);
         return config;
+    }
+
+    private Component componentMatching(String expectedLegacy) {
+        return org.mockito.ArgumentMatchers.argThat(component -> expectedLegacy.equals(LEGACY.serialize(component)));
     }
 }

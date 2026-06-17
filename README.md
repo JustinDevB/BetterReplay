@@ -67,6 +67,8 @@ See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for defaults, valid values, f
 
 All player and admin actions live under `/replay`, including the normal recording/playback workflow plus hidden export, debug, and benchmark utilities.
 
+Replay and recording names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
+
 See [docs/COMMANDS.md](docs/COMMANDS.md) for syntax, permissions, console support, replay-name parsing rules, and output locations.
 
 ## Build from source

@@ -7,6 +7,8 @@ import me.justindevb.replay.storage.ReplayProtectionResult;
 import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.util.ReplayCache;
+import me.justindevb.replay.util.ReplayMessages;
+import me.justindevb.replay.util.ReplayNames;
 import me.justindevb.replay.util.VersionUtil;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -33,11 +35,17 @@ public class ReplayManagerImpl implements ReplayManager {
 
     @Override
     public boolean startRecording(String name, Collection<Player> players, int durationSeconds) {
+        if (!ReplayNames.isValidRecordingName(name)) {
+            return false;
+        }
         return recorderManager.startSession(name, players, durationSeconds);
     }
 
     @Override
     public boolean stopRecording(String name, boolean save) {
+        if (!ReplayNames.isValidRecordingName(name)) {
+            return false;
+        }
 
         boolean stopped = recorderManager.stopSession(name, save);
 
@@ -68,18 +76,23 @@ public class ReplayManagerImpl implements ReplayManager {
         if (viewer == null || replayName == null || replayName.isEmpty()) {
             return CompletableFuture.completedFuture(Optional.empty());
         }
+        Optional<String> invalidName = ReplayNames.validateReplayName(replayName);
+        if (invalidName.isPresent()) {
+            runSync(() -> ReplayMessages.send(viewer, "§c" + invalidName.get()));
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
 
         return replay.getReplayStorage().replayExists(replayName)
                 .thenCompose(exists -> {
                     if (!exists) {
-                        runSync(() -> viewer.sendMessage("§cReplay not found: " + replayName));
+                        runSync(() -> ReplayMessages.send(viewer, "§cReplay not found: " + replayName));
                         return CompletableFuture.completedFuture(Optional.<ReplaySession>empty());
                     }
 
                     return replay.getReplayStorage().loadReplayData(replayName)
                             .thenApply(replayData -> {
                                 if (replayData == null || replayData.timeline().isEmpty()) {
-                                    runSync(() -> viewer.sendMessage("§cReplay is empty or corrupted: " + replayName));
+                                    runSync(() -> ReplayMessages.send(viewer, "§cReplay is empty or corrupted: " + replayName));
                                     return Optional.<ReplaySession>empty();
                                 }
 
@@ -96,12 +109,12 @@ public class ReplayManagerImpl implements ReplayManager {
                         cause = cause.getCause();
                     }
                     if (cause instanceof VersionUtil.ReplayVersionMismatchException mismatch) {
-                        runSync(() -> viewer.sendMessage("§cThis recording requires BetterReplay v"
+                        runSync(() -> ReplayMessages.send(viewer, "§cThis recording requires BetterReplay v"
                                 + mismatch.getRequiredVersion() + "+. You are running v"
                                 + mismatch.getRunningVersion() + "."));
                     } else {
                         replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to start replay: " + replayName, ex);
-                        runSync(() -> viewer.sendMessage("§cFailed to start replay: " + replayName));
+                        runSync(() -> ReplayMessages.send(viewer, "§cFailed to start replay: " + replayName));
                     }
                     return Optional.empty();
                 });
@@ -157,7 +170,7 @@ public class ReplayManagerImpl implements ReplayManager {
 
     @Override
     public CompletableFuture<ReplayDeleteResult> deleteSavedReplay(String name) {
-        if (name == null || name.isBlank()) {
+        if (!ReplayNames.isValidReplayName(name)) {
             return CompletableFuture.completedFuture(ReplayDeleteResult.NOT_FOUND);
         }
 
@@ -184,7 +197,7 @@ public class ReplayManagerImpl implements ReplayManager {
 
     @Override
     public CompletableFuture<ReplayProtectionResult> protectSavedReplay(String name, String protectedBy) {
-        if (name == null || name.isBlank() || protectedBy == null || protectedBy.isBlank()) {
+        if (!ReplayNames.isValidReplayName(name) || protectedBy == null || protectedBy.isBlank()) {
             return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
         }
 
@@ -203,7 +216,7 @@ public class ReplayManagerImpl implements ReplayManager {
 
     @Override
     public CompletableFuture<ReplayProtectionResult> unprotectSavedReplay(String name) {
-        if (name == null || name.isBlank()) {
+        if (!ReplayNames.isValidReplayName(name)) {
             return CompletableFuture.completedFuture(ReplayProtectionResult.NOT_FOUND);
         }
 
@@ -265,6 +278,9 @@ public class ReplayManagerImpl implements ReplayManager {
 
     @Override
     public CompletableFuture<Optional<File>> getSavedReplayFile(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
         return replay.getReplayStorage().getReplayFile(name)
                 .thenApply(file -> {
                     if (file == null || !file.exists()) {
@@ -280,6 +296,9 @@ public class ReplayManagerImpl implements ReplayManager {
 
     @Override
     public CompletableFuture<Optional<File>> getSavedReplayFile(String name, ReplayExportQuery query) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return CompletableFuture.completedFuture(Optional.empty());
+        }
         return replay.getReplayStorage().getReplayFile(name, query)
                 .thenApply(file -> {
                     if (file == null || !file.exists()) {

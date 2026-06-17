@@ -157,7 +157,7 @@ ReplayExportQuery query = new ReplayExportQuery("Steve", 200, 400);
 Starts recording a new session that captures player and nearby entity activity.
 
 ```java
-void startRecording(String name, Collection<Player> players, int durationSeconds)
+boolean startRecording(String name, Collection<Player> players, int durationSeconds)
 ```
 
 | Parameter | Type | Description |
@@ -165,6 +165,8 @@ void startRecording(String name, Collection<Player> players, int durationSeconds
 | `name` | `String` | Unique name for this recording session |
 | `players` | `Collection<Player>` | The players to record |
 | `durationSeconds` | `int` | Duration in seconds. Use `-1` for infinite (manual stop) |
+
+Recording names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
 
 **Example:**
 
@@ -252,7 +254,9 @@ CompletableFuture<Optional<ReplaySession>> startReplay(String replayName, Player
 | `replayName` | `String` | Name of the saved replay to play |
 | `viewer` | `Player` | The player who will watch the replay |
 
-**Returns:** A `CompletableFuture` containing an `Optional<ReplaySession>`. The optional is empty if the replay was not found, was empty/corrupted, or if the parameters were null.
+Replay names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
+
+**Returns:** A `CompletableFuture` containing an `Optional<ReplaySession>`. The optional is empty if the replay was not found, was empty/corrupted, the name was invalid, or if the parameters were null.
 
 **Example:**
 
@@ -392,6 +396,8 @@ CompletableFuture<ReplayDeleteResult> deleteSavedReplay(String name)
 |---|---|---|
 | `name` | `String` | The name of the replay to delete |
 
+Replay names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
+
 **Returns:** A `CompletableFuture<ReplayDeleteResult>`.
 
 Possible results:
@@ -433,6 +439,8 @@ CompletableFuture<ReplayProtectionResult> protectSavedReplay(String name, String
 | `name` | `String` | The replay to protect |
 | `protectedBy` | `String` | Audit value describing who enabled protection |
 
+Replay names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
+
 **Returns:** A `CompletableFuture<ReplayProtectionResult>`.
 
 Possible results:
@@ -468,6 +476,8 @@ CompletableFuture<ReplayProtectionResult> unprotectSavedReplay(String name)
 | Parameter | Type | Description |
 |---|---|---|
 | `name` | `String` | The replay to unprotect |
+
+Replay names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
 
 **Returns:** A `CompletableFuture<ReplayProtectionResult>`.
 
@@ -507,7 +517,9 @@ CompletableFuture<Optional<File>> getSavedReplayFile(String name, ReplayExportQu
 | `name` | `String` | The name of the replay |
 | `query` | `ReplayExportQuery` | Optional export filters for player and tick range |
 
-**Returns:** A `CompletableFuture` containing an `Optional<File>`. Empty if the file doesn't exist. Filtered exports are written as temporary `.br` archives.
+Replay names must be 1-64 characters long and may not contain control characters or `\ / : * ? " < > | §`.
+
+**Returns:** A `CompletableFuture` containing an `Optional<File>`. Empty if the file doesn't exist or the replay name is invalid. Filtered exports are written as temporary `.br` archives.
 
 **Example:**
 

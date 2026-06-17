@@ -20,6 +20,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -85,17 +86,26 @@ class FileReplayStorageTest {
         }
 
         @Test
-        void save_removesLegacyUncompressed() throws ExecutionException, InterruptedException, IOException {
-            File replayDir = new File(tempDir, "replays");
-            replayDir.mkdirs();
-            File legacy = new File(replayDir, "migration.json");
-            Files.writeString(legacy.toPath(), "[]");
+    void save_removesLegacyUncompressed() throws ExecutionException, InterruptedException, IOException {
+        File replayDir = new File(tempDir, "replays");
+        replayDir.mkdirs();
+        File legacy = new File(replayDir, "migration.json");
+        Files.writeString(legacy.toPath(), "[]");
             assertTrue(legacy.exists());
 
             storage.saveReplay("migration", sampleTimeline()).get();
 
             assertFalse(legacy.exists());
             assertTrue(new File(replayDir, "migration.br").exists());
+        }
+
+        @Test
+        void save_withInvalidReplayName_failsFast() {
+            CompletionException thrown = assertThrows(CompletionException.class,
+                    () -> storage.saveReplay("bad/name", sampleTimeline()).join());
+
+            assertInstanceOf(IllegalArgumentException.class, thrown.getCause());
+            assertEquals("Replay names may not contain any of \\ / : * ? \" < > | or §", thrown.getCause().getMessage());
         }
     }
 

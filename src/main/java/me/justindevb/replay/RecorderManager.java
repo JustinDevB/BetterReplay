@@ -9,6 +9,7 @@ import me.justindevb.replay.recording.inventory.SharedStorageCaptureCache;
 import me.justindevb.replay.storage.ReplaySaveRequest;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogReader;
 import me.justindevb.replay.storage.binary.BinaryReplayAppendLogRecovery;
+import me.justindevb.replay.util.ReplayMessages;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
@@ -184,7 +185,7 @@ public class RecorderManager {
                 })
                 .exceptionally(ex -> {
                     replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to load replay: " + name, ex);
-                    viewer.sendMessage("§cFailed to load replay: " + name);
+                    ReplayMessages.send(viewer, "§cFailed to load replay: " + name);
                     return null;
                 });
     }

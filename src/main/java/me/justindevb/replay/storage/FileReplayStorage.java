@@ -6,6 +6,7 @@ import me.justindevb.replay.debug.ReplayDumpQuery;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayFormat;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
+import me.justindevb.replay.util.ReplayNames;
 import me.justindevb.replay.util.io.ReplayCompressor;
 
 import java.io.*;
@@ -57,6 +58,9 @@ public class FileReplayStorage implements ReplayStorage {
      * Returns null when neither file exists.
      */
     private File resolveExisting(String name) {
+        if (!ReplayNames.isValidReplayName(name)) {
+            return null;
+        }
         File binary = new File(replayFolder, name + BinaryReplayFormat.FILE_EXTENSION);
         if (binary.exists()) return binary;
         File compressed = new File(replayFolder, name + JsonReplayStorageCodec.EXT_COMPRESSED);
@@ -89,6 +93,10 @@ public class FileReplayStorage implements ReplayStorage {
 
     @Override
     public CompletableFuture<Void> saveReplay(String name, ReplaySaveRequest request) {
+        Optional<String> invalidName = ReplayNames.validateReplayName(name);
+        if (invalidName.isPresent()) {
+            return CompletableFuture.failedFuture(new IllegalArgumentException(invalidName.get()));
+        }
         return CompletableFuture.runAsync(() -> {
             try {
                 boolean compressionEnabled = usesCodecCompression();

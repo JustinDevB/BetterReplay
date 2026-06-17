@@ -4,6 +4,8 @@ import com.tcoded.folialib.FoliaLib;
 import me.justindevb.replay.Replay;
 import me.justindevb.replay.api.ReplayManager;
 import me.justindevb.replay.storage.ReplayInspection;
+import me.justindevb.replay.util.ReplayMessages;
+import me.justindevb.replay.util.ReplayNames;
 import org.bukkit.command.CommandSender;
 
 import java.io.File;
@@ -80,7 +82,7 @@ public final class ReplayDebugCommand {
         }
 
         CompletableFuture<File> future = replay.getReplayStorage().getReplayDumpFile(request.replayName(), request.query());
-        sender.sendMessage("§eReplay dump started for: " + request.replayName());
+        ReplayMessages.send(sender, "§eReplay dump started for: " + request.replayName());
         future.whenComplete((file, throwable) -> notifyCompletion(sender, request.replayName(), file, throwable));
         return true;
     }
@@ -96,7 +98,7 @@ public final class ReplayDebugCommand {
         }
 
         CompletableFuture<ReplayInspection> future = replay.getReplayStorage().getReplayInfo(request.replayName());
-        sender.sendMessage("§eReplay info started for: " + request.replayName());
+        ReplayMessages.send(sender, "§eReplay info started for: " + request.replayName());
         future.whenComplete((info, throwable) -> notifyInfoCompletion(sender, request.replayName(), info, throwable));
         return true;
     }
@@ -143,29 +145,29 @@ public final class ReplayDebugCommand {
             if (throwable != null) {
                 Throwable cause = unwrapThrowable(throwable);
                 logger.log(Level.SEVERE, "Replay info failed for " + replayName, cause);
-                sender.sendMessage("§cReplay info failed: " + cause.getMessage());
+                ReplayMessages.send(sender, "§cReplay info failed: " + cause.getMessage());
                 return;
             }
             if (info == null) {
-                sender.sendMessage("§cReplay not found or info failed: " + replayName);
+                ReplayMessages.send(sender, "§cReplay not found or info failed: " + replayName);
                 return;
             }
 
-            sender.sendMessage("§6Replay info: §f" + info.replayName());
-            sender.sendMessage("§7Format: §f" + formatName(info));
-            sender.sendMessage("§7Recorded with: §f" + valueOrUnknown(info.recordedWithVersion()));
-            sender.sendMessage("§7Minimum viewer: §f" + valueOrUnknown(info.minimumViewerVersion()));
-            sender.sendMessage("§7Recording started: §f" + formatTimestamp(info.recordingStartedAtEpochMillis()));
-            sender.sendMessage("§7Records: §f" + info.recordCount() + " §8| §7Unique actors: §f" + info.uniqueActorCount()
+            ReplayMessages.send(sender, "§6Replay info: §f" + info.replayName());
+            ReplayMessages.send(sender, "§7Format: §f" + formatName(info));
+            ReplayMessages.send(sender, "§7Recorded with: §f" + valueOrUnknown(info.recordedWithVersion()));
+            ReplayMessages.send(sender, "§7Minimum viewer: §f" + valueOrUnknown(info.minimumViewerVersion()));
+            ReplayMessages.send(sender, "§7Recording started: §f" + formatTimestamp(info.recordingStartedAtEpochMillis()));
+            ReplayMessages.send(sender, "§7Records: §f" + info.recordCount() + " §8| §7Unique actors: §f" + info.uniqueActorCount()
                     + " §8| §7Worlds: §f" + info.uniqueWorldCount());
-            sender.sendMessage("§7Ticks: §f" + info.startTick() + " -> " + info.endTick() + " §8| §7Length: §f"
+            ReplayMessages.send(sender, "§7Ticks: §f" + info.startTick() + " -> " + info.endTick() + " §8| §7Length: §f"
                     + info.durationTicks() + " ticks (" + formatSeconds(info.durationSeconds()) + "s)");
-                sender.sendMessage("§7Stored Size: §f" + formatBytes(info.storedBytes()));
-                sender.sendMessage("§7Replay: §fCompressed " + formatBytes(info.compressedPayloadBytes())
+                ReplayMessages.send(sender, "§7Stored Size: §f" + formatBytes(info.storedBytes()));
+                ReplayMessages.send(sender, "§7Replay: §fCompressed " + formatBytes(info.compressedPayloadBytes())
                     + " §8| §fDecompressed " + formatBytes(info.decompressedPayloadBytes()));
-                sender.sendMessage(formatChunkPayloadStats(info));
-                sender.sendMessage(formatChunkStats(info));
-            sender.sendMessage("§7Seek index: §f" + (info.indexedPayload() ? ("yes (" + info.seekCheckpointCount() + " checkpoints)") : "no"));
+                ReplayMessages.send(sender, formatChunkPayloadStats(info));
+                ReplayMessages.send(sender, formatChunkStats(info));
+            ReplayMessages.send(sender, "§7Seek index: §f" + (info.indexedPayload() ? ("yes (" + info.seekCheckpointCount() + " checkpoints)") : "no"));
         });
     }
 
@@ -174,14 +176,14 @@ public final class ReplayDebugCommand {
             if (throwable != null) {
                 Throwable cause = unwrapThrowable(throwable);
                 logger.log(Level.SEVERE, "Replay dump failed for " + replayName, cause);
-                sender.sendMessage("§cReplay dump failed: " + cause.getMessage());
+                ReplayMessages.send(sender, "§cReplay dump failed: " + cause.getMessage());
                 return;
             }
             if (file == null || !file.exists()) {
-                sender.sendMessage("§cReplay not found or dump failed: " + replayName);
+                ReplayMessages.send(sender, "§cReplay not found or dump failed: " + replayName);
                 return;
             }
-            sender.sendMessage("§aReplay dump finished: " + file.getAbsolutePath());
+            ReplayMessages.send(sender, "§aReplay dump finished: " + file.getAbsolutePath());
         });
     }
 
@@ -211,7 +213,11 @@ public final class ReplayDebugCommand {
         if (nameTokens.isEmpty()) {
             throw new IllegalArgumentException("Replay name is required");
         }
-        return new ParsedInfoRequest(String.join(" ", nameTokens));
+        String replayName = String.join(" ", nameTokens);
+        ReplayNames.validateReplayName(replayName).ifPresent(message -> {
+            throw new IllegalArgumentException(message);
+        });
+        return new ParsedInfoRequest(replayName);
     }
 
     private static ParsedDumpRequest parseRequest(String[] args) {
@@ -243,7 +249,12 @@ public final class ReplayDebugCommand {
             throw new IllegalArgumentException("Replay name is required");
         }
 
-        return new ParsedDumpRequest(String.join(" ", nameTokens), new ReplayDumpQuery(startTick, endTick));
+        String replayName = String.join(" ", nameTokens);
+        ReplayNames.validateReplayName(replayName).ifPresent(message -> {
+            throw new IllegalArgumentException(message);
+        });
+
+        return new ParsedDumpRequest(replayName, new ReplayDumpQuery(startTick, endTick));
     }
 
     private static Integer parseTick(String label, String value) {

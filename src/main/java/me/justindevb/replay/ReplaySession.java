@@ -21,6 +21,7 @@ import me.justindevb.replay.playback.ReplayViewerState;
 import me.justindevb.replay.playback.ReplayViewerStateManager;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayPlaybackData;
+import me.justindevb.replay.util.ReplayMessages;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import org.bukkit.*;
@@ -210,7 +211,7 @@ public class ReplaySession implements Listener, PacketListener {
 
                 if (event instanceof TimelineEvent.PlayerQuit) {
                     if (recordedEntities.get(uuid) instanceof RecordedPlayer rp) {
-                        viewer.sendMessage("[BetterReplay] " + rp.getName() + " disconnected");
+                        ReplayMessages.send(viewer, "[BetterReplay] " + rp.getName() + " disconnected");
                     }
                     RecordedEntity entity = recordedEntities.remove(uuid);
                     if (entity != null) {

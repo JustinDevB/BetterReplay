@@ -182,6 +182,15 @@ class MySQLReplayStorageTest {
     }
 
     @Test
+    void saveReplay_withInvalidReplayName_failsFast() {
+        java.util.concurrent.CompletionException thrown = assertThrows(java.util.concurrent.CompletionException.class,
+                () -> storage.saveReplay("bad/name", sampleTimeline()).join());
+
+        assertTrue(thrown.getCause() instanceof IllegalArgumentException);
+        assertEquals("Replay names may not contain any of \\ / : * ? \" < > | or §", thrown.getCause().getMessage());
+    }
+
+    @Test
     void saveReplay_withChunkArtifacts_roundTripsChunkPlaybackData() throws Exception {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-artifacts"))) {
             writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));

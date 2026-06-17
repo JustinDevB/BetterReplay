@@ -3,6 +3,8 @@ package me.justindevb.replay.velocity;
 import com.tcoded.folialib.FoliaLib;
 import com.tcoded.folialib.impl.PlatformScheduler;
 import me.justindevb.replay.Replay;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,6 +32,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ReplayTransferManagerTest {
 
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
+
     @Mock private Replay plugin;
     @Mock private Player player;
     @Mock private FoliaLib foliaLib;
@@ -49,7 +53,7 @@ class ReplayTransferManagerTest {
 
         manager.completeReplayTransferFailure(player, "replays", "Server is offline.");
 
-        verify(player).sendMessage("§cCould not connect to replay server §ereplays§c. Server is offline.");
+        verify(player).sendMessage(componentMatching("§cCould not connect to replay server §ereplays§c. Server is offline."));
     }
 
     @Test
@@ -65,7 +69,7 @@ class ReplayTransferManagerTest {
         manager.requestReplayTransfer(player, "demo", "replays");
         timeout.get().run();
 
-        verify(player).sendMessage("§cCould not connect to replay server §ereplays§c. No response was received from the proxy.");
+        verify(player).sendMessage(componentMatching("§cCould not connect to replay server §ereplays§c. No response was received from the proxy."));
     }
 
     @Test
@@ -81,7 +85,7 @@ class ReplayTransferManagerTest {
         boolean requested = manager.requestReplayTransfer(player, "demo", "replays");
 
         assertFalse(requested);
-        verify(player).sendMessage("§cCould not connect to replay server §ereplays§c. Failed to send the transfer request to the proxy.");
+        verify(player).sendMessage(componentMatching("§cCould not connect to replay server §ereplays§c. Failed to send the transfer request to the proxy."));
         verify(scheduler, never()).runLater(any(Runnable.class), anyLong());
     }
 
@@ -100,5 +104,9 @@ class ReplayTransferManagerTest {
 
         verify(scheduler).runAtEntity(eq(player), any());
         verify(player).sendPluginMessage(eq(plugin), eq(ReplayTransferManager.CHANNEL), any(byte[].class));
+    }
+
+    private Component componentMatching(String expectedLegacy) {
+        return org.mockito.ArgumentMatchers.argThat(component -> expectedLegacy.equals(LEGACY.serialize(component)));
     }
 }

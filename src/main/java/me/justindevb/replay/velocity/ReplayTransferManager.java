@@ -3,6 +3,7 @@ package me.justindevb.replay.velocity;
 import com.google.common.io.ByteArrayDataOutput;
 import com.google.common.io.ByteStreams;
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.util.ReplayMessages;
 import org.bukkit.entity.Player;
 
 import java.util.Map;
@@ -85,7 +86,7 @@ public class ReplayTransferManager {
     }
 
     private void sendTransferFailure(Player player, String targetServer, String reason) {
-        player.sendMessage("§cCould not connect to replay server §e" + targetServer + "§c. " + reason);
+        ReplayMessages.send(player, "§cCould not connect to replay server §e" + targetServer + "§c. " + reason);
     }
 
     private void sendPluginMessage(Player player, byte[] message) {

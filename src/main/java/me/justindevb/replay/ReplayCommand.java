@@ -8,6 +8,8 @@ import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.storage.ReplayDeleteResult;
 import me.justindevb.replay.storage.ReplaySummary;
+import me.justindevb.replay.util.ReplayMessages;
+import me.justindevb.replay.util.ReplayNames;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -94,6 +96,11 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                 }
 
                 String sessionName = args[1];
+                java.util.Optional<String> invalidSessionName = ReplayNames.validateRecordingName(sessionName);
+                if (invalidSessionName.isPresent()) {
+                    p.sendMessage("§c" + invalidSessionName.get());
+                    return true;
+                }
                 int duration = -1;
 
                 try {
@@ -111,7 +118,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     if (target != null) {
                         targets.add(target);
                     } else {
-                        p.sendMessage("§cPlayer not found: " + pn);
+                        ReplayMessages.send(p, "§cPlayer not found: " + pn);
                     }
                 }
 
@@ -121,8 +128,8 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                 }
 
                 if (replayManager.startRecording(sessionName, targets, duration)) {
-                    p.sendMessage("§aStarted recording session: " + sessionName + " (" +
-                            (duration == -1 ? "∞" : duration + "s") + ")");
+                    ReplayMessages.send(p, "§aStarted recording session: " + sessionName + " ("
+                            + (duration == -1 ? "∞" : duration + "s") + ")");
                 } else {
                     p.sendMessage("§cSession with that name already exists!");
                 }
@@ -137,8 +144,13 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 String sessionName = joinArgs(args, 1);
+                java.util.Optional<String> invalidSessionName = ReplayNames.validateRecordingName(sessionName);
+                if (invalidSessionName.isPresent()) {
+                    p.sendMessage("§c" + invalidSessionName.get());
+                    return true;
+                }
                 if (replayManager.stopRecording(sessionName, true)) {
-                    p.sendMessage("§aStopped recording session: " + sessionName);
+                    ReplayMessages.send(p, "§aStopped recording session: " + sessionName);
                 } else {
                     p.sendMessage("§cNo active session with that name!");
                 }
@@ -156,6 +168,11 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                 }
 
                 String replayName = args[1];
+                java.util.Optional<String> invalidReplayName = ReplayNames.validateReplayName(replayName);
+                if (invalidReplayName.isPresent()) {
+                    p.sendMessage("§c" + invalidReplayName.get());
+                    return true;
+                }
 
                 String foundTargetServer = null;
 
@@ -199,10 +216,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                                 plugin.getFoliaLib()
                                         .getScheduler()
                                         .runLater(
-                                                () -> p.sendMessage(
-                                                        "§cReplay not found: "
-                                                                + replayName
-                                                ),
+                                                () -> ReplayMessages.send(p, "§cReplay not found: " + replayName),
                                                 1L
                                         );
 
@@ -234,11 +248,9 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                                                     return;
                                                 }
 
-                                                p.sendMessage(
-                                                        "§aConnecting to replay server §e"
-                                                                + targetServer
-                                                                + "§a..."
-                                                );
+                                                ReplayMessages.send(p, "§aConnecting to replay server §e"
+                                                        + targetServer
+                                                        + "§a...");
                                             },
                                             1L
                                     );
@@ -309,7 +321,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
 
                             p.sendMessage("§6Replays §7(Page " + page + "/" + totalPages + ")");
                             for (int i = from; i < to; i++) {
-                                p.sendMessage("§e- " + formatReplayListName(replays.get(i), protectedHighlightColor));
+                                ReplayMessages.send(p, "§e- " + formatReplayListName(replays.get(i), protectedHighlightColor));
                             }
 
                             Component navigation = Component.empty();
@@ -356,22 +368,27 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                     return true;
                 }
                 String name = joinArgs(args, 1);
+                java.util.Optional<String> invalidReplayName = ReplayNames.validateReplayName(name);
+                if (invalidReplayName.isPresent()) {
+                    p.sendMessage("§c" + invalidReplayName.get());
+                    return true;
+                }
                 replayManager.deleteSavedReplay(name)
                         .thenAccept(result -> {
                             Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> {
                                 if (result == ReplayDeleteResult.DELETED) {
-                                    p.sendMessage("§aDeleted replay: " + name);
+                                    ReplayMessages.send(p, "§aDeleted replay: " + name);
                                 } else if (result == ReplayDeleteResult.PROTECTED) {
-                                    p.sendMessage("§cReplay is protected and must be unprotected before deletion: " + name);
+                                    ReplayMessages.send(p, "§cReplay is protected and must be unprotected before deletion: " + name);
                                 } else {
-                                    p.sendMessage("§cReplay not found: " + name);
+                                    ReplayMessages.send(p, "§cReplay not found: " + name);
                                 }
                             });
                         })
                         .exceptionally(ex -> {
                             Replay.getInstance().getLogger().log(Level.SEVERE, "Failed to delete replay: " + name, ex);
                             Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task ->
-                                    p.sendMessage("§cFailed to delete replay: " + name));
+                                    ReplayMessages.send(p, "§cFailed to delete replay: " + name));
                             return null;
                         });
                         return true;
@@ -386,7 +403,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                 return handleReload(sender);
             }
             default -> {
-                p.sendMessage("§cUnknown subcommand: §f" + args[0]);
+                ReplayMessages.send(p, "§cUnknown subcommand: §f" + args[0]);
                 sendHelp(p);
             }
         }
@@ -635,6 +652,11 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
         }
 
         String name = joinArgs(args, 1);
+        java.util.Optional<String> invalidReplayName = ReplayNames.validateReplayName(name);
+        if (invalidReplayName.isPresent()) {
+            sender.sendMessage("§c" + invalidReplayName.get());
+            return true;
+        }
         replayManager.protectSavedReplay(name, protectedBy)
                 .thenAccept(result -> sendMessageNextTick(sender, switch (result) {
                     case UPDATED -> "§aProtected replay: " + name;
@@ -660,6 +682,11 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
         }
 
         String name = joinArgs(args, 1);
+        java.util.Optional<String> invalidReplayName = ReplayNames.validateReplayName(name);
+        if (invalidReplayName.isPresent()) {
+            sender.sendMessage("§c" + invalidReplayName.get());
+            return true;
+        }
         replayManager.unprotectSavedReplay(name)
                 .thenAccept(result -> sendMessageNextTick(sender, switch (result) {
                     case UPDATED -> "§aUnprotected replay: " + name;
@@ -675,7 +702,7 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
     }
 
     private void sendMessageNextTick(CommandSender sender, String message) {
-        Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> sender.sendMessage(message));
+        Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> ReplayMessages.send(sender, message));
     }
 
 }

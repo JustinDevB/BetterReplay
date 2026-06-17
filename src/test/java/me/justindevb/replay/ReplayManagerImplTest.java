@@ -9,6 +9,8 @@ import me.justindevb.replay.storage.ReplayStorage;
 import me.justindevb.replay.storage.ReplayStorageType;
 import me.justindevb.replay.storage.ReplaySummary;
 import me.justindevb.replay.util.ReplayCache;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,10 +25,13 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class ReplayManagerImplTest {
+
+    private static final LegacyComponentSerializer LEGACY = LegacyComponentSerializer.legacySection();
 
     @Mock private Replay plugin;
     @Mock private RecorderManager recorderManager;
@@ -253,6 +258,36 @@ class ReplayManagerImplTest {
     }
 
     @Test
+    void startReplay_invalidName_returnsEmptyAndShowsValidationMessage() {
+        Player viewer = mock(Player.class);
+
+        try (org.mockito.MockedStatic<org.bukkit.Bukkit> bukkit = org.mockito.Mockito.mockStatic(org.bukkit.Bukkit.class)) {
+            bukkit.when(org.bukkit.Bukkit::isPrimaryThread).thenReturn(true);
+
+            Optional<ReplaySession> result = manager.startReplay("bad/name", viewer).join();
+
+            assertTrue(result.isEmpty());
+            verify(viewer).sendMessage(componentMatching("§cReplay names may not contain any of \\ / : * ? \" < > | or §"));
+            verify(storage, never()).replayExists(anyString());
+        }
+    }
+
+    @Test
+    void startReplay_missingReplay_sendsComponentMessage() {
+        Player viewer = mock(Player.class);
+        when(storage.replayExists("missing")).thenReturn(CompletableFuture.completedFuture(false));
+
+        try (org.mockito.MockedStatic<org.bukkit.Bukkit> bukkit = org.mockito.Mockito.mockStatic(org.bukkit.Bukkit.class)) {
+            bukkit.when(org.bukkit.Bukkit::isPrimaryThread).thenReturn(true);
+
+            Optional<ReplaySession> result = manager.startReplay("missing", viewer).join();
+
+            assertTrue(result.isEmpty());
+            verify(viewer).sendMessage(componentMatching("§cReplay not found: missing"));
+        }
+    }
+
+    @Test
     void startReplay_usesReplayPlaybackDataLoadingPath() {
         Player viewer = mock(Player.class);
         when(storage.replayExists("test")).thenReturn(CompletableFuture.completedFuture(true));
@@ -280,5 +315,9 @@ class ReplayManagerImplTest {
 
         assertTrue(result.isPresent());
         assertSame(file, result.get());
+    }
+
+    private Component componentMatching(String expectedLegacy) {
+        return argThat(component -> expectedLegacy.equals(LEGACY.serialize(component)));
     }
 }
