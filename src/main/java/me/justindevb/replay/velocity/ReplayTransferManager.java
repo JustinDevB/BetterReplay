@@ -7,6 +7,7 @@ import org.bukkit.entity.Player;
 
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
@@ -36,7 +37,7 @@ public class ReplayTransferManager {
         out.writeUTF(targetServer);
 
         try {
-            player.sendPluginMessage(plugin, CHANNEL, out.toByteArray());
+            sendPluginMessage(player, out.toByteArray());
         } catch (RuntimeException ex) {
             pendingTransfers.remove(player.getUniqueId(), pendingTransfer);
             plugin.getLogger().log(Level.WARNING, "Failed to send replay transfer request for " + replayName, ex);
@@ -55,7 +56,13 @@ public class ReplayTransferManager {
 
         out.writeUTF(player.getUniqueId().toString());
 
-        player.sendPluginMessage(plugin, CHANNEL, out.toByteArray());
+        try {
+            sendPluginMessage(player, out.toByteArray());
+        } catch (RuntimeException ex) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Failed to request pending replay launch for " + player.getUniqueId(),
+                    ex);
+        }
     }
 
     public void completeReplayTransferFailure(Player player, String targetServer, String reason) {
@@ -79,6 +86,28 @@ public class ReplayTransferManager {
 
     private void sendTransferFailure(Player player, String targetServer, String reason) {
         player.sendMessage("§cCould not connect to replay server §e" + targetServer + "§c. " + reason);
+    }
+
+    private void sendPluginMessage(Player player, byte[] message) {
+        if (!requiresEntityScheduling(player)) {
+            player.sendPluginMessage(plugin, CHANNEL, message);
+            return;
+        }
+
+        CompletableFuture<?> sendTask = plugin.getFoliaLib().getScheduler()
+                .runAtEntity(player, ignored -> player.sendPluginMessage(plugin, CHANNEL, message));
+        sendTask.join();
+    }
+
+    private boolean requiresEntityScheduling(Player player) {
+        if (plugin.getFoliaLib() == null || !plugin.getFoliaLib().isFolia()) {
+            return false;
+        }
+        try {
+            return !plugin.getFoliaLib().getScheduler().isOwnedByCurrentRegion(player);
+        } catch (RuntimeException ex) {
+            return true;
+        }
     }
 
     private String normalizedOrFallback(String value, String fallback) {

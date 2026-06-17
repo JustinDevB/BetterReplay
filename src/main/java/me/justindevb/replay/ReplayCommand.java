@@ -219,25 +219,27 @@ public class ReplayCommand implements CommandExecutor, TabCompleter {
                                 return;
                             }
 
-                            boolean transferRequested = plugin.getTransferManager()
-                                    .requestReplayTransfer(
-                                            p,
-                                            replayName,
-                                            targetServer
-                                    );
-
-                            if (!transferRequested) {
-                                return;
-                            }
-
                             plugin.getFoliaLib()
                                     .getScheduler()
                                     .runLater(
-                                            () -> p.sendMessage(
-                                                    "§aConnecting to replay server §e"
-                                                            + targetServer
-                                                            + "§a..."
-                                            ),
+                                            () -> {
+                                                boolean transferRequested = plugin.getTransferManager()
+                                                        .requestReplayTransfer(
+                                                                p,
+                                                                replayName,
+                                                                targetServer
+                                                        );
+
+                                                if (!transferRequested) {
+                                                    return;
+                                                }
+
+                                                p.sendMessage(
+                                                        "§aConnecting to replay server §e"
+                                                                + targetServer
+                                                                + "§a..."
+                                                );
+                                            },
                                             1L
                                     );
 

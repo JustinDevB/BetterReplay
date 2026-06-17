@@ -10,6 +10,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.concurrent.CompletableFuture;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Level;
@@ -82,5 +83,22 @@ class ReplayTransferManagerTest {
         assertFalse(requested);
         verify(player).sendMessage("§cCould not connect to replay server §ereplays§c. Failed to send the transfer request to the proxy.");
         verify(scheduler, never()).runLater(any(Runnable.class), anyLong());
+    }
+
+    @Test
+    void requestReplayTransfer_schedulesPluginMessageOnViewerRegionWhenFoliaRequiresIt() {
+        when(foliaLib.isFolia()).thenReturn(true);
+        when(scheduler.isOwnedByCurrentRegion(player)).thenReturn(false);
+        doAnswer(invocation -> {
+            java.util.function.Consumer<?> consumer = invocation.getArgument(1);
+            consumer.accept(null);
+            return CompletableFuture.completedFuture(null);
+        }).when(scheduler).runAtEntity(eq(player), any());
+        ReplayTransferManager manager = new ReplayTransferManager(plugin);
+
+        manager.requestReplayTransfer(player, "demo", "replays");
+
+        verify(scheduler).runAtEntity(eq(player), any());
+        verify(player).sendPluginMessage(eq(plugin), eq(ReplayTransferManager.CHANNEL), any(byte[].class));
     }
 }
