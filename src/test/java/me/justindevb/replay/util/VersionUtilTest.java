@@ -143,7 +143,7 @@ class VersionUtilTest {
             );
             String json = VersionUtil.wrapTimeline(gson, original, "1.4.0");
 
-            List<TimelineEvent> parsed = VersionUtil.parseReplayJson(gson, json, "1.4.0", LIST_TYPE);
+            List<TimelineEvent> parsed = VersionUtil.parseReplayJson(gson, json, VersionUtil.MIN_RECORDING_VERSION, LIST_TYPE);
 
             assertEquals(1, parsed.size());
             assertInstanceOf(TimelineEvent.PlayerQuit.class, parsed.get(0));

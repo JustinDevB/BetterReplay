@@ -5,6 +5,7 @@ import me.justindevb.replay.chunk.CapturedChunkBaseline;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryChunkTempRegionFileWriter;
+import me.justindevb.replay.util.VersionUtil;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -36,7 +37,7 @@ class FileReplayStorageEdgeCaseTest {
         when(replay.getDataFolder()).thenReturn(tempDir);
 
         PluginMeta meta = mock(PluginMeta.class);
-        when(meta.getVersion()).thenReturn("1.4.0");
+        when(meta.getVersion()).thenReturn(VersionUtil.MIN_RECORDING_VERSION);
         when(replay.getPluginMeta()).thenReturn(meta);
 
         storage = new FileReplayStorage(replay);

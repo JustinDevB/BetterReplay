@@ -3,6 +3,7 @@ package me.justindevb.replay.storage;
 import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
+import me.justindevb.replay.util.VersionUtil;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -63,12 +64,12 @@ class ReplayExporterTest {
     }
 
     private List<TimelineEvent> exportTimeline(ReplayExportQuery query) throws Exception {
-        byte[] archive = codec.finalizeReplay("sample", sampleTimeline(), "1.4.0");
-        List<TimelineEvent> timeline = codec.decodeTimeline(archive, "1.4.0");
+        byte[] archive = codec.finalizeReplay("sample", sampleTimeline(), VersionUtil.MIN_RECORDING_VERSION);
+        List<TimelineEvent> timeline = codec.decodeTimeline(archive, VersionUtil.MIN_RECORDING_VERSION);
 
-        File exported = exporter.exportReplay("sample", timeline, query, "1.4.0");
+        File exported = exporter.exportReplay("sample", timeline, query, VersionUtil.MIN_RECORDING_VERSION);
 
-        return codec.decodeTimeline(Files.readAllBytes(exported.toPath()), "1.4.0");
+        return codec.decodeTimeline(Files.readAllBytes(exported.toPath()), VersionUtil.MIN_RECORDING_VERSION);
     }
 
     private static List<TimelineEvent> sampleTimeline() {

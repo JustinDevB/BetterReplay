@@ -4,6 +4,7 @@ import me.justindevb.replay.Replay;
 import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
+import me.justindevb.replay.util.VersionUtil;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -42,7 +43,7 @@ class FileReplayStorageTest {
     void setUp() {
         when(plugin.getDataFolder()).thenReturn(tempDir);
         when(plugin.getPluginMeta()).thenReturn(pluginMeta);
-        when(pluginMeta.getVersion()).thenReturn("1.4.0");
+        when(pluginMeta.getVersion()).thenReturn(VersionUtil.MIN_RECORDING_VERSION);
         storage = new FileReplayStorage(plugin);
     }
 
@@ -320,7 +321,7 @@ class FileReplayStorageTest {
     void keepsLegacyJsonLoadCompatibilityAlongsideBinarySaves() throws Exception {
         File replayDir = new File(tempDir, "replays");
         replayDir.mkdirs();
-        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(sampleTimeline(), "1.4.0");
+        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(sampleTimeline(), VersionUtil.MIN_RECORDING_VERSION);
         Files.write(new File(replayDir, "legacy.json").toPath(), legacyJson);
 
         storage.saveReplay("binary-save", sampleTimeline()).get();
@@ -340,10 +341,10 @@ class FileReplayStorageTest {
         File replayDir = new File(tempDir, "replays");
         replayDir.mkdirs();
 
-        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(List.of(new TimelineEvent.PlayerQuit(0, "legacy")), "1.4.0");
+        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(List.of(new TimelineEvent.PlayerQuit(0, "legacy")), VersionUtil.MIN_RECORDING_VERSION);
         Files.write(new File(replayDir, "mixed.json").toPath(), legacyJson);
 
-        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("mixed", sampleTimeline(), "1.4.0");
+        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("mixed", sampleTimeline(), VersionUtil.MIN_RECORDING_VERSION);
         Files.write(new File(replayDir, "mixed.br").toPath(), archive);
 
         List<TimelineEvent> loaded = storage.loadReplay("mixed").get();
@@ -358,10 +359,10 @@ class FileReplayStorageTest {
         File replayDir = new File(tempDir, "replays");
         replayDir.mkdirs();
 
-        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(List.of(new TimelineEvent.PlayerQuit(0, "legacy")), "1.4.0");
+        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(List.of(new TimelineEvent.PlayerQuit(0, "legacy")), VersionUtil.MIN_RECORDING_VERSION);
         Files.write(new File(replayDir, "mixed.json").toPath(), legacyJson);
 
-        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("mixed", sampleTimeline(), "1.4.0");
+        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("mixed", sampleTimeline(), VersionUtil.MIN_RECORDING_VERSION);
         Files.write(new File(replayDir, "mixed.br").toPath(), archive);
 
         List<String> names = storage.listReplays().get();
@@ -387,7 +388,7 @@ class FileReplayStorageTest {
 
         File exported = storage.getReplayFile("filtered", new ReplayExportQuery(null, 5, 10)).get();
         assertEquals(new File(tempDir, "exports").getCanonicalFile(), exported.getParentFile().getCanonicalFile());
-        List<TimelineEvent> filtered = new BinaryReplayStorageCodec().decodeTimeline(Files.readAllBytes(exported.toPath()), "1.4.0");
+        List<TimelineEvent> filtered = new BinaryReplayStorageCodec().decodeTimeline(Files.readAllBytes(exported.toPath()), VersionUtil.MIN_RECORDING_VERSION);
 
         assertEquals(2, filtered.size());
         assertEquals(5, filtered.get(0).tick());
@@ -398,7 +399,7 @@ class FileReplayStorageTest {
     void canLoadBinaryArchiveByReplayName() throws Exception {
         File replayDir = new File(tempDir, "replays");
         replayDir.mkdirs();
-        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("binary", sampleTimeline(), "1.4.0");
+        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("binary", sampleTimeline(), VersionUtil.MIN_RECORDING_VERSION);
         Files.write(new File(replayDir, "binary.br").toPath(), archive);
 
         List<TimelineEvent> loaded = storage.loadReplay("binary").get();

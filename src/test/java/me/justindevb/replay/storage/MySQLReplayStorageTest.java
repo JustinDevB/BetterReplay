@@ -12,6 +12,7 @@ import me.justindevb.replay.debug.ReplayDumpQuery;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkTempRegionFileWriter;
+import me.justindevb.replay.util.VersionUtil;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -88,7 +89,7 @@ class MySQLReplayStorageTest {
     void setUp() throws Exception {
         when(plugin.getDataFolder()).thenReturn(tempDir);
         when(plugin.getPluginMeta()).thenReturn(pluginMeta);
-        when(pluginMeta.getVersion()).thenReturn("1.4.0");
+        when(pluginMeta.getVersion()).thenReturn(VersionUtil.MIN_RECORDING_VERSION);
         when(plugin.getFoliaLib()).thenReturn(foliaLib);
         when(foliaLib.getScheduler()).thenReturn(scheduler);
         when(plugin.getLogger()).thenReturn(Logger.getLogger("MySQLReplayStorageTest"));
@@ -226,7 +227,7 @@ class MySQLReplayStorageTest {
 
     @Test
     void loadReplayKeepsLegacyJsonCompatibility() throws Exception {
-        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(sampleTimeline(), "1.4.0");
+        byte[] legacyJson = new JsonReplayStorageCodec().encodeTimeline(sampleTimeline(), VersionUtil.MIN_RECORDING_VERSION);
         when(selectResultSet.next()).thenReturn(true);
         when(selectResultSet.getBytes("data")).thenReturn(legacyJson);
 
@@ -244,7 +245,7 @@ class MySQLReplayStorageTest {
 
         File exported = storage.getReplayFile("export-filtered", new ReplayExportQuery(null, 5, 10)).get();
         assertEquals(new File(tempDir, "exports").getCanonicalFile(), exported.getParentFile().getCanonicalFile());
-        List<TimelineEvent> filtered = new BinaryReplayStorageCodec().decodeTimeline(Files.readAllBytes(exported.toPath()), "1.4.0");
+        List<TimelineEvent> filtered = new BinaryReplayStorageCodec().decodeTimeline(Files.readAllBytes(exported.toPath()), VersionUtil.MIN_RECORDING_VERSION);
 
         assertEquals(2, filtered.size());
         assertEquals(5, filtered.get(0).tick());

@@ -1,5 +1,6 @@
 package me.justindevb.replay.benchmark;
 
+import me.justindevb.replay.util.VersionUtil;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -18,7 +19,7 @@ class ReplayBenchmarkServiceTest {
     @Test
     void startPresetWritesMarkdownAndJsonReports() throws Exception {
         ReplayBenchmarkService service = new ReplayBenchmarkService(
-                new ReplayBenchmarkHarness("1.4.0"),
+                new ReplayBenchmarkHarness(VersionUtil.MIN_RECORDING_VERSION),
                 new ReplayBenchmarkReportWriter(tempDir),
                 Runnable::run);
 

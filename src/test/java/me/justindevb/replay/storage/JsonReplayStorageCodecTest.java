@@ -26,7 +26,7 @@ class JsonReplayStorageCodecTest {
     void encodesAndDecodesCurrentEnvelopeFormat() throws Exception {
         byte[] payload = codec.encodeTimeline(sampleTimeline(), "1.4.0");
 
-        List<TimelineEvent> decoded = codec.decodeTimeline(payload, "1.4.0");
+        List<TimelineEvent> decoded = codec.decodeTimeline(payload, VersionUtil.MIN_RECORDING_VERSION);
 
         assertEquals(ReplayFormat.JSON, codec.format());
         assertEquals(2, decoded.size());
@@ -39,7 +39,7 @@ class JsonReplayStorageCodecTest {
         byte[] payload = codec.encodeTimeline(sampleTimeline(), "1.4.0");
         byte[] compressed = ReplayCompressor.compress(new String(payload, java.nio.charset.StandardCharsets.UTF_8));
 
-        List<TimelineEvent> decoded = codec.decodeTimeline(compressed, "1.4.0");
+        List<TimelineEvent> decoded = codec.decodeTimeline(compressed, VersionUtil.MIN_RECORDING_VERSION);
 
         assertEquals(2, decoded.size());
     }
@@ -66,7 +66,7 @@ class JsonReplayStorageCodecTest {
 
     @Test
     void writesPortableJsonReplayFile() throws Exception {
-        File file = codec.writeReplayFile("codec-test", codec.encodeTimeline(sampleTimeline(), "1.4.0"), "1.4.0");
+        File file = codec.writeReplayFile("codec-test", codec.encodeTimeline(sampleTimeline(), "1.4.0"), VersionUtil.MIN_RECORDING_VERSION);
 
         assertNotNull(file);
         assertTrue(file.exists());

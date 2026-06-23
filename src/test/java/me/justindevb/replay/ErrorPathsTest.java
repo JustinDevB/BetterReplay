@@ -106,7 +106,7 @@ class ErrorPathsTest {
             List<TimelineEvent> original = List.of(new TimelineEvent.PlayerQuit(0, "u"));
             String json = VersionUtil.wrapTimeline(GSON, original, "1.4.0");
 
-            List<TimelineEvent> parsed = VersionUtil.parseReplayJson(GSON, json, "1.4.0", LIST_TYPE);
+            List<TimelineEvent> parsed = VersionUtil.parseReplayJson(GSON, json, VersionUtil.MIN_RECORDING_VERSION, LIST_TYPE);
             assertEquals(1, parsed.size());
             assertInstanceOf(TimelineEvent.PlayerQuit.class, parsed.get(0));
         }

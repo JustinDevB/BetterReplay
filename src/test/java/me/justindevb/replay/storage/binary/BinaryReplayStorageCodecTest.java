@@ -50,7 +50,7 @@ class BinaryReplayStorageCodecTest {
     void loadsValidBinaryReplayArchive() throws Exception {
         byte[] archive = codec.finalizeReplay("valid", sampleTimeline(), "1.4.0", RECORDING_STARTED_AT);
 
-        List<TimelineEvent> decoded = codec.decodeTimeline(archive, "1.4.0");
+        List<TimelineEvent> decoded = codec.decodeTimeline(archive, VersionUtil.MIN_RECORDING_VERSION);
 
         assertEquals(3, decoded.size());
         assertInstanceOf(TimelineEvent.PlayerMove.class, decoded.get(0));
@@ -106,7 +106,7 @@ class BinaryReplayStorageCodecTest {
         }
 
         byte[] archive = codec.finalizeReplay("seek", timeline, "1.4.0", RECORDING_STARTED_AT);
-        BinaryReplayStorageCodec.ParsedBinaryReplay replay = codec.openReplay(archive, "1.4.0");
+        BinaryReplayStorageCodec.ParsedBinaryReplay replay = codec.openReplay(archive, VersionUtil.MIN_RECORDING_VERSION);
 
         int index = replay.timeline().findEventIndexAtOrAfterTick(90);
 
@@ -128,7 +128,7 @@ class BinaryReplayStorageCodecTest {
         entries.put(BinaryReplayFormat.REPLAY_ENTRY_NAME, compress(payloadWithoutIndex));
         updateManifestChecksum(entries);
 
-        BinaryReplayStorageCodec.ParsedBinaryReplay replay = codec.openReplay(writeArchive(entries), "1.4.0");
+        BinaryReplayStorageCodec.ParsedBinaryReplay replay = codec.openReplay(writeArchive(entries), VersionUtil.MIN_RECORDING_VERSION);
 
         assertFalse(replay.indexLoaded());
         assertEquals(3, replay.timeline().size());
@@ -148,7 +148,7 @@ class BinaryReplayStorageCodecTest {
         entries.put(BinaryReplayFormat.REPLAY_ENTRY_NAME, compress(payload));
         updateManifestChecksum(entries);
 
-        assertThrows(IOException.class, () -> codec.decodeTimeline(writeArchive(entries), "1.4.0"));
+        assertThrows(IOException.class, () -> codec.decodeTimeline(writeArchive(entries), VersionUtil.MIN_RECORDING_VERSION));
     }
 
     @Test
@@ -178,7 +178,7 @@ class BinaryReplayStorageCodecTest {
 
     byte[] archive = codec.finalizeReplay("inventory", timeline, "1.4.0", RECORDING_STARTED_AT);
 
-    assertEquals(timeline, codec.decodeTimeline(archive, "1.4.0"));
+    assertEquals(timeline, codec.decodeTimeline(archive, VersionUtil.MIN_RECORDING_VERSION));
     }
 
     @Test
@@ -213,7 +213,7 @@ class BinaryReplayStorageCodecTest {
                     new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
                     "1.4.0");
 
-            me.justindevb.replay.storage.ReplayInspection inspection = codec.inspectReplay("inspect-chunks", archive, "1.4.0");
+            me.justindevb.replay.storage.ReplayInspection inspection = codec.inspectReplay("inspect-chunks", archive, VersionUtil.MIN_RECORDING_VERSION);
 
             assertEquals(1, inspection.chunkRegionEntryCount());
             assertEquals(1, inspection.chunkEntryCount());
@@ -289,7 +289,7 @@ class BinaryReplayStorageCodecTest {
                     new ReplaySaveRequest(sampleTimeline(), RECORDING_STARTED_AT, writer.snapshotArtifacts()),
                     "1.4.0");
 
-            me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(archive, "1.4.0");
+            me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(archive, VersionUtil.MIN_RECORDING_VERSION);
 
             assertEquals(3, replayData.timeline().size());
             assertTrue(replayData.chunkData().hasChunkData());
@@ -325,7 +325,7 @@ class BinaryReplayStorageCodecTest {
                     manifest.chunkPayloadVersion());
             entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(mutated).getBytes(StandardCharsets.UTF_8));
 
-            me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(writeArchive(entries), "1.4.0");
+            me.justindevb.replay.storage.ReplayPlaybackData replayData = codec.decodeReplayData(writeArchive(entries), VersionUtil.MIN_RECORDING_VERSION);
 
             assertEquals(3, replayData.timeline().size());
             assertFalse(replayData.chunkData().hasChunkData());

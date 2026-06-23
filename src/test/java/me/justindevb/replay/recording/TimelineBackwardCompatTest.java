@@ -236,7 +236,7 @@ class TimelineBackwardCompatTest {
         );
 
         String json = VersionUtil.wrapTimeline(gson, events, "1.4.0");
-    List<TimelineEvent> parsed = assertDoesNotThrow(() -> codec.decodeTimeline(json.getBytes(StandardCharsets.UTF_8), "1.4.0"));
+    List<TimelineEvent> parsed = assertDoesNotThrow(() -> codec.decodeTimeline(json.getBytes(StandardCharsets.UTF_8), VersionUtil.MIN_RECORDING_VERSION));
 
         assertEquals(events.size(), parsed.size());
         for (int i = 0; i < events.size(); i++) {
