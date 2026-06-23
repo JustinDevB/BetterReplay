@@ -112,7 +112,7 @@ Rules:
 Example:
 
 ```json
-"minimumViewerVersion": "1.4.0"
+"minimumViewerVersion": "1.5.0-alpha.1"
 ```
 
 ### `payloadChecksum`
