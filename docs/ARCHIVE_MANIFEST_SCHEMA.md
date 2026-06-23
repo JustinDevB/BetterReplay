@@ -89,7 +89,7 @@ Meaning:
 Example:
 
 ```json
-"recordedWithVersion": "1.5.0-SNAPSHOT"
+"recordedWithVersion": "1.5.0-alpha.4"
 ```
 
 ### `minimumViewerVersion`
@@ -107,11 +107,12 @@ Rules:
 
 - if the running plugin version is older than this value, replay loading must fail before playback begins
 - this value should change only when replay playback semantics actually require a newer plugin version
+- writers should not copy `recordedWithVersion` into this field unless that exact release is the true compatibility floor
 
 Example:
 
 ```json
-"minimumViewerVersion": "1.5.0"
+"minimumViewerVersion": "1.4.0"
 ```
 
 ### `payloadChecksum`
@@ -335,7 +336,7 @@ Example:
 {
   "formatVersion": 1,
   "recordedWithVersion": "1.5.0-SNAPSHOT",
-  "minimumViewerVersion": "1.5.0",
+  "minimumViewerVersion": "1.4.0",
   "recordingStartedAtEpochMillis": 1700000000000,
   "payloadChecksum": "7d8f8f2b",
   "payloadChecksumAlgorithm": "CRC32C",

@@ -25,6 +25,7 @@ import org.mockito.quality.Strictness;
 
 import javax.sql.DataSource;
 import java.io.File;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -272,7 +273,7 @@ class MySQLReplayStorageTest {
 
     @Test
     void getReplayDumpFile_propagatesDecodeFailures() throws Exception {
-        byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("dump-versioned", sampleTimeline(), "9.0.0", 123456789L);
+        byte[] archive = "{\"createdBy\":\"9.0.0\",\"minVersion\":\"9.0.0\",\"timeline\":[]}".getBytes(StandardCharsets.UTF_8);
         when(selectResultSet.next()).thenReturn(true);
         when(selectResultSet.getBytes("data")).thenReturn(archive);
 

@@ -99,6 +99,7 @@ Follow them every time code, documentation, or configuration is added or changed
   - **PATCH** — backward-compatible bug fixes.
   - **MINOR** — new backward-compatible features.
   - **MAJOR** — breaking changes to public API or config format.
+- If a replay-format, replay-manifest, timeline-event, chunk-payload, or playback semantic change makes older plugin builds unable to safely load new recordings, bump `VersionUtil.MIN_RECORDING_VERSION` to the next compatible plugin version. For dev alpha lines, this may require manually checking the latest published alpha on Modrinth and setting the minimum to the next alpha version.
 - Strip `-SNAPSHOT` from comparison strings during update checks.
 - Tag releases in Git (`v<major>.<minor>.<patch>`) and update the CHANGELOG comparison links.
 

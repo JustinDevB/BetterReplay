@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayFinalizer;
+import me.justindevb.replay.util.VersionUtil;
 import net.jpountz.lz4.LZ4FrameOutputStream;
 
 import java.io.ByteArrayOutputStream;
@@ -69,7 +70,7 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
         ReplayChunkData effectiveChunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
         BinaryReplayManifest manifest = BinaryReplayManifest.createV1(
                 pluginVersion,
-                pluginVersion,
+                VersionUtil.MIN_RECORDING_VERSION,
                 resolveRecordingStartedAtEpochMillis(recovery),
                 crc32cHex(compressedPayload),
                 effectiveChunkData.metadata());

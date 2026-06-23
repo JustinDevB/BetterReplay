@@ -59,6 +59,19 @@ class BinaryReplayStorageCodecTest {
     }
 
     @Test
+    void finalizeReplay_recordsExactPluginVersionButMaintainsCompatibilityFloor() throws Exception {
+        byte[] archive = codec.finalizeReplay("versioned", sampleTimeline(), "1.5.0", RECORDING_STARTED_AT);
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(
+                new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+                BinaryReplayManifest.class);
+
+        assertEquals("1.5.0", manifest.recordedWithVersion());
+        assertEquals(VersionUtil.MIN_RECORDING_VERSION, manifest.minimumViewerVersion());
+        assertEquals(sampleTimeline(), codec.decodeTimeline(archive, VersionUtil.MIN_RECORDING_VERSION));
+    }
+
+    @Test
     void rejectsReplaysThatRequireNewerViewerVersion() throws Exception {
         byte[] archive = codec.finalizeReplay("versioned", sampleTimeline(), "1.4.0", RECORDING_STARTED_AT);
         Map<String, byte[]> entries = readArchiveEntries(archive);
