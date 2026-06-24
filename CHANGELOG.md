@@ -67,6 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-17: Velocity replay handoff now dispatches proxy plugin messages back onto the appropriate scheduler before sending them, avoiding thread-context failures when launching or resuming replay viewing across servers
 - 2026-06-17: Replay and recording names are now validated to 1-64 non-control characters without path-reserved symbols, and player-facing replay errors now use component chat sends to avoid main-thread `CraftChatMessage` freezes when invalid or missing replay names are echoed (#76)
 - 2026-06-23: Binary replay manifests now keep `recordedWithVersion` as the exact writer build while stamping `minimumViewerVersion` from the maintained replay compatibility floor instead of the current plugin version, preventing alpha-created recordings from requiring an unrelated stable release
+- 2026-06-23: Replay chunk snapshots now wait until the viewer has received the matching real server chunk plus one refresh before sending, preventing distant replay teleports from being overwritten by late live-world chunk packets
 
 ## [1.4.0] - 2026-04-10
 

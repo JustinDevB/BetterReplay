@@ -65,6 +65,7 @@ public class ReplayBlockManager {
     private final ViewerTaskScheduler viewerTaskScheduler;
     private final PlaybackChunkMode chunkPlaybackMode;
     private final ChunkSentStateResolver chunkSentStateResolver;
+    private final boolean requireStableServerChunkBeforeReplayApply;
     private final int chunkPlaybackRadius;
     private final int maxReplayChunkAppliesPerRefresh;
     private final int maxLiveChunkRestoresPerRefresh;
@@ -81,6 +82,7 @@ public class ReplayBlockManager {
     private final Set<ChunkCoordinate> queuedLiveChunkRestores = new LinkedHashSet<>();
     private final Set<ChunkCoordinate> renderedChunks = new HashSet<>();
     private final Set<ChunkCoordinate> residentReplayChunks = new HashSet<>();
+    private final Set<ChunkCoordinate> serverSentReplayChunksObserved = new HashSet<>();
     private final Set<BlockKey> visibleBreakStages = new HashSet<>();
     private final Map<ChunkCoordinate, CompletableFuture<PreparedReplayChunk>> pendingReplayChunkPrepares = new ConcurrentHashMap<>();
     private final Map<ChunkCoordinate, PreparedReplayChunk> preparedReplayChunkCache = new ConcurrentHashMap<>();
@@ -183,6 +185,7 @@ public class ReplayBlockManager {
             ? PlaybackChunkMode.fromConfiguredValue(ReplayConfigSetting.PLAYBACK_CHUNK_MODE.getInt(replay.getConfig()))
             : PlaybackChunkMode.MOVING_WINDOW;
         this.chunkSentStateResolver = ReplayBlockManager::isChunkSentByViewer;
+        this.requireStableServerChunkBeforeReplayApply = true;
         this.chunkPlaybackRadius = replay != null
             && replay.getConfig() != null
             ? Math.max(0, ReplayConfigSetting.PLAYBACK_CHUNK_VIEW_RADIUS.getInt(replay.getConfig()))
@@ -242,7 +245,8 @@ public class ReplayBlockManager {
                 computeMaxLiveChunkRestorePreparesInFlight(1),
                 Logger.getLogger(ReplayBlockManager.class.getName()),
                 PlaybackChunkMode.MOVING_WINDOW,
-                (player, coordinate) -> true);
+                (player, coordinate) -> true,
+                false);
     }
 
     ReplayBlockManager(
@@ -273,7 +277,8 @@ public class ReplayBlockManager {
             computeMaxLiveChunkRestorePreparesInFlight(1),
             logger,
             PlaybackChunkMode.MOVING_WINDOW,
-            (player, coordinate) -> true);
+            (player, coordinate) -> true,
+            false);
         }
 
         ReplayBlockManager(
@@ -311,7 +316,8 @@ public class ReplayBlockManager {
                 maxLiveChunkRestorePreparesInFlight,
                 logger,
                 PlaybackChunkMode.MOVING_WINDOW,
-                (player, coordinate) -> true);
+                (player, coordinate) -> true,
+                false);
             }
 
             ReplayBlockManager(
@@ -351,7 +357,8 @@ public class ReplayBlockManager {
                 maxLiveChunkRestorePreparesInFlight,
                 logger,
                 PlaybackChunkMode.MOVING_WINDOW,
-                (player, coordinate) -> true);
+                (player, coordinate) -> true,
+                false);
     }
 
     ReplayBlockManager(
@@ -391,7 +398,8 @@ public class ReplayBlockManager {
                 maxLiveChunkRestorePreparesInFlight,
                 logger,
                 chunkPlaybackMode,
-                chunkSentStateResolver);
+                chunkSentStateResolver,
+                true);
     }
 
     ReplayBlockManager(
@@ -433,7 +441,8 @@ public class ReplayBlockManager {
                 maxLiveChunkRestorePreparesInFlight,
                 logger,
                 chunkPlaybackMode,
-                chunkSentStateResolver);
+                chunkSentStateResolver,
+                true);
     }
 
         ReplayBlockManager(
@@ -457,6 +466,51 @@ public class ReplayBlockManager {
                 PlaybackChunkMode chunkPlaybackMode,
                 ChunkSentStateResolver chunkSentStateResolver
     ) {
+        this(
+                viewer,
+                replay,
+                chunkPlaybackCache,
+                chunkPayloadFormat,
+                liveChunkCaptureService,
+                replayChunkSnapshotSender,
+                replayChunkPacketPreparer,
+                replayChunkPreparationExecutor,
+                clientVersionResolver,
+                liveChunkRestoreDrainScheduler,
+                liveWorldTaskScheduler,
+                chunkPlaybackRadius,
+                maxReplayChunkAppliesPerRefresh,
+                maxLiveChunkRestoresPerRefresh,
+                maxReplayChunkPreparesInFlight,
+                maxLiveChunkRestorePreparesInFlight,
+                logger,
+                chunkPlaybackMode,
+                chunkSentStateResolver,
+                true);
+    }
+
+        ReplayBlockManager(
+            Player viewer,
+            Replay replay,
+            ReplayChunkPlaybackCache chunkPlaybackCache,
+            BinaryChunkPayloadFormat chunkPayloadFormat,
+            WorldChunkPacketFriendlyCaptureService liveChunkCaptureService,
+            ReplayChunkSnapshotSender replayChunkSnapshotSender,
+            ReplayChunkPacketPreparer replayChunkPacketPreparer,
+            Executor replayChunkPreparationExecutor,
+            Function<Player, ClientVersion> clientVersionResolver,
+            LiveChunkRestoreDrainScheduler liveChunkRestoreDrainScheduler,
+            LiveWorldTaskScheduler liveWorldTaskScheduler,
+            int chunkPlaybackRadius,
+            int maxReplayChunkAppliesPerRefresh,
+            int maxLiveChunkRestoresPerRefresh,
+            int maxReplayChunkPreparesInFlight,
+            int maxLiveChunkRestorePreparesInFlight,
+                Logger logger,
+                PlaybackChunkMode chunkPlaybackMode,
+                ChunkSentStateResolver chunkSentStateResolver,
+                boolean requireStableServerChunkBeforeReplayApply
+    ) {
         this.viewer = viewer;
         this.replay = replay;
         this.chunkPlaybackCache = Objects.requireNonNull(chunkPlaybackCache, "chunkPlaybackCache");
@@ -471,6 +525,7 @@ public class ReplayBlockManager {
         this.viewerTaskScheduler = runInlineViewerTaskScheduler();
         this.chunkPlaybackMode = Objects.requireNonNull(chunkPlaybackMode, "chunkPlaybackMode");
         this.chunkSentStateResolver = Objects.requireNonNull(chunkSentStateResolver, "chunkSentStateResolver");
+        this.requireStableServerChunkBeforeReplayApply = requireStableServerChunkBeforeReplayApply;
         this.chunkPlaybackRadius = Math.max(0, chunkPlaybackRadius);
         this.maxReplayChunkAppliesPerRefresh = Math.max(1, maxReplayChunkAppliesPerRefresh);
         this.maxLiveChunkRestoresPerRefresh = Math.max(1, maxLiveChunkRestoresPerRefresh);
@@ -727,6 +782,7 @@ public class ReplayBlockManager {
         chunkBlocksByCoordinate.clear();
         renderedChunks.clear();
         residentReplayChunks.clear();
+        serverSentReplayChunksObserved.clear();
         preparedReplayChunkCache.clear();
         unavailableReplayChunks.clear();
         currentChunkCenter = null;
@@ -763,6 +819,7 @@ public class ReplayBlockManager {
         }
         pendingLiveChunkRestorePrepares.clear();
         queuedLiveChunkRestores.clear();
+        serverSentReplayChunksObserved.clear();
     }
 
     private void restoreLiveBlockState(BlockKey key) {
@@ -1179,6 +1236,10 @@ public class ReplayBlockManager {
             return ReplayLoadApplySource.NOT_APPLIED;
         }
 
+        if (!isReplayChunkReadyToApply(coordinate)) {
+            return ReplayLoadApplySource.NOT_APPLIED;
+        }
+
         if (applyCachedPreparedReplayChunk(coordinate)) {
             return renderedChunks.contains(coordinate)
                     ? ReplayLoadApplySource.PREPARED_PACKET_CACHE
@@ -1542,6 +1603,7 @@ public class ReplayBlockManager {
                 pending.cancel(false);
             }
             queuedLiveChunkRestores.remove(coordinate);
+            serverSentReplayChunksObserved.remove(coordinate);
             residentReplayChunks.remove(coordinate);
             renderedChunks.remove(coordinate);
             return;
@@ -1565,6 +1627,7 @@ public class ReplayBlockManager {
         }
         residentReplayChunks.remove(coordinate);
         renderedChunks.remove(coordinate);
+        serverSentReplayChunksObserved.remove(coordinate);
     }
 
     private void restoreLiveChunkPacket(ChunkCoordinate coordinate) {
@@ -1596,6 +1659,7 @@ public class ReplayBlockManager {
         if (pending != null) {
             pending.cancel(false);
         }
+        serverSentReplayChunksObserved.remove(coordinate);
         queuedLiveChunkRestores.add(coordinate);
     }
 
@@ -1910,6 +1974,24 @@ public class ReplayBlockManager {
                 entry.getValue().cancel(false);
             }
         }
+        serverSentReplayChunksObserved.removeIf(coordinate -> !desiredChunks.contains(coordinate));
+    }
+
+    private boolean isReplayChunkReadyToApply(ChunkCoordinate coordinate) {
+        if (!requireStableServerChunkBeforeReplayApply) {
+            return true;
+        }
+
+        if (!isChunkSentToViewer(coordinate)) {
+            serverSentReplayChunksObserved.remove(coordinate);
+            return false;
+        }
+
+        if (serverSentReplayChunksObserved.add(coordinate)) {
+            return false;
+        }
+
+        return true;
     }
 
     private static int computeMaxReplayChunkPreparesInFlight(int chunkPlaybackRadius) {
@@ -1966,6 +2048,7 @@ public class ReplayBlockManager {
         }
 
         queuedLiveChunkRestores.remove(coordinate);
+        serverSentReplayChunksObserved.remove(coordinate);
         residentReplayChunks.remove(coordinate);
         renderedChunks.remove(coordinate);
     }

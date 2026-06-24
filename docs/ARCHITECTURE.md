@@ -87,6 +87,7 @@ During recording:
 During playback:
 
 - `ReplayBlockManager` and chunk playback helpers stream replay chunk snapshots around the viewer.
+- Replay chunk snapshots are sent only after Paper reports the matching real chunk has been sent to the viewer and one refresh has passed, so late live-world chunks do not overwrite replay chunks after long teleports.
 - `Playback.Chunk-Mode` decides whether live chunks are restored immediately when they leave the replay window or only when the replay stops.
 - Packet-friendly send and clear limits smooth out chunk overlay cost across ticks.
 - Timing diagnostics can log replay chunk preparation, replay load, and live restore timings for MSPT troubleshooting.
