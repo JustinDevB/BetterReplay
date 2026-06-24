@@ -1,5 +1,7 @@
 package me.justindevb.replay.storage.binary;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Objects;
 
 /**
@@ -33,6 +35,18 @@ public enum BinaryChunkPayloadFormat {
             }
         }
         throw new IllegalArgumentException("Unsupported chunk payload format: " + value);
+    }
+
+    public static BinaryChunkPayloadFormat fromPayloadBytes(byte[] payloadBytes) {
+        Objects.requireNonNull(payloadBytes, "payloadBytes");
+        for (BinaryChunkPayloadFormat format : values()) {
+            byte[] magic = format.manifestValue.getBytes(StandardCharsets.US_ASCII);
+            if (payloadBytes.length >= magic.length
+                    && Arrays.equals(Arrays.copyOfRange(payloadBytes, 0, magic.length), magic)) {
+                return format;
+            }
+        }
+        throw new IllegalArgumentException("Unsupported chunk payload magic");
     }
 
     public static BinaryChunkPayloadFormat legacyDefault() {

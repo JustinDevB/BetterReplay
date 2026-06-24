@@ -61,12 +61,14 @@ public final class BinaryChunkTempArchiveFinalizer implements ChunkArchiveFinali
         Map<String, byte[]> regionEntries = new LinkedHashMap<>();
         List<String> coordinateDigests = new ArrayList<>();
         int chunkEntryCount = 0;
+        BinaryChunkPayloadFormat detectedPayloadFormat = null;
 
         for (Path tempRegionFile : tempRegionFiles) {
             FinalizedRegion finalizedRegion = finalizeRegionFile(artifacts.rootDirectory(), tempRegionFile);
             if (finalizedRegion.entries().isEmpty()) {
                 continue;
             }
+            detectedPayloadFormat = mergePayloadFormat(detectedPayloadFormat, finalizedRegion.payloadFormat());
 
             regionEntries.put(finalizedRegion.entryName(), regionCodec.encode(finalizedRegion.entries()));
             chunkEntryCount += finalizedRegion.entries().size();
@@ -83,7 +85,7 @@ public final class BinaryChunkTempArchiveFinalizer implements ChunkArchiveFinali
                 regionEntries.size(),
                 chunkEntryCount,
             crc32cHex(coordinateDigests),
-            artifacts.chunkPayloadFormat());
+            detectedPayloadFormat != null ? detectedPayloadFormat : artifacts.chunkPayloadFormat());
         return new ReplayChunkData(metadata, regionEntries);
     }
 
@@ -107,10 +109,12 @@ public final class BinaryChunkTempArchiveFinalizer implements ChunkArchiveFinali
         tempRegionFormat.validateHeader(bytes);
 
         Map<Integer, BinaryChunkRegionEntry> latestEntries = new LinkedHashMap<>();
+        BinaryChunkPayloadFormat detectedPayloadFormat = null;
         int offset = BinaryReplayFormat.CHUNK_TEMP_REGION_HEADER_SIZE;
         while (offset < bytes.length) {
             BinaryChunkTempRegionFormat.DecodedAppendRecord decoded = tempRegionFormat.decodeRecord(bytes, offset);
             BinaryChunkTempRegionAppendRecord record = decoded.record();
+            detectedPayloadFormat = mergePayloadFormat(detectedPayloadFormat, detectPayloadFormat(record));
             latestEntries.put(
                     (record.localChunkX() << 8) | record.localChunkZ(),
                     new BinaryChunkRegionEntry(
@@ -132,7 +136,35 @@ public final class BinaryChunkTempArchiveFinalizer implements ChunkArchiveFinali
                 + "."
                 + regionZ
                 + BinaryReplayFormat.CHUNK_REGION_FILE_EXTENSION;
-        return new FinalizedRegion(entryName, entries);
+        return new FinalizedRegion(entryName, entries, detectedPayloadFormat);
+    }
+
+    private static BinaryChunkPayloadFormat detectPayloadFormat(BinaryChunkTempRegionAppendRecord record) throws IOException {
+        byte[] payload = record.compression().decompress(record.compressedPayload());
+        if (payload.length != record.uncompressedLength()) {
+            throw new IOException("Chunk temp region record uncompressed length mismatch");
+        }
+        try {
+            return BinaryChunkPayloadFormat.fromPayloadBytes(payload);
+        } catch (IllegalArgumentException ex) {
+            throw new IOException("Chunk temp region record has unsupported chunk payload magic", ex);
+        }
+    }
+
+    private static BinaryChunkPayloadFormat mergePayloadFormat(
+            BinaryChunkPayloadFormat current,
+            BinaryChunkPayloadFormat detected
+    ) throws IOException {
+        if (detected == null) {
+            return current;
+        }
+        if (current == null) {
+            return detected;
+        }
+        if (current != detected) {
+            throw new IOException("Chunk temp artifacts contain mixed chunk payload formats");
+        }
+        return current;
     }
 
     private static String crc32cHex(List<String> coordinateDigests) {
@@ -145,6 +177,6 @@ public final class BinaryChunkTempArchiveFinalizer implements ChunkArchiveFinali
         return "%08x".formatted(crc32c.getValue());
     }
 
-    private record FinalizedRegion(String entryName, List<BinaryChunkRegionEntry> entries) {
+    private record FinalizedRegion(String entryName, List<BinaryChunkRegionEntry> entries, BinaryChunkPayloadFormat payloadFormat) {
     }
 }

@@ -223,7 +223,7 @@ class FileReplayStorageEdgeCaseTest {
         @Test
         void saveReplay_withChunkArtifacts_roundTripsChunkPlaybackData() throws Exception {
             try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-artifacts"))) {
-                writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+                writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 'B', 'R', 'C', 'S', 1 }));
 
                 storage.saveReplay("chunk-file", new ReplaySaveRequest(
                         List.of(new TimelineEvent.PlayerQuit(0, "u")),

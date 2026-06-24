@@ -39,6 +39,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class BinaryReplayStorageCodecTest {
 
     private static final long RECORDING_STARTED_AT = 1_700_000_000_000L;
+    private static final byte[] BRCS_PAYLOAD = new byte[] { 'B', 'R', 'C', 'S', 1 };
+    private static final byte[] BRCP_PAYLOAD = new byte[] { 'B', 'R', 'C', 'P', 1 };
 
     private final BinaryReplayStorageCodec codec = new BinaryReplayStorageCodec();
     private final Gson gson = new Gson();
@@ -230,7 +232,7 @@ class BinaryReplayStorageCodecTest {
     @Test
     void finalizeReplay_withChunkArtifacts_includesChunkEntriesInArchive() throws Exception {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
-            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), BRCS_PAYLOAD));
             ChunkRecordingArtifacts chunkArtifacts = writer.snapshotArtifacts();
 
             byte[] archive = codec.finalizeReplay(
@@ -255,7 +257,7 @@ class BinaryReplayStorageCodecTest {
     @Test
     void inspectReplay_reportsChunkPayloadSizesSeparately() throws Exception {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
-            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), BRCS_PAYLOAD));
 
             byte[] archive = codec.finalizeReplay(
                     "inspect-chunks",
@@ -267,7 +269,7 @@ class BinaryReplayStorageCodecTest {
             assertEquals(1, inspection.chunkRegionEntryCount());
             assertEquals(1, inspection.chunkEntryCount());
             assertTrue(inspection.compressedChunkPayloadBytes() > 0);
-            assertEquals(3, inspection.decompressedChunkPayloadBytes());
+            assertEquals(BRCS_PAYLOAD.length, inspection.decompressedChunkPayloadBytes());
         }
     }
 
@@ -309,7 +311,7 @@ class BinaryReplayStorageCodecTest {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
             writer.append(new CapturedChunkBaseline(
                     new ChunkCoordinate("world", 0, 0),
-                    new byte[] { 7, 8, 9 },
+                    BRCP_PAYLOAD,
                     BinaryChunkPayloadFormat.BRCP));
 
             byte[] archive = codec.finalizeReplay(
@@ -331,7 +333,7 @@ class BinaryReplayStorageCodecTest {
     @Test
     void decodeReplayData_loadsChunkEntriesWhenManifestAndArchiveMatch() throws Exception {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
-            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), BRCS_PAYLOAD));
 
             byte[] archive = codec.finalizeReplay(
                     "decode-chunks",
@@ -350,7 +352,7 @@ class BinaryReplayStorageCodecTest {
     @Test
     void decodeReplayData_softFailsWhenChunkManifestDoesNotMatchArchive() throws Exception {
         try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir)) {
-            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 7, 8, 9 }));
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), BRCS_PAYLOAD));
 
             byte[] archive = codec.finalizeReplay(
                     "decode-soft-fail",
