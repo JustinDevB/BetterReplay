@@ -12,7 +12,6 @@ import me.justindevb.replay.storage.ReplayPlaybackData;
 import me.justindevb.replay.storage.ReplaySaveRequest;
 import me.justindevb.replay.storage.ReplayStorageCodec;
 import me.justindevb.replay.util.VersionUtil;
-import net.jpountz.lz4.LZ4FrameInputStream;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -160,7 +159,7 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
                     0);
         }
 
-        byte[] payload = decompress(archiveEntries.replayBytes());
+        byte[] payload = decompress(manifest, archiveEntries.replayBytes());
         validatePayloadHeader(payload);
         ParsedPayload parsedPayload = parsePayload(payload);
         LazyTimeline timeline = new LazyTimeline(payload, parsedPayload.events(), parsedPayload.stringTable(), parsedPayload.tickIndex());
@@ -197,7 +196,7 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         BinaryReplayManifest manifest = parseManifest(archiveEntries.manifestBytes());
         validateManifest(manifest, archiveEntries.replayBytes(), runningVersion);
 
-        byte[] payload = decompress(archiveEntries.replayBytes());
+        byte[] payload = decompress(manifest, archiveEntries.replayBytes());
         validatePayloadHeader(payload);
 
         ParsedPayload parsedPayload = parsePayload(payload);
@@ -326,10 +325,11 @@ public final class BinaryReplayStorageCodec implements ReplayStorageCodec {
         }
     }
 
-    private static byte[] decompress(byte[] replayBytes) throws IOException {
-        try (LZ4FrameInputStream lz4 = new LZ4FrameInputStream(new ByteArrayInputStream(replayBytes))) {
-            return lz4.readAllBytes();
-        }
+    private static byte[] decompress(BinaryReplayManifest manifest, byte[] replayBytes) throws IOException {
+        BinaryReplayPayloadCompression compression = manifest.payloadCompression() != null
+                ? BinaryReplayPayloadCompression.fromManifestValue(manifest.payloadCompression())
+                : BinaryReplayPayloadCompression.detect(replayBytes);
+        return compression.decompress(replayBytes);
     }
 
     private static void validatePayloadHeader(byte[] payload) throws IOException {

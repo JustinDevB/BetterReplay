@@ -79,6 +79,18 @@ class BinaryChunkRegionCodecTest {
         assertThrows(IOException.class, () -> codec.decode(regionBytes));
     }
 
+    @Test
+    void rejectsUnsupportedCompressionCodecId() {
+        byte[] regionBytes = codec.encode(List.of(
+                new BinaryChunkRegionEntry(1, 1, 8, BinaryChunkCompression.LZ4_FRAME, new byte[] {0x01})
+        ));
+        regionBytes[18] = 99;
+
+        IOException ex = assertThrows(IOException.class, () -> codec.decode(regionBytes));
+
+        assertEquals("Unsupported chunk payload codec id: 99", ex.getMessage());
+    }
+
     private static int littleEndianInt(byte[] bytes, int offset) {
         return ByteBuffer.wrap(bytes, offset, Integer.BYTES)
                 .order(BinaryReplayFormat.PRIMITIVE_BYTE_ORDER)

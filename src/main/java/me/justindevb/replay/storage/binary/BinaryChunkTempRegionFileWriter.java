@@ -4,9 +4,7 @@ import me.justindevb.replay.chunk.CapturedChunkBaseline;
 import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
 import me.justindevb.replay.chunk.ChunkRegionKey;
 import me.justindevb.replay.chunk.ChunkTempRegionWriter;
-import net.jpountz.lz4.LZ4FrameOutputStream;
 
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
@@ -48,12 +46,13 @@ public final class BinaryChunkTempRegionFileWriter implements ChunkTempRegionWri
         Files.createDirectories(regionPath.getParent());
         boolean writeHeader = Files.notExists(regionPath);
 
-        byte[] compressedPayload = compress(baseline.payloadBytes());
+        BinaryChunkCompression compression = BinaryChunkCompression.DEFAULT;
+        byte[] compressedPayload = compression.compress(baseline.payloadBytes());
         BinaryChunkTempRegionAppendRecord record = new BinaryChunkTempRegionAppendRecord(
                 baseline.coordinate().localChunkX(),
                 baseline.coordinate().localChunkZ(),
                 baseline.payloadBytes().length,
-                BinaryChunkCompression.LZ4_FRAME,
+                compression,
                 compressedPayload);
 
         try (OutputStream outputStream = Files.newOutputStream(
@@ -92,11 +91,4 @@ public final class BinaryChunkTempRegionFileWriter implements ChunkTempRegionWri
                 .resolve("r." + regionKey.regionX() + "." + regionKey.regionZ() + TEMP_REGION_EXTENSION);
     }
 
-    private static byte[] compress(byte[] payloadBytes) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(out)) {
-            lz4.write(payloadBytes);
-        }
-        return out.toByteArray();
-    }
 }

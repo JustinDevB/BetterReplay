@@ -5,7 +5,6 @@ import me.justindevb.replay.chunk.ReplayChunkData;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplayFinalizer;
 import me.justindevb.replay.util.VersionUtil;
-import net.jpountz.lz4.LZ4FrameOutputStream;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -66,14 +65,16 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
             ReplayChunkData chunkData
     ) throws IOException {
         byte[] finalizedPayload = buildFinalizedPayload(recovery.records(), recovery.timeline(), recovery.stringTable());
-        byte[] compressedPayload = compress(finalizedPayload);
+        BinaryReplayPayloadCompression payloadCompression = BinaryReplayPayloadCompression.DEFAULT;
+        byte[] compressedPayload = payloadCompression.compress(finalizedPayload);
         ReplayChunkData effectiveChunkData = chunkData != null ? chunkData : ReplayChunkData.NONE;
         BinaryReplayManifest manifest = BinaryReplayManifest.createV1(
                 pluginVersion,
                 VersionUtil.MIN_RECORDING_VERSION,
                 resolveRecordingStartedAtEpochMillis(recovery),
                 crc32cHex(compressedPayload),
-                effectiveChunkData.metadata());
+                effectiveChunkData.metadata(),
+                payloadCompression);
         byte[] manifestBytes = gson.toJson(manifest).getBytes(StandardCharsets.UTF_8);
         return buildArchive(manifestBytes, compressedPayload, effectiveChunkData);
     }
@@ -177,14 +178,6 @@ public final class BinaryReplayArchiveFinalizer implements ReplayFinalizer {
         for (BinaryTickIndexEntry entry : tickIndex) {
             out.writeBytes(littleEndianInt(entry.tick()));
             out.writeBytes(littleEndianLong(entry.byteOffset()));
-        }
-        return out.toByteArray();
-    }
-
-    private static byte[] compress(byte[] payload) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(out)) {
-            lz4.write(payload);
         }
         return out.toByteArray();
     }

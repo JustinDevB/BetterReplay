@@ -17,7 +17,8 @@ public record BinaryReplayManifest(
         int chunkEntryCount,
         String chunkCoordinateHash,
         String chunkPayloadFormat,
-        int chunkPayloadVersion
+        int chunkPayloadVersion,
+        String payloadCompression
 ) {
 
     public BinaryReplayManifest {
@@ -45,6 +46,9 @@ public record BinaryReplayManifest(
         }
         requireLowerHex(payloadChecksum, "payloadChecksum");
         requireNonBlank(payloadChecksumAlgorithm, "payloadChecksumAlgorithm");
+        if (payloadCompression != null) {
+            requireNonBlank(payloadCompression, "payloadCompression");
+        }
         BinaryReplayChunkMetadata.validate(
             hasChunkData,
             chunkRegionEntryCount,
@@ -52,6 +56,36 @@ public record BinaryReplayManifest(
             chunkCoordinateHash,
             chunkPayloadFormat,
             chunkPayloadVersion);
+    }
+
+    public BinaryReplayManifest(
+            int formatVersion,
+            String recordedWithVersion,
+            String minimumViewerVersion,
+            long recordingStartedAtEpochMillis,
+            String payloadChecksum,
+            String payloadChecksumAlgorithm,
+            boolean hasChunkData,
+            int chunkRegionEntryCount,
+            int chunkEntryCount,
+            String chunkCoordinateHash,
+            String chunkPayloadFormat,
+            int chunkPayloadVersion
+    ) {
+        this(
+                formatVersion,
+                recordedWithVersion,
+                minimumViewerVersion,
+                recordingStartedAtEpochMillis,
+                payloadChecksum,
+                payloadChecksumAlgorithm,
+                hasChunkData,
+                chunkRegionEntryCount,
+                chunkEntryCount,
+                chunkCoordinateHash,
+                chunkPayloadFormat,
+                chunkPayloadVersion,
+                null);
     }
 
     public static BinaryReplayManifest createV1(
@@ -72,7 +106,8 @@ public record BinaryReplayManifest(
                 0,
                 null,
                 null,
-                0
+                0,
+                null
         );
     }
 
@@ -82,6 +117,17 @@ public record BinaryReplayManifest(
             long recordingStartedAtEpochMillis,
             String payloadChecksum,
             BinaryReplayChunkMetadata chunkMetadata
+    ) {
+        return createV1(recordedWithVersion, minimumViewerVersion, recordingStartedAtEpochMillis, payloadChecksum, chunkMetadata, null);
+    }
+
+    public static BinaryReplayManifest createV1(
+            String recordedWithVersion,
+            String minimumViewerVersion,
+            long recordingStartedAtEpochMillis,
+            String payloadChecksum,
+            BinaryReplayChunkMetadata chunkMetadata,
+            BinaryReplayPayloadCompression payloadCompression
     ) {
         Objects.requireNonNull(chunkMetadata, "chunkMetadata");
         return new BinaryReplayManifest(
@@ -96,7 +142,8 @@ public record BinaryReplayManifest(
                 chunkMetadata.chunkEntryCount(),
                 chunkMetadata.chunkCoordinateHash(),
                 chunkMetadata.chunkPayloadFormat(),
-                chunkMetadata.chunkPayloadVersion()
+                chunkMetadata.chunkPayloadVersion(),
+                payloadCompression == null ? null : payloadCompression.manifestValue()
         );
     }
 

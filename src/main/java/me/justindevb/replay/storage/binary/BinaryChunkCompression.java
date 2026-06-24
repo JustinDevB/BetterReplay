@@ -6,16 +6,29 @@ import java.io.IOException;
  * Frozen per-chunk payload codecs for chunk baseline storage.
  */
 public enum BinaryChunkCompression {
-    LZ4_FRAME(1);
+    LZ4_FRAME(1, BinaryReplayPayloadCompression.LZ4_FRAME),
+    ZSTD(2, BinaryReplayPayloadCompression.ZSTD);
+
+    public static final BinaryChunkCompression DEFAULT = ZSTD;
 
     private final int codecId;
+    private final BinaryReplayPayloadCompression payloadCompression;
 
-    BinaryChunkCompression(int codecId) {
+    BinaryChunkCompression(int codecId, BinaryReplayPayloadCompression payloadCompression) {
         this.codecId = codecId;
+        this.payloadCompression = payloadCompression;
     }
 
     public int codecId() {
         return codecId;
+    }
+
+    public byte[] compress(byte[] payload) throws IOException {
+        return payloadCompression.compress(payload);
+    }
+
+    public byte[] decompress(byte[] compressedPayload) throws IOException {
+        return payloadCompression.decompress(compressedPayload);
     }
 
     public static BinaryChunkCompression fromCodecId(int codecId) throws IOException {

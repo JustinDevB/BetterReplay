@@ -1,6 +1,8 @@
 package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import me.justindevb.replay.chunk.CapturedChunkBaseline;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.chunk.ChunkRecordingArtifacts;
@@ -8,8 +10,6 @@ import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.ReplaySaveRequest;
 import me.justindevb.replay.util.VersionUtil;
 import me.justindevb.replay.util.io.SerializedItemData;
-import net.jpountz.lz4.LZ4FrameInputStream;
-import net.jpountz.lz4.LZ4FrameOutputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -68,7 +68,53 @@ class BinaryReplayStorageCodecTest {
 
         assertEquals("1.5.0", manifest.recordedWithVersion());
         assertEquals(VersionUtil.MIN_RECORDING_VERSION, manifest.minimumViewerVersion());
+        assertEquals(BinaryReplayPayloadCompression.ZSTD.manifestValue(), manifest.payloadCompression());
         assertEquals(sampleTimeline(), codec.decodeTimeline(archive, VersionUtil.MIN_RECORDING_VERSION));
+    }
+
+    @Test
+    void newBinaryReplayArchive_usesZstdPayloadCompression() throws Exception {
+        byte[] archive = codec.finalizeReplay("zstd", sampleTimeline(), "1.5.0", RECORDING_STARTED_AT);
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        BinaryReplayManifest manifest = gson.fromJson(
+                new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8),
+                BinaryReplayManifest.class);
+
+        assertEquals(BinaryReplayPayloadCompression.ZSTD.manifestValue(), manifest.payloadCompression());
+        assertEquals(sampleTimeline(), codec.decodeTimeline(archive, VersionUtil.MIN_RECORDING_VERSION));
+    }
+
+    @Test
+    void lz4TimelineArchive_stillDecodes() throws Exception {
+        byte[] archive = codec.finalizeReplay("lz4", sampleTimeline(), "1.5.0", RECORDING_STARTED_AT);
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        byte[] payload = decompress(entries.get(BinaryReplayFormat.REPLAY_ENTRY_NAME));
+        entries.put(BinaryReplayFormat.REPLAY_ENTRY_NAME, BinaryReplayPayloadCompression.LZ4_FRAME.compress(payload));
+        replaceManifestCompression(entries, BinaryReplayPayloadCompression.LZ4_FRAME.manifestValue());
+        updateManifestChecksum(entries);
+
+        assertEquals(sampleTimeline(), codec.decodeTimeline(writeArchive(entries), VersionUtil.MIN_RECORDING_VERSION));
+    }
+
+    @Test
+    void missingPayloadCompression_fallsBackToMagicByteDetection() throws Exception {
+        byte[] archive = codec.finalizeReplay("legacy-manifest-zstd", sampleTimeline(), "1.5.0", RECORDING_STARTED_AT);
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        replaceManifestCompression(entries, null);
+
+        assertEquals(sampleTimeline(), codec.decodeTimeline(writeArchive(entries), VersionUtil.MIN_RECORDING_VERSION));
+    }
+
+    @Test
+    void unsupportedPayloadCompression_failsClearly() throws Exception {
+        byte[] archive = codec.finalizeReplay("bad-compression", sampleTimeline(), "1.5.0", RECORDING_STARTED_AT);
+        Map<String, byte[]> entries = readArchiveEntries(archive);
+        replaceManifestCompression(entries, "brotli");
+
+        IOException ex = assertThrows(IOException.class,
+                () -> codec.decodeTimeline(writeArchive(entries), VersionUtil.MIN_RECORDING_VERSION));
+
+        assertTrue(ex.getMessage().contains("Unsupported binary replay payload compression: brotli"));
     }
 
     @Test
@@ -200,6 +246,9 @@ class BinaryReplayStorageCodecTest {
             assertEquals(1, manifest.chunkRegionEntryCount());
             assertEquals(1, manifest.chunkEntryCount());
             assertTrue(entries.containsKey("chunks/world/r.0.0.brregion"));
+            BinaryChunkRegionCodec.DecodedBinaryChunkRegion region = new BinaryChunkRegionCodec()
+                    .decode(entries.get("chunks/world/r.0.0.brregion"));
+            assertEquals(BinaryChunkCompression.ZSTD, region.indexEntries().getFirst().compression());
         }
     }
 
@@ -383,17 +432,22 @@ class BinaryReplayStorageCodecTest {
     }
 
     private static byte[] decompress(byte[] replayBytes) throws IOException {
-        try (LZ4FrameInputStream lz4 = new LZ4FrameInputStream(new ByteArrayInputStream(replayBytes))) {
-            return lz4.readAllBytes();
-        }
+        return BinaryReplayPayloadCompression.detect(replayBytes).decompress(replayBytes);
     }
 
     private static byte[] compress(byte[] payload) throws IOException {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(out)) {
-            lz4.write(payload);
+        return BinaryReplayPayloadCompression.DEFAULT.compress(payload);
+    }
+
+    private void replaceManifestCompression(Map<String, byte[]> entries, String compression) {
+        JsonObject manifest = JsonParser.parseString(
+                new String(entries.get(BinaryReplayFormat.MANIFEST_ENTRY_NAME), StandardCharsets.UTF_8)).getAsJsonObject();
+        if (compression == null) {
+            manifest.remove("payloadCompression");
+        } else {
+            manifest.addProperty("payloadCompression", compression);
         }
-        return out.toByteArray();
+        entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(manifest).getBytes(StandardCharsets.UTF_8));
     }
 
     private void updateManifestChecksum(Map<String, byte[]> entries) {
@@ -414,7 +468,8 @@ class BinaryReplayStorageCodecTest {
                 manifest.chunkEntryCount(),
                 manifest.chunkCoordinateHash(),
                 manifest.chunkPayloadFormat(),
-                manifest.chunkPayloadVersion());
+                manifest.chunkPayloadVersion(),
+                manifest.payloadCompression());
         entries.put(BinaryReplayFormat.MANIFEST_ENTRY_NAME, gson.toJson(updated).getBytes(StandardCharsets.UTF_8));
     }
 }

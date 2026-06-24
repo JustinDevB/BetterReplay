@@ -33,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-04-30: Modrinth publishing metadata now includes Purpur, Spigot, and Bukkit loaders
 - 2026-05-14: Modrinth uploads now publish the matching release changelog on `main` and the `[Unreleased]` section for `dev` alpha builds
 - 2026-06-04: README content was reorganized into overview sections with dedicated Architecture, Configuration, and Commands documents under `docs/`
+- 2026-06-23: New binary `.br` archives now compress timeline payloads and chunk payloads with Zstd level 1, declare `payloadCompression: "zstd"`, bump the binary replay compatibility floor to `1.5.0-alpha.12`, and keep LZ4 replay/chunk archives readable through metadata or frame-magic compatibility fallback
 
 ### Removed
 - 2026-04-28: `General.Enable-Benchmark-Command`; `/replay benchmark` is now always permission-gated through `replay.benchmark`

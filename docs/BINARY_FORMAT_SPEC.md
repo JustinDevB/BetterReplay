@@ -47,11 +47,11 @@ The `manifest.json` entry provides replay metadata and compatibility information
 
 The `replay.bin` entry contains the finalized replay payload:
 
-- compressed as a single LZ4-compressed payload
+- compressed as a single payload frame, using Zstd level 1 for new archives
 - decompressed fully into a heap `byte[]` when loaded for playback
 - decoded lazily from that in-memory byte array as playback advances
 
-The v1 implementation stores `replay.bin` as a single LZ4 frame.
+Legacy archives may store `replay.bin` as a single LZ4 frame and remain readable.
 
 During active recording, BetterReplay first writes an append-only temp file under `replays/.tmp/`.
 That append-log has its own fixed file header so metadata needed during crash recovery is persisted before any framed records are appended.
@@ -65,7 +65,20 @@ The `.br` file is a ZIP-style archive whose entries are stored using `STORE` rat
 | Entry name | Required | Purpose |
 |-----------|----------|---------|
 | `manifest.json` | Yes | Replay metadata, versioning, checksum, and compatibility gate |
-| `replay.bin` | Yes | LZ4-compressed finalized replay payload |
+| `replay.bin` | Yes | Compressed finalized replay payload |
+
+### Timeline payload compression
+
+New archives declare `payloadCompression` in `manifest.json` and write `replay.bin` with Zstd level 1.
+
+Supported timeline payload codecs:
+
+| Manifest value | Frame magic | Meaning |
+|----------------|-------------|---------|
+| `lz4_frame` | `04 22 4D 18` | Legacy LZ4 frame-compressed replay payload |
+| `zstd` | `28 B5 2F FD` | Zstd-compressed replay payload; new archive default |
+
+Readers must use `payloadCompression` when it is present. If the field is absent, readers may fall back to frame magic detection for compatibility with existing archives.
 
 ### Optional chunk-enabled entries
 
@@ -104,11 +117,12 @@ Examples:
 
 The finalized chunk region format and the temp region append-log both use a one-byte codec identifier.
 
-v1 freezes exactly one supported codec:
+Supported finalized chunk payload codecs:
 
 | Codec ID | Name | Meaning |
 |----------|------|---------|
 | `0x01` | `LZ4_FRAME` | Payload bytes are one standalone LZ4 frame for a single chunk snapshot payload |
+| `0x02` | `ZSTD` | Payload bytes are one standalone Zstd frame for a single chunk snapshot payload; new archive default |
 
 Unknown chunk codec identifiers are a hard parse failure for the affected entry.
 
@@ -131,7 +145,7 @@ Rules:
 
 ## Legacy Chunk Baseline Payload (`BRCS`)
 
-The uncompressed bytes inside each chunk payload encode one full chunk baseline snapshot before the outer `LZ4_FRAME` compression is applied.
+The uncompressed bytes inside each chunk payload encode one full chunk baseline snapshot before the per-chunk compression frame is applied.
 
 v1 uses this layout:
 
@@ -275,7 +289,7 @@ Rows are written in deterministic lexicographic order by `(localChunkX, localChu
 |-------|-------|----------|-------|
 | `localChunkX` | 1 byte | unsigned byte | `0-31` within the region |
 | `localChunkZ` | 1 byte | unsigned byte | `0-31` within the region |
-| `codecId` | 1 byte | unsigned byte | v1 supports only `0x01` (`LZ4_FRAME`) |
+| `codecId` | 1 byte | unsigned byte | `0x01` (`LZ4_FRAME`) or `0x02` (`ZSTD`) |
 | reserved | 1 byte | zero-filled | must be `0x00` in v1 |
 | `payloadOffset` | 4 bytes | little-endian signed int32, non-negative in valid files | offset relative to the start of the payload area, not the file start |
 | `compressedLength` | 4 bytes | little-endian signed int32, positive in valid files | compressed payload byte count |
@@ -319,7 +333,7 @@ Each appended chunk snapshot record uses this layout:
 |-------|-------|----------|-------|
 | `localChunkX` | 1 byte | unsigned byte | `0-31` within the region |
 | `localChunkZ` | 1 byte | unsigned byte | `0-31` within the region |
-| `codecId` | 1 byte | unsigned byte | v1 supports only `0x01` (`LZ4_FRAME`) |
+| `codecId` | 1 byte | unsigned byte | `0x01` (`LZ4_FRAME`) or `0x02` (`ZSTD`) |
 | flags | 1 byte | unsigned byte | must be `0x00` in v1 |
 | `uncompressedLength` | 4 bytes | little-endian signed int32, positive in valid files | original payload length |
 | `compressedLength` | 4 bytes | little-endian signed int32, positive in valid files | stored payload byte count |
@@ -380,7 +394,7 @@ Total append-log header size: `16` bytes.
 
 ## Replay Payload Model
 
-After LZ4 decompression, `replay.bin` is treated as a single binary payload with three logical parts:
+After decompression, `replay.bin` is treated as a single binary payload with three logical parts:
 
 1. payload header
 2. event stream

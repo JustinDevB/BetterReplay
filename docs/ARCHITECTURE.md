@@ -50,6 +50,7 @@ Important recording characteristics:
 
 - Held-item swaps, equipment snapshots, and storage inventory snapshots are captured as dedicated event types.
 - New binary archives store equipment and storage payloads as separate raw-byte records.
+- New binary archives compress finalized timeline and chunk payloads with Zstd level 1; older LZ4 payloads remain readable through manifest metadata or frame magic detection.
 - Legacy JSON replays can still be read during the migration window, but new saves are finalized as `.br` archives.
 - If the server crashes while recording, startup recovery can resume and finalize orphaned append logs instead of silently losing them.
 
@@ -111,12 +112,14 @@ BetterReplay keeps storage backend selection behind the [ReplayStorage.java](../
 - `ReplayStorageCodec` and `ReplayFormatDetector` allow the loader to distinguish legacy JSON payloads from finalized binary archives.
 - New saves are written as binary `.br` archives with a manifest, payload entries, and optional chunk regions.
 - Current binary archives use replay format `v2`.
+- The `.br` ZIP container still uses stored entries; compression is applied inside `replay.bin` and each independently compressed chunk payload.
 - Replay-name and replay-summary listings flow through a shared 5-second cache in `ReplayCache`; stale manager reads refresh the active storage backend and update the cache for commands, tab completion, and API callers.
 
 Compatibility notes:
 
 - Legacy JSON replay loading is temporary compatibility support.
 - Older alpha `.br` archives that predate the `v2` inventory/event split are intentionally unsupported by current builds.
+- New Zstd-compressed `.br` archives stamp the maintained binary replay compatibility floor so older plugin builds reject them before attempting LZ4 decode.
 - Binary payload storage in MySQL requires a `LONGBLOB` data column; initialization widens the column automatically when needed.
 
 ## Commands, API, and admin tooling

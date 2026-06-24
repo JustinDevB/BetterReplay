@@ -8,7 +8,7 @@ import java.util.List;
 public final class VersionUtil {
 
     /** Minimum plugin version required to read recordings produced by this build. */
-    public static final String MIN_RECORDING_VERSION = "1.5.0-alpha.1";
+    public static final String MIN_RECORDING_VERSION = "1.5.0-alpha.12";
 
     private VersionUtil() {}
 

@@ -9,10 +9,8 @@ import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec
 import me.justindevb.replay.storage.binary.BinaryChunkRegionCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkRegionEntry;
 import me.justindevb.replay.storage.binary.BinaryReplayChunkMetadata;
-import net.jpountz.lz4.LZ4FrameOutputStream;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -49,6 +47,23 @@ class ReplayChunkPlaybackCacheTest {
         assertEquals(1, snapshot.payload().height());
         assertEquals("minecraft:stone", snapshot.payload().palette().getFirst());
         assertEquals(16 * 16, snapshot.payload().stateIndexes().length);
+    }
+
+    @Test
+    void loadChunk_decodesZstdStoredChunkPayloadOnDemand() throws Exception {
+        byte[] payload = payloadCodec.encode(0, 1, List.of("minecraft:stone"), new short[16 * 16]);
+        byte[] compressedPayload = BinaryChunkCompression.ZSTD.compress(payload);
+        byte[] regionBytes = regionCodec.encode(List.of(new BinaryChunkRegionEntry(0, 0, payload.length, BinaryChunkCompression.ZSTD, compressedPayload)));
+        ReplayChunkData chunkData = new ReplayChunkData(
+                BinaryReplayChunkMetadata.present(1, 1, "abcd"),
+                Map.of("chunks/world/r.0.0.brregion", regionBytes));
+
+        ReplayChunkPlaybackCache cache = new ReplayChunkPlaybackCache(chunkData);
+        Optional<ReplayChunkSnapshot> decoded = cache.loadChunk(new ChunkCoordinate("world", 0, 0));
+
+        assertTrue(decoded.isPresent());
+        ReplayChunkSnapshot.LegacyBlockStateSnapshot snapshot = (ReplayChunkSnapshot.LegacyBlockStateSnapshot) decoded.get();
+        assertEquals("minecraft:stone", snapshot.payload().palette().getFirst());
     }
 
     @Test
@@ -120,11 +135,7 @@ class ReplayChunkPlaybackCacheTest {
     }
 
     private static byte[] compress(byte[] payload) throws Exception {
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        try (LZ4FrameOutputStream lz4 = new LZ4FrameOutputStream(out)) {
-            lz4.write(payload);
-        }
-        return out.toByteArray();
+        return BinaryChunkCompression.LZ4_FRAME.compress(payload);
     }
 
     private static Logger testLogger(TestLogHandler handler) {

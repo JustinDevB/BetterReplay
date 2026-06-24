@@ -7,9 +7,7 @@ import me.justindevb.replay.storage.binary.BinaryPacketFriendlyChunkPayloadCodec
 import me.justindevb.replay.storage.binary.BinaryChunkRegionCodec;
 import me.justindevb.replay.storage.binary.BinaryChunkRegionEntry;
 import me.justindevb.replay.storage.binary.BinaryReplayFormat;
-import net.jpountz.lz4.LZ4FrameInputStream;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
@@ -115,7 +113,7 @@ public final class ReplayChunkPlaybackCache {
             });
             for (BinaryChunkRegionEntry entry : decodedRegion.entries()) {
                 if (entry.localChunkX() == coordinate.localChunkX() && entry.localChunkZ() == coordinate.localChunkZ()) {
-                    byte[] payload = decompress(entry.compressedPayload());
+                    byte[] payload = entry.compression().decompress(entry.compressedPayload());
                     return Optional.of(switch (chunkData.metadata().payloadFormat()) {
                         case BRCS -> new ReplayChunkSnapshot.LegacyBlockStateSnapshot(legacyPayloadCodec.decode(payload));
                         case BRCP -> new ReplayChunkSnapshot.PacketFriendlySnapshot(packetFriendlyPayloadCodec.decode(payload));
@@ -131,9 +129,4 @@ public final class ReplayChunkPlaybackCache {
         }
     }
 
-    private static byte[] decompress(byte[] compressedPayload) throws IOException {
-        try (LZ4FrameInputStream lz4 = new LZ4FrameInputStream(new ByteArrayInputStream(compressedPayload))) {
-            return lz4.readAllBytes();
-        }
-    }
 }

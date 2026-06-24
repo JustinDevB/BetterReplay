@@ -2,7 +2,6 @@ package me.justindevb.replay.storage.binary;
 
 import com.google.gson.Gson;
 import me.justindevb.replay.recording.TimelineEvent;
-import net.jpountz.lz4.LZ4FrameInputStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -138,9 +137,7 @@ class BinaryReplayArchiveFinalizerTest {
     }
 
     private static byte[] decompress(byte[] compressed) throws IOException {
-        try (LZ4FrameInputStream in = new LZ4FrameInputStream(new ByteArrayInputStream(compressed))) {
-            return in.readAllBytes();
-        }
+        return BinaryReplayPayloadCompression.detect(compressed).decompress(compressed);
     }
 
     private static ParsedPayload parsePayload(byte[] payload) {

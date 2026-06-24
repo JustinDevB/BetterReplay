@@ -29,6 +29,7 @@ at the root of the `.br` archive.
 | `recordingStartedAtEpochMillis` | integer | Yes | Wall-clock recording start time in Unix epoch milliseconds |
 | `payloadChecksum` | string | Yes | Whole-payload checksum for `replay.bin` |
 | `payloadChecksumAlgorithm` | string | Yes | Name of the checksum algorithm used for `payloadChecksum` |
+| `payloadCompression` | string | No | Compression codec for `replay.bin`; omitted legacy manifests fall back to frame magic detection |
 
 ## Optional Chunk Metadata Fields
 
@@ -187,6 +188,34 @@ Example:
 "payloadChecksumAlgorithm": "CRC32C"
 ```
 
+### `payloadCompression`
+
+Type:
+
+- string
+
+Meaning:
+
+- identifies the compression codec used for the stored `replay.bin` bytes
+- lets readers select the decoder before inspecting the decompressed binary replay payload
+
+Supported values:
+
+- `zstd` for Zstd-compressed replay payloads; new archive default
+- `lz4_frame` for legacy LZ4 frame-compressed replay payloads
+
+Compatibility:
+
+- new archives should write this field
+- legacy archives may omit it; readers should then fall back to frame magic detection using `04 22 4D 18` for LZ4 frame and `28 B5 2F FD` for Zstd
+- unsupported values are a hard replay load failure
+
+Example:
+
+```json
+"payloadCompression": "zstd"
+```
+
 ### `hasChunkData`
 
 Type:
@@ -335,11 +364,12 @@ Example:
 ```json
 {
   "formatVersion": 1,
-  "recordedWithVersion": "1.5.0-SNAPSHOT",
-  "minimumViewerVersion": "1.4.0",
+  "recordedWithVersion": "1.5.0-alpha.14",
+  "minimumViewerVersion": "1.5.0-alpha.12",
   "recordingStartedAtEpochMillis": 1700000000000,
   "payloadChecksum": "7d8f8f2b",
   "payloadChecksumAlgorithm": "CRC32C",
+  "payloadCompression": "zstd",
   "hasChunkData": true,
   "chunkRegionEntryCount": 3,
   "chunkEntryCount": 418,
@@ -364,7 +394,8 @@ Recommended order:
 7. read `replay.bin`
 8. validate chunk metadata field semantics
 9. validate `payloadChecksum` using `payloadChecksumAlgorithm`
-10. if `hasChunkData` is true, build or validate the `chunks/` entry inventory
+10. validate `payloadCompression` when present, or detect compression from `replay.bin` frame magic when absent
+11. if `hasChunkData` is true, build or validate the `chunks/` entry inventory
 
 If any required replay-core step fails, the replay must not proceed to playback.
 
@@ -442,6 +473,16 @@ Reason:
 
 - the payload integrity cannot be validated reliably
 
+### Unsupported `payloadCompression`
+
+Result:
+
+- hard failure
+
+Reason:
+
+- the reader cannot select a safe decoder for `replay.bin`
+
 ### Checksum mismatch
 
 Result:
@@ -464,6 +505,7 @@ Recommended logged values:
 - `minimumViewerVersion`
 - `recordingStartedAtEpochMillis`
 - `payloadChecksumAlgorithm`
+- `payloadCompression`
 - the reason validation failed
 
 ## Reserved Future Fields

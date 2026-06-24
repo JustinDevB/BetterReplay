@@ -11,7 +11,7 @@ It records player and nearby entity activity on the server, stores that timeline
 - Uses FoliaLib for scheduler and teleport compatibility
 - Supports file and MySQL storage backends
 - Uses a short-lived replay-list cache for saved replay commands and API listing calls
-- New saves use finalized binary `.br` archives; legacy JSON replays remain readable during the migration window, but pre-`v2` alpha `.br` inventory archives are intentionally unsupported
+- New saves use finalized binary `.br` archives with Zstd-compressed payloads; legacy JSON replays and older LZ4 `.br` archives remain readable during the migration window, but pre-`v2` alpha `.br` inventory archives are intentionally unsupported
 
 ## How this differs from client-side replay mods
 
@@ -119,6 +119,7 @@ Binary replay note:
 - Finalized `.br` archives store the recording start wall-clock timestamp in `manifest.json` as `recordingStartedAtEpochMillis`.
 - Active temp append logs also write a fixed file header carrying the same timestamp so final saves can preserve it after crash-safe recovery.
 - Current `.br` archives use format version `2` and store equipment-state and storage-inventory payloads as separate raw item-byte records.
+- New `.br` archives write `replay.bin` and chunk payloads with Zstd level 1 while preserving read compatibility with existing LZ4 archives; Zstd archives require the current binary compatibility floor.
 - Chunk-enabled `.br` archives may also include `chunks/` region entries containing palette-compressed chunk baselines that are decoded lazily during playback.
 
 ## Changelog
