@@ -33,7 +33,7 @@ When Paper loads the plugin, [Replay.java](../src/main/java/me/justindevb/replay
 9. Retention is started from the configured policy.
 10. Pending append logs are recovered so crash-interrupted recordings can still be finalized on startup.
 
-The shutdown path mirrors this: active recordings are shut down, active replay sessions are stopped, retention is stopped, PacketEvents is terminated, and MySQL resources are closed.
+The shutdown path mirrors this: active recordings are closed without finalizing or deleting temp logs so the next startup can recover them, active replay sessions are stopped, retention is stopped, PacketEvents is terminated, and MySQL resources are closed.
 
 ## Recording pipeline
 
@@ -52,7 +52,7 @@ Important recording characteristics:
 - New binary archives store equipment and storage payloads as separate raw-byte records.
 - New binary archives compress finalized timeline and chunk payloads with Zstd level 1; older LZ4 payloads remain readable through manifest metadata or frame magic detection.
 - Legacy JSON replays can still be read during the migration window, but new saves are finalized as `.br` archives.
-- If the server crashes while recording, startup recovery can resume and finalize orphaned append logs instead of silently losing them.
+- If the server crashes or restarts while recording, startup recovery can resume and finalize orphaned append logs instead of silently losing them.
 
 ## Playback pipeline
 

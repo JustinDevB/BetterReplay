@@ -255,6 +255,14 @@ public class RecordingSession {
     }
 
     public void stop(boolean save) {
+        stop(save, true);
+    }
+
+    void stopForRecovery() {
+        stop(false, false);
+    }
+
+    private void stop(boolean save, boolean deleteTemporaryFilesOnDiscard) {
         if (stopped) return;
         stopped = true;
         HandlerList.unregisterAll(eventHandler);
@@ -269,8 +277,10 @@ public class RecordingSession {
         ChunkRecordingArtifacts chunkArtifacts = closeChunkCapture();
 
         if (!save) {
-            deleteAppendLog();
-            deleteChunkCaptureDirectory();
+            if (deleteTemporaryFilesOnDiscard) {
+                deleteAppendLog();
+                deleteChunkCaptureDirectory();
+            }
             return;
         }
 

@@ -171,6 +171,42 @@ class RecorderManagerTest {
     }
 
     @Test
+    void shutdown_preservesAppendLogsForStartupRecovery() {
+        Player p = mock(Player.class);
+        when(p.getUniqueId()).thenReturn(UUID.randomUUID());
+
+        WrappedTask mockTask = mock(WrappedTask.class);
+        when(scheduler.runTimer(any(Runnable.class), anyLong(), anyLong())).thenReturn(mockTask);
+
+        manager.startSession("recover-on-shutdown", List.of(p), -1);
+        File appendLog = tempDir.resolve("replays").resolve(".tmp").resolve("recover-on-shutdown.appendlog").toFile();
+        assertTrue(appendLog.exists());
+
+        manager.shutdown();
+
+        assertTrue(appendLog.exists());
+        verify(replayStorage, never()).saveReplay(eq("recover-on-shutdown"), any(ReplaySaveRequest.class));
+    }
+
+    @Test
+    void stopSession_withoutSaveDeletesAppendLog() {
+        Player p = mock(Player.class);
+        when(p.getUniqueId()).thenReturn(UUID.randomUUID());
+
+        WrappedTask mockTask = mock(WrappedTask.class);
+        when(scheduler.runTimer(any(Runnable.class), anyLong(), anyLong())).thenReturn(mockTask);
+        when(scheduler.runNextTick(any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        manager.startSession("discard-explicitly", List.of(p), -1);
+        File appendLog = tempDir.resolve("replays").resolve(".tmp").resolve("discard-explicitly.appendlog").toFile();
+        assertTrue(appendLog.exists());
+
+        assertTrue(manager.stopSession("discard-explicitly", false));
+
+        assertFalse(appendLog.exists());
+    }
+
+    @Test
     void getActiveSessions_empty_initially() {
         assertTrue(manager.getActiveSessions().isEmpty());
     }

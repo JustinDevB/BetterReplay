@@ -193,7 +193,7 @@ public class RecorderManager {
 
     public void shutdown() {
         for (RecordingSession s : activeSessions.values())
-            s.stop(false);
+            s.stopForRecovery();
 
         activeSessions.clear();
         if (tickTask != null) {

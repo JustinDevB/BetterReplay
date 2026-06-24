@@ -36,7 +36,7 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 
 - Server-side recording and in-game playback with no client replay mod required
 - Finalized binary `.br` replay archives stored in either file or MySQL backends
-- Crash-safe append-log recording with startup recovery of orphaned temporary saves
+- Crash/restart-safe append-log recording with startup recovery of orphaned temporary saves
 - Replay protection, retention cleanup, filtered export, and hidden admin diagnostics
 - Optional chunk-aware recording and playback for block baselines around recorded players
 - Playback controls with pause stepping, variable speed, and live speed feedback

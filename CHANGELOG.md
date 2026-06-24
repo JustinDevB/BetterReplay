@@ -69,6 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-23: Binary replay manifests now keep `recordedWithVersion` as the exact writer build while stamping `minimumViewerVersion` from the maintained replay compatibility floor instead of the current plugin version, preventing alpha-created recordings from requiring an unrelated stable release
 - 2026-06-23: Replay chunk snapshots now wait until the viewer has received the matching real server chunk plus one refresh before sending, preventing distant replay teleports from being overwritten by late live-world chunk packets
 - 2026-06-23: Recovered recordings now infer chunk payload format from temp region contents so packet-friendly chunk baselines are not saved with legacy chunk metadata
+- 2026-06-23: Active recordings now preserve append logs and chunk temp files during plugin shutdown so startup recovery can finalize them instead of discarding the in-progress replay
 
 ## [1.4.0] - 2026-04-10
 

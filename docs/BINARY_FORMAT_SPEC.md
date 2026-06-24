@@ -659,7 +659,7 @@ The active-recording temp file and the finalized payload are related but not ide
 
 ### Temp append-log
 
-Used only while recording is in progress.
+Used while recording is in progress and retained across plugin shutdown so startup recovery can finalize interrupted recordings.
 
 Each temp record contains:
 
