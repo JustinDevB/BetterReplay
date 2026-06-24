@@ -300,7 +300,7 @@ public class FileReplayStorage implements ReplayStorage {
             try {
                 byte[] bytes = Files.readAllBytes(file.toPath());
                 ReplayStorageCodec codec = formatDetector.detectCodec(file.getName(), bytes);
-                return replayExporter.exportReplay(name, codec.decodeTimeline(bytes, replay.getPluginMeta().getVersion()), query,
+                return replayExporter.exportReplay(name, codec.decodeReplayData(bytes, replay.getPluginMeta().getVersion()), query,
                         replay.getPluginMeta().getVersion());
             } catch (IOException e) {
                 throw new RuntimeException("Failed to export replay file " + name, e);

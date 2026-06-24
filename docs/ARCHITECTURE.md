@@ -130,6 +130,7 @@ The same core managers back both commands and integrations:
 - `/replay` commands route through [ReplayCommand.java](../src/main/java/me/justindevb/replay/ReplayCommand.java).
 - Plugin integrations use [ReplayManager.java](../src/main/java/me/justindevb/replay/api/ReplayManager.java) through [ReplayAPI.java](../src/main/java/me/justindevb/replay/api/ReplayAPI.java).
 - Export, debug, and benchmark utilities are thin operator surfaces over the same storage and codec layers.
+- Filtered binary exports decode playback data so optional chunk baselines can be carried forward; all-player exports preserve every chunk entry, while player-filtered exports re-encode chunk baselines associated with the included player's movement path.
 - Retention and replay protection operate on saved replay metadata rather than the active session layer.
 
 See [API.md](API.md) for the public integration surface and [COMMANDS.md](COMMANDS.md) for the operator-facing command reference.

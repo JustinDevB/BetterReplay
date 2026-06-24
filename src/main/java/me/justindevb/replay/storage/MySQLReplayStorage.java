@@ -377,7 +377,7 @@ public class MySQLReplayStorage implements ReplayStorage {
 
                     byte[] data = rs.getBytes("data");
                     ReplayStorageCodec codec = formatDetector.detectCodec(name, data);
-                    return replayExporter.exportReplay(name, codec.decodeTimeline(data, replay.getPluginMeta().getVersion()), query,
+                    return replayExporter.exportReplay(name, codec.decodeReplayData(data, replay.getPluginMeta().getVersion()), query,
                             replay.getPluginMeta().getVersion());
                 }
             } catch (Exception e) {
