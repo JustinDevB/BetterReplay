@@ -140,7 +140,7 @@ public class SpawnFakePlayer {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, spawnPacket);
 
         sendDisplayNameMetadata();
-       // sendSkinMetadata();
+       // sendSkinMetadata(); // Temporarily remove to fix 26.1.2
 
         if (onSpawned != null) {
             onSpawned.run();
