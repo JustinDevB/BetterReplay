@@ -140,7 +140,7 @@ public class SpawnFakePlayer {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, spawnPacket);
 
         sendDisplayNameMetadata();
-        sendSkinMetadata();
+       // sendSkinMetadata();
 
         if (onSpawned != null) {
             onSpawned.run();
@@ -164,6 +164,7 @@ public class SpawnFakePlayer {
 
         WrapperPlayServerEntityMetadata metadataPacket = new WrapperPlayServerEntityMetadata(entityId, displayMeta);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, metadataPacket);
+
     }
 
     public void sendSkinMetadata() {
