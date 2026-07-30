@@ -32,6 +32,7 @@ When Paper loads the plugin, [Replay.java](../src/main/java/me/justindevb/replay
 8. Storage is initialized from `General.Storage-Type`.
 9. Retention is started from the configured policy.
 10. Pending append logs are recovered so crash-interrupted recordings can still be finalized on startup.
+11. BetterReplay registers `vv:proxy_details` and stores ViaVersion proxy-reported client protocol versions for replay skin metadata, falling back to PacketEvents when no valid detail message arrives.
 
 The shutdown path mirrors this: active recordings are closed without finalizing or deleting temp logs so the next startup can recover them, active replay sessions are stopped, retention is stopped, PacketEvents is terminated, and MySQL resources are closed.
 
@@ -103,6 +104,10 @@ Velocity-network playback uses the plugin messaging channel `betterreplay:proxy`
 5. When `ReplayStopEvent` fires, the listener sends `REPLAY_FINISHED` so the viewer can be returned to the origin server.
 
 The proxy can send `REPLAY_TRANSFER_FAILED` with the target backend and reason when it cannot move the viewer; the origin server turns that response into a clear chat error. This flow is intended for networks where replay playback runs on a dedicated backend while recordings continue elsewhere. Shared MySQL storage is the practical deployment model because the origin and target backend must both resolve the same replay name and payload.
+
+## ViaVersion proxy client details
+
+On a Velocity network, ViaVersion 5.7.2 or newer can send the player's real client protocol in the `vv:proxy_details` plugin message after the backend connection completes. `ViaProxyDetailsListener` validates the version-1 JSON payload and keeps the reported protocol version only for that player's active backend connection. `SpawnFakePlayer` uses this value to select the player skin-layer metadata index; malformed, unsupported, or absent payloads retain PacketEvents' detected client version. The detail payload is advisory and is not used for permissions or authorization.
 
 ## Storage model
 

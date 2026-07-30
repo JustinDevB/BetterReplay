@@ -169,7 +169,10 @@ public class SpawnFakePlayer {
 
     public void sendSkinMetadata() {
         List<EntityData<?>> skinMeta = new ArrayList<>();
-        int SKIN_LAYER_INDEX = PacketEvents.getAPI().getPlayerManager().getClientVersion(viewer).isNewerThanOrEquals(ClientVersion.V_1_21_9) ? 16 : 17;
+        ClientVersion detectedVersion = PacketEvents.getAPI().getPlayerManager().getClientVersion(viewer);
+        ClientVersion clientVersion = Replay.getInstance().getViaProxyDetailsListener()
+                .resolveClientVersion(viewer, detectedVersion);
+        int skinLayerIndex = clientVersion.isNewerThanOrEquals(ClientVersion.V_1_21_9) ? 16 : 17;
 
         byte skinFlags = (byte) (
                 0x01 | // cape
@@ -181,7 +184,7 @@ public class SpawnFakePlayer {
                         0x40   // hat
         );
         skinMeta.add(new EntityData<>(
-                SKIN_LAYER_INDEX,
+                skinLayerIndex,
                 EntityDataTypes.BYTE,
                 skinFlags
         ));

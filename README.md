@@ -42,6 +42,7 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 - Playback controls with pause stepping, variable speed, and live speed feedback
 - Viewer safety controls, viewer state restoration, and optional live-player vanish during playback
 - Velocity replay handoff for launching playback on a dedicated backend server and returning viewers afterward
+- ViaVersion proxy client-version details for correct replay player skin metadata on backend servers
 - API-first integration support for other plugins
 - Optional Floodgate soft dependency support
 
@@ -50,6 +51,10 @@ In short: BetterReplay focuses on server-managed replay workflows and API-driven
 BetterReplay can move viewers to another Velocity backend for playback with `/replay play <name> server:<backend>` or a configured `Velocity.Default-Replay-Server`, then return them to their original server when the replay ends.
 
 This lets a network keep replay viewing isolated on dedicated replay servers while production servers continue recording. Shared MySQL storage is recommended so the origin and replay backend can access the same saved replay list and payloads. Failed or unacknowledged handoffs report a chat error to the viewer.
+
+## ViaVersion proxy details
+
+When a ViaVersion proxy sends `vv:proxy_details`, BetterReplay uses its reported client protocol version for replay player skin metadata instead of the backend's local protocol detection. This handles networks where backend ViaVersion sees the proxy connection protocol rather than the player's actual client version. The proxy must run ViaVersion 5.7.2 or newer with `send-player-details: true`; absent or invalid payloads fall back to PacketEvents detection.
 
 ## Architecture
 

@@ -71,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-23: Recovered recordings now infer chunk payload format from temp region contents so packet-friendly chunk baselines are not saved with legacy chunk metadata
 - 2026-06-23: Active recordings now preserve append logs and chunk temp files during plugin shutdown so startup recovery can finalize them instead of discarding the in-progress replay
 - 2026-06-24: `/replay export` now includes chunk baseline data from chunk-enabled binary replays, preserving all chunks for all-player exports and filtering chunks to the selected player's associated movement path for player-specific exports
+- 2026-07-29: Replay player skin metadata now honors ViaVersion proxy-reported client versions from `vv:proxy_details`, preventing invalid metadata when a backend reports the proxy protocol instead of the real client version
 
 ## [1.4.0] - 2026-04-10
 

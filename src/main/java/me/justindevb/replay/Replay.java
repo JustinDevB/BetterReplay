@@ -24,6 +24,7 @@ import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.metrics.BStatsCharts;
 import me.justindevb.replay.listeners.PacketEventsListener;
+import me.justindevb.replay.listeners.ViaProxyDetailsListener;
 import me.justindevb.replay.playback.ReplayViewerStateManager;
 import me.justindevb.replay.retention.ReplayRetentionService;
 import me.justindevb.replay.retention.RetentionPolicy;
@@ -59,6 +60,7 @@ public class Replay extends JavaPlugin {
     private ReplayViewerStateManager replayViewerStateManager;
     private ReplayTransferManager transferManager;
     private ReplayMessagesConfig messages;
+    private ViaProxyDetailsListener viaProxyDetailsListener;
 
     @Override
     public void onLoad() {
@@ -102,6 +104,7 @@ public class Replay extends JavaPlugin {
         recorderManager.recoverPendingAppendLogs();
 
         initVelocityLogic();
+        initViaVersionProxyDetails();
 
         initBstats();
 
@@ -252,6 +255,10 @@ public class Replay extends JavaPlugin {
         return transferManager;
     }
 
+    public ViaProxyDetailsListener getViaProxyDetailsListener() {
+        return viaProxyDetailsListener;
+    }
+
     public void initBstats() {
         int pluginId = 29341;
         Metrics metrics = new Metrics(this, pluginId);
@@ -290,5 +297,11 @@ public class Replay extends JavaPlugin {
 
         getServer().getMessenger().registerOutgoingPluginChannel(this, ReplayTransferManager.CHANNEL);
         getServer().getMessenger().registerIncomingPluginChannel(this, ReplayTransferManager.CHANNEL, new ReplayLaunchMessageListener(this));
+    }
+
+    private void initViaVersionProxyDetails() {
+        viaProxyDetailsListener = new ViaProxyDetailsListener(getLogger());
+        getServer().getPluginManager().registerEvents(viaProxyDetailsListener, this);
+        getServer().getMessenger().registerIncomingPluginChannel(this, ViaProxyDetailsListener.CHANNEL, viaProxyDetailsListener);
     }
 }
