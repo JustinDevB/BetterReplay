@@ -128,7 +128,7 @@ public class PlaybackEngine {
                     World world = Bukkit.getWorld(e.world());
                     if (world != null) {
                         viewer.playSound(new Location(world, e.x(), e.y(), e.z()),
-                                Sound.ENTITY_SPLASH_POTION_THROW, 1.0f, 1.0f);
+                                Sound.ENTITY_SPLASH_POTION_THROW, 1.0f, 0.0f);
                     }
                 }
             }
