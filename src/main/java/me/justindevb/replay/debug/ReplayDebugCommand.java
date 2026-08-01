@@ -10,6 +10,7 @@ import org.bukkit.command.CommandSender;
 
 import java.io.File;
 import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -32,7 +33,7 @@ public final class ReplayDebugCommand {
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z")
             .withLocale(Locale.ROOT)
             .withZone(ZoneId.systemDefault());
-    private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("0.00");
+    private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("0.00", DecimalFormatSymbols.getInstance(Locale.ROOT));
 
     private final Replay replay;
     private final ReplayManager replayManager;

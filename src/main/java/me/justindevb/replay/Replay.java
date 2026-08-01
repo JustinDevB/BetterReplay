@@ -19,6 +19,7 @@ import me.justindevb.replay.benchmark.ReplayBenchmarkService;
 import me.justindevb.replay.config.ReplayConfigManager;
 import me.justindevb.replay.config.ReplayConfigReloadResult;
 import me.justindevb.replay.config.ReplayConfigSetting;
+import me.justindevb.replay.config.ReplayMessagesConfig;
 import me.justindevb.replay.debug.ReplayDebugCommand;
 import me.justindevb.replay.export.ReplayExportCommand;
 import me.justindevb.replay.metrics.BStatsCharts;
@@ -57,6 +58,7 @@ public class Replay extends JavaPlugin {
     private ReplayRetentionService replayRetentionService;
     private ReplayViewerStateManager replayViewerStateManager;
     private ReplayTransferManager transferManager;
+    private ReplayMessagesConfig messages;
 
     @Override
     public void onLoad() {
@@ -77,6 +79,7 @@ public class Replay extends JavaPlugin {
         recorderManager = new RecorderManager(this);
         manager = new ReplayManagerImpl(this, recorderManager);
         initConfig();
+        messages = new ReplayMessagesConfig(this);
         replayViewerStateManager = new ReplayViewerStateManager(this);
         getServer().getPluginManager().registerEvents(replayViewerStateManager, this);
         replayBenchmarkService = createReplayBenchmarkService();
@@ -142,6 +145,10 @@ public class Replay extends JavaPlugin {
         return storage;
     }
 
+    public ReplayMessagesConfig getMessages() {
+        return messages;
+    }
+
     private void initConfig() {
         new ReplayConfigManager(this).initialize();
     }
@@ -199,6 +206,7 @@ public class Replay extends JavaPlugin {
         EnumMap<ReplayConfigSetting, Object> previousValues = snapshotConfigValues(previousConfig);
 
         new ReplayConfigManager(this).initialize();
+        if (messages != null) messages.reload();
 
         EnumMap<ReplayConfigSetting, Object> currentValues = snapshotConfigValues(getConfig());
         List<ReplayConfigSetting> changedSettings = new ArrayList<>();

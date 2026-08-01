@@ -109,7 +109,11 @@ public class ReplaySession implements Listener, PacketListener {
 
     public void start() {
         if (timeline == null || timeline.isEmpty()) {
-            viewer.sendMessage("Replay is empty!");
+            if (replay.getMessages() != null) {
+                viewer.sendMessage(replay.getMessages().component("replay.empty", "<red>Replay is empty!"));
+            } else {
+                viewer.sendMessage("Replay is empty!");
+            }
             return;
         }
 
@@ -299,7 +303,11 @@ public class ReplaySession implements Listener, PacketListener {
             }
 
             if (!suppressStopMessage && viewer.isOnline()) {
-                viewer.sendMessage("Replay finished");
+                if (replay.getMessages() != null) {
+                    viewer.sendMessage(replay.getMessages().component("replay.finished", "<green>Replay finished"));
+                } else {
+                    viewer.sendMessage("Replay finished");
+                }
             }
         } finally {
             ReplayRegistry.remove(this);

@@ -1,11 +1,13 @@
 package me.justindevb.replay.playback;
 
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.config.ReplayMessagesConfig;
 import me.justindevb.replay.entity.RecordedEntity;
 import me.justindevb.replay.entity.RecordedPlayer;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TextComponent;
 import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.minimessage.MiniMessage;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -20,6 +22,8 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.NamespacedKey;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.util.List;
 import java.util.Map;
@@ -31,6 +35,8 @@ import java.util.function.Supplier;
  * and inventory-related event handlers during replay playback.
  */
 public class ReplayInventoryUI implements Listener {
+
+    private static final MiniMessage MINI_MESSAGE = MiniMessage.miniMessage();
 
     /**
      * Callback interface for actions that must be delegated back to ReplaySession.
@@ -46,6 +52,7 @@ public class ReplayInventoryUI implements Listener {
 
     private final Player viewer;
     private final Replay replay;
+    private final NamespacedKey controlKey;
     private final Supplier<Map<UUID, RecordedEntity>> recordedEntitiesSupplier;
     private final SessionControl sessionControl;
 
@@ -58,6 +65,7 @@ public class ReplayInventoryUI implements Listener {
                              Supplier<Map<UUID, RecordedEntity>> recordedEntitiesSupplier,
                              SessionControl sessionControl) {
         this.replay = replay;
+        this.controlKey = new NamespacedKey("betterreplay", "replay-control");
         this.viewer = viewer;
         this.recordedEntitiesSupplier = recordedEntitiesSupplier;
         this.sessionControl = sessionControl;
@@ -91,28 +99,33 @@ public class ReplayInventoryUI implements Listener {
     public void giveReplayControls() {
         ItemStack pauseButton = new ItemStack(Material.RED_DYE);
         ItemMeta pauseMeta = pauseButton.getItemMeta();
-        pauseMeta.displayName(Component.text("Pause / Play", NamedTextColor.RED));
+        pauseMeta.displayName(message("items.pause-play", "<red>Pause / Play"));
         pauseButton.setItemMeta(pauseMeta);
+        markControl(pauseButton, "pause-play");
 
         ItemStack skipForward = new ItemStack(Material.LIME_DYE);
         ItemMeta forwardMeta = skipForward.getItemMeta();
-        forwardMeta.displayName(Component.text("+5 seconds", NamedTextColor.GREEN));
+        forwardMeta.displayName(message("items.skip-forward", "<green>+5 seconds"));
         skipForward.setItemMeta(forwardMeta);
+        markControl(skipForward, "skip-forward");
 
         ItemStack skipBackward = new ItemStack(Material.YELLOW_DYE);
         ItemMeta backwardMeta = skipBackward.getItemMeta();
-        backwardMeta.displayName(Component.text("-5 seconds", NamedTextColor.YELLOW));
+        backwardMeta.displayName(message("items.skip-backward", "<yellow>-5 seconds"));
         skipBackward.setItemMeta(backwardMeta);
+        markControl(skipBackward, "skip-backward");
 
         ItemStack stopReplay = new ItemStack(Material.BARRIER);
         ItemMeta stopMeta = stopReplay.getItemMeta();
-        stopMeta.displayName(Component.text("Exit Replay", NamedTextColor.DARK_RED));
+        stopMeta.displayName(message("items.exit", "<dark_red>Exit Replay"));
         stopReplay.setItemMeta(stopMeta);
+        markControl(stopReplay, "exit");
 
         ItemStack playerMenu = new ItemStack(Material.PLAYER_HEAD);
         ItemMeta menuMeta = playerMenu.getItemMeta();
-        menuMeta.displayName(Component.text("Players", NamedTextColor.AQUA));
+        menuMeta.displayName(message("items.players", "<aqua>Players"));
         playerMenu.setItemMeta(menuMeta);
+        markControl(playerMenu, "players");
 
         viewer.getInventory().setItem(0, skipBackward);
         viewer.getInventory().setItem(1, pauseButton);
@@ -126,13 +139,15 @@ public class ReplayInventoryUI implements Listener {
     public void showStepControls() {
         ItemStack stepBack = new ItemStack(Material.CYAN_DYE);
         ItemMeta backMeta = stepBack.getItemMeta();
-        backMeta.displayName(Component.text("\u25C0\u25C0 Previous Frame", NamedTextColor.AQUA));
+        backMeta.displayName(message("items.previous-frame", "<aqua>\u25C0\u25C0 Previous Frame"));
         stepBack.setItemMeta(backMeta);
+        markControl(stepBack, "previous-frame");
 
         ItemStack stepForward = new ItemStack(Material.MAGENTA_DYE);
         ItemMeta fwdMeta = stepForward.getItemMeta();
-        fwdMeta.displayName(Component.text("\u25B6\u25B6 Next Frame", NamedTextColor.LIGHT_PURPLE));
+        fwdMeta.displayName(message("items.next-frame", "<light_purple>\u25B6\u25B6 Next Frame"));
         stepForward.setItemMeta(fwdMeta);
+        markControl(stepForward, "next-frame");
 
         viewer.getInventory().setItem(5, stepBack);
         viewer.getInventory().setItem(6, stepForward);
@@ -145,19 +160,21 @@ public class ReplayInventoryUI implements Listener {
 
     public void showSpeedControls(double currentSpeed) {
         String speedText = String.format("%.1fx", currentSpeed);
-        List<Component> speedLore = List.of(Component.text("Current: " + speedText, NamedTextColor.GRAY));
+        List<Component> speedLore = List.of(message("items.speed-lore", "<gray>Current: %speed%", "speed", speedText));
 
         ItemStack slower = new ItemStack(Material.ORANGE_DYE);
         ItemMeta slowerMeta = slower.getItemMeta();
-        slowerMeta.displayName(Component.text("\u23EA Slower", NamedTextColor.GOLD));
+        slowerMeta.displayName(message("items.slower", "<gold>\u23EA Slower"));
         slowerMeta.lore(speedLore);
         slower.setItemMeta(slowerMeta);
+        markControl(slower, "slower");
 
         ItemStack faster = new ItemStack(Material.LIGHT_BLUE_DYE);
         ItemMeta fasterMeta = faster.getItemMeta();
-        fasterMeta.displayName(Component.text("\u23E9 Faster", NamedTextColor.BLUE));
+        fasterMeta.displayName(message("items.faster", "<blue>\u23E9 Faster"));
         fasterMeta.lore(speedLore);
         faster.setItemMeta(fasterMeta);
+        markControl(faster, "faster");
 
         viewer.getInventory().setItem(5, slower);
         viewer.getInventory().setItem(6, faster);
@@ -167,7 +184,7 @@ public class ReplayInventoryUI implements Listener {
         Inventory inv = Bukkit.createInventory(
                 null,
                 27,
-                Component.text("Recorded Players", NamedTextColor.DARK_GRAY)
+                message("menus.recorded-players", "<dark_gray>Recorded Players")
         );
 
         for (RecordedEntity entity : recordedEntitiesSupplier.get().values()) {
@@ -287,8 +304,7 @@ public class ReplayInventoryUI implements Listener {
         if (handItem == null || !handItem.hasItemMeta())
             return;
 
-        Component displayName = handItem.getItemMeta().displayName();
-        String name = displayName instanceof TextComponent tc ? tc.content() : "";
+        String control = getControl(handItem);
 
         RecordedPlayer targetPlayer = getTargetedRecordedPlayer(player);
         if (targetPlayer != null) {
@@ -297,16 +313,19 @@ public class ReplayInventoryUI implements Listener {
             return;
         }
 
-        switch (name) {
-            case "Pause / Play" -> sessionControl.togglePause();
-            case "+5 seconds" -> sessionControl.skipSeconds(5);
-            case "-5 seconds" -> sessionControl.skipSeconds(-5);
-            case "\u25C0\u25C0 Previous Frame" -> sessionControl.stepTick(-1);
-            case "\u25B6\u25B6 Next Frame" -> sessionControl.stepTick(1);
-            case "\u23EA Slower" -> sessionControl.changeSpeed(-1);
-            case "\u23E9 Faster" -> sessionControl.changeSpeed(1);
-            case "Exit Replay" -> sessionControl.stop();
-            case "Players" -> openPlayerMenu();
+        if (control == null) return;
+
+        switch (control) {
+            case "pause-play" -> sessionControl.togglePause();
+            case "skip-forward" -> sessionControl.skipSeconds(5);
+            case "skip-backward" -> sessionControl.skipSeconds(-5);
+            case "previous-frame" -> sessionControl.stepTick(-1);
+            case "next-frame" -> sessionControl.stepTick(1);
+            case "slower" -> sessionControl.changeSpeed(-1);
+            case "faster" -> sessionControl.changeSpeed(1);
+            case "exit" -> sessionControl.stop();
+            case "players" -> openPlayerMenu();
+            default -> { return; }
         }
 
         e.setCancelled(true);
@@ -385,11 +404,7 @@ public class ReplayInventoryUI implements Listener {
         if (item == null || !item.hasItemMeta())
             return;
 
-        Component dropDisplayName = item.getItemMeta().displayName();
-        String dropName = dropDisplayName instanceof TextComponent tc ? tc.content() : "";
-        if (dropName.equals("Pause / Play") || dropName.equals("+5 seconds") || dropName.equals("-5 seconds")
-                || dropName.equals("\u25C0\u25C0 Previous Frame") || dropName.equals("\u25B6\u25B6 Next Frame")
-                || dropName.equals("\u23EA Slower") || dropName.equals("\u23E9 Faster")) {
+        if (getControl(item) != null) {
             e.setCancelled(true);
         }
     }
@@ -403,5 +418,23 @@ public class ReplayInventoryUI implements Listener {
             return;
 
         e.setCancelled(true);
+    }
+
+    private Component message(String key, String fallback, String... replacements) {
+        ReplayMessagesConfig messages = replay.getMessages();
+        if (messages != null) return messages.component(key, fallback, replacements);
+        String value = fallback;
+        for (int index = 0; index + 1 < replacements.length; index += 2) {
+            value = value.replace("%" + replacements[index] + "%", replacements[index + 1]);
+        }
+        return MINI_MESSAGE.deserialize(value);
+    }
+
+    private void markControl(ItemStack item, String control) {
+        item.editPersistentDataContainer(pdc -> pdc.set(controlKey, PersistentDataType.STRING, control));
+    }
+
+    private String getControl(ItemStack item) {
+        return item.getPersistentDataContainer().get(controlKey, PersistentDataType.STRING);
     }
 }
