@@ -641,11 +641,17 @@ public class ReplaySession implements Listener, PacketListener {
 
         Component bar;
         if (paused) {
-            bar = Component.text("\u23F8 Replay paused: ", NamedTextColor.YELLOW)
+            bar = replay.getMessages() != null
+                    ? replay.getMessages().component("action-bar.paused", "<yellow>\u23F8 Replay paused: <gray>%current% / %total%",
+                    "current", current, "total", total)
+                    : Component.text("\u23F8 Replay paused: ", NamedTextColor.YELLOW)
                     .append(Component.text(current + " / " + total, NamedTextColor.GRAY));
         } else {
             String speedText = String.format("%.1fx", playbackSpeed);
-            bar = Component.text("\u25B6 Replay: ", NamedTextColor.GREEN)
+            bar = replay.getMessages() != null
+                    ? replay.getMessages().component("action-bar.playing", "<green>\u25B6 Replay: <gray>%current% / %total% <dark_gray>(%percent%%) <aqua>[%speed%]",
+                    "current", current, "total", total, "percent", String.valueOf(percent), "speed", speedText)
+                    : Component.text("\u25B6 Replay: ", NamedTextColor.GREEN)
                     .append(Component.text(current + " / " + total, NamedTextColor.GRAY))
                     .append(Component.text(" (" + percent + "%)", NamedTextColor.DARK_GRAY))
                     .append(Component.text(" [" + speedText + "]", NamedTextColor.AQUA));

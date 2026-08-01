@@ -6,6 +6,10 @@ replay:
   empty: "<red>Replay is empty!"
   finished: "<green>Replay finished"
 
+action-bar:
+  paused: "<yellow>⏸ Replay paused: <gray>%current% / %total%"
+  playing: "<green>▶ Replay: <gray>%current% / %total% <dark_gray>(%percent%%) <aqua>[%speed%]"
+
 items:
   pause-play: "<red>Pause / Play"
   skip-forward: "<green>+5 seconds"
