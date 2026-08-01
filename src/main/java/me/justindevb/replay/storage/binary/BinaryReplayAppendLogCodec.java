@@ -138,6 +138,16 @@ final class BinaryReplayAppendLogCodec {
                 writeNullableStringRef(out, stringIndexer, e.entityType());
                 writeNullableStringRef(out, stringIndexer, e.cause());
                 writeDouble(out, e.finalDamage());
+                if (e.health() >= 0 || e.critical()) {
+                    writeDouble(out, e.health());
+                    writeBoolean(out, e.critical());
+                }
+            }
+            case TimelineEvent.HealthUpdate e -> {
+                writeInt(out, e.tick());
+                writeStringRef(out, stringIndexer, e.uuid());
+                writeNullableStringRef(out, stringIndexer, e.entityType());
+                writeDouble(out, e.health());
             }
             case TimelineEvent.SprintToggle e -> {
                 writeInt(out, e.tick());
@@ -335,7 +345,9 @@ final class BinaryReplayAppendLogCodec {
                         cursor.readStringRef(stringTable),
                         cursor.readNullableStringRef(stringTable),
                         cursor.readNullableStringRef(stringTable),
-                        cursor.readDouble());
+                        cursor.readDouble(),
+                        cursor.hasRemaining() ? cursor.readDouble() : -1,
+                        cursor.hasRemaining() && cursor.readBoolean());
                 cursor.ensureFullyRead();
                 yield event;
             }
@@ -384,6 +396,15 @@ final class BinaryReplayAppendLogCodec {
                 TimelineEvent.PlayerQuit event = new TimelineEvent.PlayerQuit(
                         cursor.readInt(),
                         cursor.readStringRef(stringTable));
+                cursor.ensureFullyRead();
+                yield event;
+            }
+            case HEALTH_UPDATE -> {
+                TimelineEvent.HealthUpdate event = new TimelineEvent.HealthUpdate(
+                        cursor.readInt(),
+                        cursor.readStringRef(stringTable),
+                        cursor.readNullableStringRef(stringTable),
+                        cursor.readDouble());
                 cursor.ensureFullyRead();
                 yield event;
             }

@@ -30,6 +30,7 @@ public class RecordedMob extends RecordedEntity {
         }
 
         new SpawnFakeMob(peType, loc, viewer, fakeEntityId);
+        currentLocation = loc;
 
     }
 

@@ -170,6 +170,15 @@ public class TimelineEventAdapter implements JsonSerializer<TimelineEvent>, Json
                 json.addProperty("entityType", e.entityType());
                 json.addProperty("cause", e.cause());
                 json.addProperty("finalDamage", e.finalDamage());
+                if (e.health() >= 0) json.addProperty("health", e.health());
+                if (e.critical()) json.addProperty("critical", true);
+            }
+            case TimelineEvent.HealthUpdate e -> {
+                json.addProperty("tick", e.tick());
+                json.addProperty("type", "health_update");
+                json.addProperty("uuid", e.uuid());
+                json.addProperty("entityType", e.entityType());
+                json.addProperty("health", e.health());
             }
             case TimelineEvent.SoundEffect e -> {
                 json.addProperty("tick", e.tick());
@@ -324,7 +333,14 @@ public class TimelineEventAdapter implements JsonSerializer<TimelineEvent>, Json
                     tick, uuid,
                     optString(obj, "entityType"),
                     optString(obj, "cause"),
-                    optDouble(obj, "finalDamage", 0)
+                    optDouble(obj, "finalDamage", 0),
+                    optDouble(obj, "health", -1),
+                    optBoolean(obj, "critical", false)
+            );
+            case "health_update" -> new TimelineEvent.HealthUpdate(
+                    tick, uuid,
+                    optString(obj, "entityType"),
+                    optDouble(obj, "health", 0)
             );
             case "sound_effect" -> new TimelineEvent.SoundEffect(
                     tick, uuid,
@@ -374,6 +390,10 @@ public class TimelineEventAdapter implements JsonSerializer<TimelineEvent>, Json
 
     private static float optFloat(JsonObject obj, String key, float def) {
         return obj.has(key) ? obj.get(key).getAsFloat() : def;
+    }
+
+    private static boolean optBoolean(JsonObject obj, String key, boolean def) {
+        return obj.has(key) ? obj.get(key).getAsBoolean() : def;
     }
 
     private static List<String> readStringList(JsonObject obj, String key) {

@@ -34,6 +34,7 @@ class BinaryRecordTypeTest {
         assertEquals(0x11, BinaryRecordType.PLAYER_QUIT.tag());
         assertEquals(0x12, BinaryRecordType.SOUND_EFFECT.tag());
         assertEquals(0x13, BinaryRecordType.SPLASH_POTION_IMPACT.tag());
+        assertEquals(0x14, BinaryRecordType.HEALTH_UPDATE.tag());
     }
 
     @Test
@@ -95,7 +96,8 @@ class BinaryRecordTypeTest {
                 new TimelineEvent.EntityDeath(15, "u15", "ZOMBIE", "world", 1.0, 2.0, 3.0),
                 new TimelineEvent.PlayerQuit(16, "u16"),
                 new TimelineEvent.SoundEffect(17, "u17", "minecraft:entity.player.teleport", "world", 1.0, 2.0, 3.0, 1.0f, 1.0f),
-                new TimelineEvent.SplashPotionImpact(18, "u18", "world", 1.0, 2.0, 3.0, 0x385AFF)
+                new TimelineEvent.SplashPotionImpact(18, "u18", "world", 1.0, 2.0, 3.0, 0x385AFF),
+                new TimelineEvent.HealthUpdate(19, "u19", "PLAYER", 20.0)
         );
 
         assertIterableEquals(

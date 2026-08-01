@@ -396,6 +396,7 @@ public class ReplaySession implements Listener, PacketListener {
         Map<UUID, TimelineEvent> lastLocationByUUID = new LinkedHashMap<>();
         Map<UUID, TimelineEvent.InventoryStorageUpdate> lastInventoryByUUID = new LinkedHashMap<>();
         Map<UUID, TimelineEvent.EquipmentStateUpdate> lastEquipmentByUUID = new LinkedHashMap<>();
+        Map<UUID, Double> lastHealthByUUID = new LinkedHashMap<>();
         Set<UUID> shouldHaveQuitAtTarget = new HashSet<>();
         Set<UUID> shouldBeDeadAtTarget = new HashSet<>();
 
@@ -418,6 +419,10 @@ public class ReplaySession implements Listener, PacketListener {
                 case TimelineEvent.EntityMove ignored2 -> lastLocationByUUID.put(uuid, event);
                 case TimelineEvent.InventoryStorageUpdate inv -> lastInventoryByUUID.put(uuid, inv);
                 case TimelineEvent.EquipmentStateUpdate equipment -> lastEquipmentByUUID.put(uuid, equipment);
+                case TimelineEvent.Damaged damage -> {
+                    if (damage.health() >= 0) lastHealthByUUID.put(uuid, damage.health());
+                }
+                case TimelineEvent.HealthUpdate health -> lastHealthByUUID.put(uuid, health.health());
                 case TimelineEvent.PlayerQuit ignored2 -> shouldHaveQuitAtTarget.add(uuid);
                 case TimelineEvent.EntityDeath ignored2 -> shouldBeDeadAtTarget.add(uuid);
                 default -> {}
@@ -479,6 +484,18 @@ public class ReplaySession implements Listener, PacketListener {
             RecordedEntity entity = recordedEntities.get(entry.getKey());
             if (entity instanceof RecordedPlayer rp) {
                 rp.updateEquipment(entry.getValue());
+            }
+        }
+
+        for (Map.Entry<UUID, RecordedEntity> entry : recordedEntities.entrySet()) {
+            RecordedEntity entity = entry.getValue();
+            if (entity instanceof RecordedPlayer) {
+                // Reset stale client health before applying the state at the seek target.
+                playbackEngine.updateHealth(entity, 20.0);
+            }
+            Double health = lastHealthByUUID.get(entry.getKey());
+            if (health != null) {
+                playbackEngine.updateHealth(entity, health);
             }
         }
     }

@@ -1,8 +1,10 @@
 package me.justindevb.replay.recording;
 
+import org.bukkit.Material;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -13,6 +15,7 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
@@ -255,16 +258,68 @@ public class RecordingEventHandler implements Listener {
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onEntityDamaged(EntityDamageEvent e) {
-        if (!tracker.isTrackedPlayer(e.getEntity().getUniqueId())) return;
+        Entity entity = e.getEntity();
+        if (!tracker.isTrackedPlayer(entity.getUniqueId()) && !tracker.isEntityTracked(entity.getUniqueId())) {
+            if (!(e instanceof EntityDamageByEntityEvent byEntity)
+                    || !(byEntity.getDamager() instanceof Player damager)
+                    || !tracker.isTrackedPlayer(damager.getUniqueId())
+                    || entity instanceof Player) return;
+
+            tracker.trackEntity(entity.getUniqueId(), entity.getType());
+            Location location = entity.getLocation();
+            builder.addEvent(new TimelineEvent.EntitySpawn(
+                    tickProvider.getTick(), entity.getUniqueId().toString(), entity.getType().name(), location.getWorld().getName(),
+                    location.getX(), location.getY(), location.getZ()
+            ));
+        }
+
+        double health = entity instanceof LivingEntity livingEntity
+                ? Math.max(0, livingEntity.getHealth() - e.getFinalDamage()) : -1;
+        boolean critical = e instanceof EntityDamageByEntityEvent byEntity
+                && byEntity.getDamager() instanceof Player damager
+                && tracker.isTrackedPlayer(damager.getUniqueId())
+                && isCriticalHit(damager);
 
         builder.addEvent(new TimelineEvent.Damaged(
                 tickProvider.getTick(),
-                e.getEntity().getUniqueId().toString(),
-                e.getEntity().getType().name(),
+                entity.getUniqueId().toString(),
+                entity.getType().name(),
                 e.getCause().name(),
-                e.getFinalDamage()
+                e.getFinalDamage(), health, critical
+        ));
+
+        if (entity instanceof Player player && tracker.isTrackedPlayer(player.getUniqueId())) {
+            Location location = player.getLocation();
+            if (location != null && location.getWorld() != null) {
+                builder.addEvent(new TimelineEvent.SoundEffect(
+                        tickProvider.getTick(), player.getUniqueId().toString(), "minecraft:entity.player.hurt",
+                        location.getWorld().getName(), location.getX(), location.getY(), location.getZ(), 1.0f, 1.0f
+                ));
+            }
+        }
+
+        if (e instanceof EntityDamageByEntityEvent byEntity
+                && byEntity.getDamager() instanceof Player damager
+                && tracker.isTrackedPlayer(damager.getUniqueId())) {
+            Location location = damager.getLocation();
+            builder.addEvent(new TimelineEvent.SoundEffect(
+                    tickProvider.getTick(), damager.getUniqueId().toString(),
+                    critical ? "minecraft:entity.player.attack.crit" : "minecraft:entity.player.attack.strong",
+                    location.getWorld().getName(), location.getX(), location.getY(), location.getZ(), 1.0f, 1.0f
+            ));
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPlayerRegainHealth(EntityRegainHealthEvent e) {
+        if (!(e.getEntity() instanceof Player player) || !tracker.isTrackedPlayer(player.getUniqueId())) return;
+
+        double health = Math.min(player.getMaxHealth(), player.getHealth() + e.getAmount());
+        builder.addEvent(new TimelineEvent.HealthUpdate(
+                tickProvider.getTick(), player.getUniqueId().toString(), player.getType().name(), health
         ));
     }
+
 
     @EventHandler(priority = EventPriority.MONITOR)
     public void onEntitySpawn(org.bukkit.event.entity.EntitySpawnEvent e) {
@@ -468,6 +523,16 @@ public class RecordingEventHandler implements Listener {
 
     private void markStorageDirty(UUID uuid) {
         storageDirtyMarker.accept(uuid);
+    }
+
+    private boolean isCriticalHit(Player player) {
+        return player.getFallDistance() > 0.0F &&
+                !player.isOnGround() &&
+                !player.isFlying() &&
+                !player.isInsideVehicle() &&
+                player.getLocation().getBlock().getType() != Material.LADDER &&
+                player.getLocation().getBlock().getType() != Material.VINE &&
+                player.getLocation().getBlock().getType() != Material.WATER;
     }
 
     private void markEquipmentDirty(UUID uuid) {

@@ -6,6 +6,7 @@ import me.justindevb.replay.util.ReplayMessages;
 import com.github.retrooper.packetevents.PacketEvents;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerDestroyEntities;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerEntityStatus;
+import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerHurtAnimation;
 import com.github.retrooper.packetevents.wrapper.play.server.WrapperPlayServerPlayerInfoRemove;
 import io.github.retrooper.packetevents.util.SpigotReflectionUtil;
 import org.bukkit.Location;
@@ -61,7 +62,8 @@ public abstract class RecordedEntity {
     public void showDamage() {
         if (fakeEntityId == 0) return;
 
-        WrapperPlayServerEntityStatus packet = new WrapperPlayServerEntityStatus(fakeEntityId, (byte) 2);
+        float yaw = currentLocation != null ? currentLocation.getYaw() : 0f;
+        WrapperPlayServerHurtAnimation packet = new WrapperPlayServerHurtAnimation(fakeEntityId, yaw);
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer, packet);
     }
 

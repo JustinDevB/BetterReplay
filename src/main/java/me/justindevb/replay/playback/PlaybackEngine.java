@@ -84,7 +84,15 @@ public class PlaybackEngine {
             case TimelineEvent.Swing e -> {
                 if (entity instanceof RecordedPlayer rp) rp.playSwing(e.hand());
             }
-            case TimelineEvent.Damaged e -> entity.showDamage();
+            case TimelineEvent.Damaged e -> {
+                entity.showDamage();
+                updateHealth(entity, e.health());
+                if (e.critical() && entity.getCurrentLocation() != null) {
+                    Location location = entity.getCurrentLocation().clone().add(0, 0.9, 0);
+                    viewer.spawnParticle(Particle.CRIT, location, 10, 0.25, 0.5, 0.25, 0.1);
+                }
+            }
+            case TimelineEvent.HealthUpdate e -> updateHealth(entity, e.health());
             case TimelineEvent.SprintToggle e -> {
                 if (entity instanceof RecordedPlayer rp) rp.updateSprint(e.sprinting());
             }
@@ -172,6 +180,15 @@ public class PlaybackEngine {
         PacketEvents.getAPI().getPlayerManager().sendPacket(viewer,
                 new WrapperPlayServerEntityMetadata(entity.getFakeEntityId(), Collections.singletonList(itemData)));
     }
+
+    public void updateHealth(RecordedEntity entity, double health) {
+        if (health < 0) return;
+
+        EntityData<Float> healthData = new EntityData<>(9, EntityDataTypes.FLOAT, (float) health);
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer,
+                new WrapperPlayServerEntityMetadata(entity.getFakeEntityId(), Collections.singletonList(healthData)));
+    }
+
 
     public void spawnFakeMob(RecordedEntity entity, TimelineEvent.EntitySpawn event) {
         Location loc = new Location(Bukkit.getWorld(event.world()),

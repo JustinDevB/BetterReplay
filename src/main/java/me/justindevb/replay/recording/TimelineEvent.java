@@ -70,7 +70,13 @@ public sealed interface TimelineEvent {
     record Swing(int tick, String uuid, String hand) implements TimelineEvent {}
 
     record Damaged(int tick, String uuid, String entityType, String cause,
-                   double finalDamage) implements TimelineEvent {}
+                   double finalDamage, double health, boolean critical) implements TimelineEvent {
+        public Damaged(int tick, String uuid, String entityType, String cause, double finalDamage) {
+            this(tick, uuid, entityType, cause, finalDamage, -1, false);
+        }
+    }
+
+    record HealthUpdate(int tick, String uuid, String entityType, double health) implements TimelineEvent {}
 
     record SoundEffect(int tick, String uuid, String sound, String world,
                        double x, double y, double z, float volume, float pitch) implements TimelineEvent {}
