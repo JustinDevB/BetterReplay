@@ -1,6 +1,7 @@
 package me.justindevb.replay.recording;
 
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -12,15 +13,18 @@ import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
+import org.bukkit.event.entity.EntityShootBowEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
+import org.bukkit.event.entity.ProjectileLaunchEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.Location;
 import org.bukkit.entity.EnderPearl;
 import org.bukkit.entity.SplashPotion;
+import org.bukkit.entity.Trident;
 import org.bukkit.inventory.meta.PotionMeta;
 
 import java.util.UUID;
@@ -342,6 +346,73 @@ public class RecordingEventHandler implements Listener {
                 location.getX(), location.getY(), location.getZ()
         ));
         tracker.removeEntity(uuid);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onArrowShoot(EntityShootBowEvent e) {
+        if (!(e.getEntity() instanceof Player player)
+                || !(e.getProjectile() instanceof AbstractArrow)
+                || e.getProjectile() instanceof Trident
+                || !tracker.isTrackedPlayer(player.getUniqueId())) return;
+
+        String sound = e.getBow() != null && e.getBow().getType() == org.bukkit.Material.CROSSBOW
+                ? "minecraft:item.crossbow.shoot" : "minecraft:entity.arrow.shoot";
+        Location location = player.getLocation();
+        builder.addEvent(new TimelineEvent.SoundEffect(
+                tickProvider.getTick(), player.getUniqueId().toString(), sound, location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ(), 1.0f, 1.0f
+        ));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onArrowHit(ProjectileHitEvent e) {
+        if (!(e.getEntity() instanceof AbstractArrow arrow)
+                || arrow instanceof Trident
+                || !tracker.isEntityTracked(arrow.getUniqueId())) return;
+
+        Location location = arrow.getLocation();
+        builder.addEvent(new TimelineEvent.SoundEffect(
+                tickProvider.getTick(), arrow.getUniqueId().toString(), "minecraft:entity.arrow.hit", location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ(), 1.0f, 1.0f
+        ));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTridentLaunch(ProjectileLaunchEvent e) {
+        if (!(e.getEntity() instanceof Trident trident)
+                || !(trident.getShooter() instanceof Player player)
+                || !tracker.isTrackedPlayer(player.getUniqueId())) return;
+
+        Location location = player.getLocation();
+        builder.addEvent(new TimelineEvent.SoundEffect(
+                tickProvider.getTick(), trident.getUniqueId().toString(), "minecraft:item.trident.throw", location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ(), 1.0f, 1.0f
+        ));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTridentHit(ProjectileHitEvent e) {
+        if (!(e.getEntity() instanceof Trident trident) || !tracker.isEntityTracked(trident.getUniqueId())) return;
+
+        Location location = trident.getLocation();
+        String sound = e.getHitBlock() != null
+                ? "minecraft:item.trident.hit_ground" : "minecraft:item.trident.hit";
+        builder.addEvent(new TimelineEvent.SoundEffect(
+                tickProvider.getTick(), trident.getUniqueId().toString(), sound, location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ(), 1.0f, 1.0f
+        ));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onTridentPickup(PlayerPickupArrowEvent e) {
+        if (!(e.getArrow() instanceof Trident trident) || !tracker.isEntityTracked(trident.getUniqueId())) return;
+
+        Location location = trident.getLocation();
+        builder.addEvent(new TimelineEvent.EntityDeath(
+                tickProvider.getTick(), trident.getUniqueId().toString(), trident.getType().name(), location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ()
+        ));
+        tracker.removeEntity(trident.getUniqueId());
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
