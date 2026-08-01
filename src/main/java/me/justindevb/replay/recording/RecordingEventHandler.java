@@ -15,9 +15,13 @@ import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.*;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.Location;
+import org.bukkit.entity.EnderPearl;
+import org.bukkit.entity.SplashPotion;
+import org.bukkit.inventory.meta.PotionMeta;
 
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -274,7 +278,8 @@ public class RecordingEventHandler implements Listener {
                 e.getLocation().getWorld().getName(),
                 e.getEntity().getLocation().getX(),
                 e.getEntity().getLocation().getY(),
-                e.getEntity().getLocation().getZ()
+                e.getEntity().getLocation().getZ(),
+                e.getEntity() instanceof SplashPotion potion ? serializeItem(potion.getItem()) : null
         ));
     }
 
@@ -297,6 +302,62 @@ public class RecordingEventHandler implements Listener {
 
         if (!(entity instanceof Player))
             tracker.removeEntity(uuid);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onProjectileHit(ProjectileHitEvent e) {
+        if (e.getEntity() instanceof EnderPearl pearl) {
+            UUID uuid = pearl.getUniqueId();
+            if (!tracker.isEntityTracked(uuid)) return;
+
+            Location location = pearl.getLocation();
+            builder.addEvent(new TimelineEvent.EntityDeath(
+                    tickProvider.getTick(),
+                    uuid.toString(),
+                    pearl.getType().name(),
+                    location.getWorld().getName(),
+                    location.getX(), location.getY(), location.getZ()
+            ));
+            tracker.removeEntity(uuid);
+            return;
+        }
+
+        if (!(e.getEntity() instanceof SplashPotion potion)) return;
+
+        UUID uuid = potion.getUniqueId();
+        if (!tracker.isEntityTracked(uuid)) return;
+
+        Location location = potion.getLocation();
+        org.bukkit.Color color = potion.getItem().getItemMeta() instanceof PotionMeta meta
+                && meta.getColor() != null ? meta.getColor() : org.bukkit.Color.fromRGB(56, 90, 255);
+        builder.addEvent(new TimelineEvent.SplashPotionImpact(
+                tickProvider.getTick(), uuid.toString(), location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ(), color.asRGB()
+        ));
+        builder.addEvent(new TimelineEvent.EntityDeath(
+                tickProvider.getTick(),
+                uuid.toString(),
+                potion.getType().name(),
+                location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ()
+        ));
+        tracker.removeEntity(uuid);
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEnderPearlTeleport(PlayerTeleportEvent e) {
+        if (e.getCause() != PlayerTeleportEvent.TeleportCause.ENDER_PEARL
+                || !tracker.isTrackedPlayer(e.getPlayer().getUniqueId())) return;
+
+        Location location = e.getTo();
+        if (location == null || location.getWorld() == null) return;
+
+        builder.addEvent(new TimelineEvent.SoundEffect(
+                tickProvider.getTick(),
+                e.getPlayer().getUniqueId().toString(),
+                "minecraft:entity.player.teleport", location.getWorld().getName(),
+                location.getX(), location.getY(), location.getZ(), 1.0f, 1.0f
+        ));
     }
 
     @EventHandler(priority = EventPriority.MONITOR)

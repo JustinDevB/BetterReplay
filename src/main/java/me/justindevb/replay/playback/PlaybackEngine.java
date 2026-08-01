@@ -107,7 +107,25 @@ public class PlaybackEngine {
                         : null;
                 if (stack != null && loc != null) spawnFakeDroppedItem(stack, loc);
             }
-            case TimelineEvent.EntitySpawn e -> spawnFakeMob(entity, e);
+            case TimelineEvent.EntitySpawn e -> {
+                trackedEntityIds.add(entity.getFakeEntityId());
+                if ("ENDER_PEARL".equals(e.etype())) {
+                    World world = Bukkit.getWorld(e.world());
+                    if (world != null) {
+                        viewer.playSound(new Location(world, e.x(), e.y(), e.z()),
+                                Sound.ENTITY_ENDER_PEARL_THROW, 1.0f, 0.0f);
+                    }
+                } else if ("SPLASH_POTION".equals(e.etype())) {
+                    setThrownItem(entity, e.item());
+                    World world = Bukkit.getWorld(e.world());
+                    if (world != null) {
+                        viewer.playSound(new Location(world, e.x(), e.y(), e.z()),
+                                Sound.ENTITY_SPLASH_POTION_THROW, 1.0f, 1.0f);
+                    }
+                }
+            }
+            case TimelineEvent.SoundEffect e -> playSound(e);
+            case TimelineEvent.SplashPotionImpact e -> playSplashPotionImpact(e);
             case TimelineEvent.PlayerQuit e -> {
                 UUID uuid = UUID.fromString(e.uuid());
                 recordedEntities.remove(uuid);
@@ -117,6 +135,42 @@ public class PlaybackEngine {
             }
             default -> {} // BlockBreakComplete, etc. — no playback action needed
         }
+    }
+
+    public void playSound(TimelineEvent.SoundEffect event) {
+        World world = Bukkit.getWorld(event.world());
+        if (world == null || event.sound() == null) return;
+
+        NamespacedKey soundKey = NamespacedKey.fromString(event.sound());
+        if (soundKey == null) return;
+
+        Sound sound = Registry.SOUNDS.get(soundKey);
+        if (sound == null) return;
+
+        viewer.playSound(new Location(world, event.x(), event.y(), event.z()),
+                sound, event.volume(), event.pitch());
+    }
+
+    public void playSplashPotionImpact(TimelineEvent.SplashPotionImpact event) {
+        World world = Bukkit.getWorld(event.world());
+        if (world == null) return;
+
+        Location location = new Location(world, event.x(), event.y(), event.z());
+        viewer.playSound(location, Sound.ENTITY_SPLASH_POTION_BREAK, 1.0f, 1.0f);
+        viewer.spawnParticle(Particle.EFFECT, location, 40, 0.35, 0.25, 0.35, 0,
+                new Particle.Spell(Color.fromRGB(event.color()), 1.0f));
+    }
+
+    private void setThrownItem(RecordedEntity entity, String serializedItem) {
+        ItemStack item = deserializeItem(serializedItem);
+        if (item == null) return;
+
+        com.github.retrooper.packetevents.protocol.item.ItemStack nmsItem =
+                SpigotConversionUtil.fromBukkitItemStack(item);
+        EntityData<com.github.retrooper.packetevents.protocol.item.ItemStack> itemData =
+                new EntityData<>(8, EntityDataTypes.ITEMSTACK, nmsItem);
+        PacketEvents.getAPI().getPlayerManager().sendPacket(viewer,
+                new WrapperPlayServerEntityMetadata(entity.getFakeEntityId(), Collections.singletonList(itemData)));
     }
 
     public void spawnFakeMob(RecordedEntity entity, TimelineEvent.EntitySpawn event) {

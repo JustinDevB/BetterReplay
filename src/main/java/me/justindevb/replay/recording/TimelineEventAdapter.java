@@ -171,6 +171,28 @@ public class TimelineEventAdapter implements JsonSerializer<TimelineEvent>, Json
                 json.addProperty("cause", e.cause());
                 json.addProperty("finalDamage", e.finalDamage());
             }
+            case TimelineEvent.SoundEffect e -> {
+                json.addProperty("tick", e.tick());
+                json.addProperty("type", "sound_effect");
+                json.addProperty("uuid", e.uuid());
+                json.addProperty("sound", e.sound());
+                json.addProperty("world", e.world());
+                json.addProperty("x", e.x());
+                json.addProperty("y", e.y());
+                json.addProperty("z", e.z());
+                json.addProperty("volume", e.volume());
+                json.addProperty("pitch", e.pitch());
+            }
+            case TimelineEvent.SplashPotionImpact e -> {
+                json.addProperty("tick", e.tick());
+                json.addProperty("type", "splash_potion_impact");
+                json.addProperty("uuid", e.uuid());
+                json.addProperty("world", e.world());
+                json.addProperty("x", e.x());
+                json.addProperty("y", e.y());
+                json.addProperty("z", e.z());
+                json.addProperty("color", e.color());
+            }
             case TimelineEvent.EntitySpawn e -> {
                 json.addProperty("tick", e.tick());
                 json.addProperty("type", "entity_spawn");
@@ -180,6 +202,7 @@ public class TimelineEventAdapter implements JsonSerializer<TimelineEvent>, Json
                 json.addProperty("x", e.x());
                 json.addProperty("y", e.y());
                 json.addProperty("z", e.z());
+                if (e.item() != null) json.addProperty("item", e.item());
             }
             case TimelineEvent.EntityDeath e -> {
                 json.addProperty("tick", e.tick());
@@ -303,12 +326,26 @@ public class TimelineEventAdapter implements JsonSerializer<TimelineEvent>, Json
                     optString(obj, "cause"),
                     optDouble(obj, "finalDamage", 0)
             );
+            case "sound_effect" -> new TimelineEvent.SoundEffect(
+                    tick, uuid,
+                    optString(obj, "sound"),
+                    optString(obj, "world"),
+                    optDouble(obj, "x", 0), optDouble(obj, "y", 0), optDouble(obj, "z", 0),
+                    optFloat(obj, "volume", 1f), optFloat(obj, "pitch", 1f)
+            );
+            case "splash_potion_impact" -> new TimelineEvent.SplashPotionImpact(
+                    tick, uuid,
+                    optString(obj, "world"),
+                    optDouble(obj, "x", 0), optDouble(obj, "y", 0), optDouble(obj, "z", 0),
+                    optInt(obj, "color", 0)
+            );
             // Accept both "entity_spawn" and legacy "mob_spawn" type strings.
             case "entity_spawn", "mob_spawn" -> new TimelineEvent.EntitySpawn(
                     tick, uuid,
                     optString(obj, "etype"),
                     optString(obj, "world"),
-                    optDouble(obj, "x", 0), optDouble(obj, "y", 0), optDouble(obj, "z", 0)
+                    optDouble(obj, "x", 0), optDouble(obj, "y", 0), optDouble(obj, "z", 0),
+                    optString(obj, "item")
             );
             case "entity_death" -> new TimelineEvent.EntityDeath(
                     tick, uuid,

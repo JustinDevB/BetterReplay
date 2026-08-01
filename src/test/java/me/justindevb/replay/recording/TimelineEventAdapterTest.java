@@ -393,6 +393,15 @@ class TimelineEventAdapterTest {
             TimelineEvent event = gson.fromJson(json, TimelineEvent.class);
             assertInstanceOf(TimelineEvent.EntitySpawn.class, event);
         }
+
+        @Test
+        void preservesOptionalThrownItem() {
+            var original = new TimelineEvent.EntitySpawn(
+                    18, "uuid-potion", "SPLASH_POTION", "world", 1, 64, 2, "serialized-potion");
+            var restored = (TimelineEvent.EntitySpawn) TimelineEventAdapterTest.this.roundtrip(original);
+
+            assertEquals("serialized-potion", restored.item());
+        }
     }
 
     // ── EntityDeath ───────────────────────────────────────────

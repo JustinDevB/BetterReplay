@@ -195,6 +195,18 @@ public class ReplaySession implements Listener, PacketListener {
                     continue;
                 }
 
+                if (event instanceof TimelineEvent.SoundEffect sound) {
+                    playbackEngine.playSound(sound);
+                    tick++;
+                    continue;
+                }
+
+                if (event instanceof TimelineEvent.SplashPotionImpact impact) {
+                    playbackEngine.playSplashPotionImpact(impact);
+                    tick++;
+                    continue;
+                }
+
                 String uuidStr = event.uuid();
                 if (uuidStr == null) {
                     tick++;
