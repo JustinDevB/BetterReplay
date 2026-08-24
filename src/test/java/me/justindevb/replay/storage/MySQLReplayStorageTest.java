@@ -253,6 +253,31 @@ class MySQLReplayStorageTest {
     }
 
     @Test
+    void filteredExportPreservesMatchingChunkData() throws Exception {
+        byte[] archive;
+        try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-export-artifacts"))) {
+            writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 'B', 'R', 'C', 'S', 1 }));
+            archive = new BinaryReplayStorageCodec().finalizeReplay(
+                    "chunk-export",
+                    new ReplaySaveRequest(
+                            List.of(new TimelineEvent.PlayerMove(0, "uuid-1", "Steve", "world", 1, 64, 1, 0, 0, "STANDING")),
+                            1_700_000_000_000L,
+                            writer.snapshotArtifacts()),
+                    VersionUtil.MIN_RECORDING_VERSION);
+        }
+        when(selectResultSet.next()).thenReturn(true);
+        when(selectResultSet.getBytes("data")).thenReturn(archive);
+
+        File exported = storage.getReplayFile("chunk-export", new ReplayExportQuery("Steve", null, null)).get();
+        assertNotNull(exported);
+        ReplayPlaybackData replayData = new BinaryReplayStorageCodec()
+                .decodeReplayData(Files.readAllBytes(exported.toPath()), VersionUtil.MIN_RECORDING_VERSION);
+
+        assertTrue(replayData.chunkData().hasChunkData());
+        assertEquals(1, replayData.chunkData().metadata().chunkEntryCount());
+    }
+
+    @Test
     void getReplayInfo_returnsTimestampCountsAndSizes() throws Exception {
         byte[] archive = new BinaryReplayStorageCodec().finalizeReplay("info", sampleTimeline(), "1.4.0", 123456789L);
         when(selectResultSet.next()).thenReturn(true);

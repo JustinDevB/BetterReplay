@@ -15,6 +15,8 @@ public class EntityTypeMapper {
             EntityType peType = EntityTypes.getByName(bukkitType.name().toLowerCase());
             if (peType != null) ENTITY_TYPE_MAP.put(bukkitType, peType);
         }
+        ENTITY_TYPE_MAP.put(org.bukkit.entity.EntityType.SPLASH_POTION, EntityTypes.SPLASH_POTION);
+        ENTITY_TYPE_MAP.put(org.bukkit.entity.EntityType.TRIDENT, EntityTypes.TRIDENT);
     }
 
     public static EntityType get(org.bukkit.entity.EntityType type) {

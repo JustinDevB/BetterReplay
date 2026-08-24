@@ -70,7 +70,19 @@ public sealed interface TimelineEvent {
     record Swing(int tick, String uuid, String hand) implements TimelineEvent {}
 
     record Damaged(int tick, String uuid, String entityType, String cause,
-                   double finalDamage) implements TimelineEvent {}
+                   double finalDamage, double health, boolean critical) implements TimelineEvent {
+        public Damaged(int tick, String uuid, String entityType, String cause, double finalDamage) {
+            this(tick, uuid, entityType, cause, finalDamage, -1, false);
+        }
+    }
+
+    record HealthUpdate(int tick, String uuid, String entityType, double health) implements TimelineEvent {}
+
+    record SoundEffect(int tick, String uuid, String sound, String world,
+                       double x, double y, double z, float volume, float pitch) implements TimelineEvent {}
+
+    record SplashPotionImpact(int tick, String uuid, String world,
+                             double x, double y, double z, int color) implements TimelineEvent {}
 
     // ── State toggles ─────────────────────────────────────────
 
@@ -81,7 +93,12 @@ public sealed interface TimelineEvent {
     // ── Lifecycle ─────────────────────────────────────────────
 
     record EntitySpawn(int tick, String uuid, String etype, String world,
-                       double x, double y, double z) implements TimelineEvent {}
+                       double x, double y, double z, String item) implements TimelineEvent {
+        public EntitySpawn(int tick, String uuid, String etype, String world,
+                           double x, double y, double z) {
+            this(tick, uuid, etype, world, x, y, z, null);
+        }
+    }
 
     record EntityDeath(int tick, String uuid, String etype, String world,
                        double x, double y, double z) implements TimelineEvent {}

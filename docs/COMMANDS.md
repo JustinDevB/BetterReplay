@@ -68,6 +68,7 @@ The export and debug dump parsers follow the same rules:
 - Tick filters must be non-negative integers.
 - Replay names may contain spaces as long as all filters come after the full name.
 - Replay names still have the same character restrictions as the main workflow commands.
+- Chunk-enabled binary replay exports preserve all chunk baseline data for all-player exports. When `player=` names a specific player, the export includes chunk baselines associated with that player's recorded movement path.
 
 `/replay debug info` does not accept filters.
 

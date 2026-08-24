@@ -58,6 +58,7 @@ public class RecordedPlayer extends RecordedEntity {
 
     @Override
     public void spawn(Location location) {
+        currentLocation = location;
         SpawnFakePlayer fakePlayer = new SpawnFakePlayer(uuid, name, location, viewer, super.fakeEntityId, () -> {
             this.spawned = true;
             sendMetadata();

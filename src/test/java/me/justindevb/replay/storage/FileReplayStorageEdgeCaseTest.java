@@ -1,10 +1,12 @@
 package me.justindevb.replay.storage;
 
 import me.justindevb.replay.Replay;
+import me.justindevb.replay.api.ReplayExportQuery;
 import me.justindevb.replay.chunk.CapturedChunkBaseline;
 import me.justindevb.replay.chunk.ChunkCoordinate;
 import me.justindevb.replay.recording.TimelineEvent;
 import me.justindevb.replay.storage.binary.BinaryChunkTempRegionFileWriter;
+import me.justindevb.replay.storage.binary.BinaryReplayStorageCodec;
 import me.justindevb.replay.util.VersionUtil;
 import io.papermc.paper.plugin.configuration.PluginMeta;
 import org.junit.jupiter.api.BeforeEach;
@@ -237,6 +239,25 @@ class FileReplayStorageEdgeCaseTest {
             assertEquals(1, replayData.timeline().size());
             assertTrue(replayData.chunkData().hasChunkData());
             assertTrue(replayData.chunkData().regionEntries().containsKey("chunks/world/r.0.0.brregion"));
+        }
+
+        @Test
+        void getReplayFile_withPlayerFilter_preservesMatchingChunkData() throws Exception {
+            try (BinaryChunkTempRegionFileWriter writer = new BinaryChunkTempRegionFileWriter(tempDir.toPath().resolve("chunk-export-artifacts"))) {
+                writer.append(new CapturedChunkBaseline(new ChunkCoordinate("world", 0, 0), new byte[] { 'B', 'R', 'C', 'S', 1 }));
+                storage.saveReplay("chunk-export", new ReplaySaveRequest(
+                        List.of(new TimelineEvent.PlayerMove(0, "uuid-1", "Steve", "world", 1, 64, 1, 0, 0, "STANDING")),
+                        1_700_000_000_000L,
+                        writer.snapshotArtifacts())).get();
+            }
+
+            File exported = storage.getReplayFile("chunk-export", new ReplayExportQuery("Steve", null, null)).get();
+            assertNotNull(exported);
+            ReplayPlaybackData replayData = new BinaryReplayStorageCodec()
+                    .decodeReplayData(Files.readAllBytes(exported.toPath()), VersionUtil.MIN_RECORDING_VERSION);
+
+            assertTrue(replayData.chunkData().hasChunkData());
+            assertEquals(1, replayData.chunkData().metadata().chunkEntryCount());
         }
     }
 }

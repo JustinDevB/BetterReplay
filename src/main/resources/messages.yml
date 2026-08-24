@@ -1,0 +1,26 @@
+# ===========================================
+#           BetterReplay Messages
+# ===========================================
+
+replay:
+  empty: "<red>Replay is empty!"
+  finished: "<green>Replay finished"
+
+action-bar:
+  paused: "<yellow>⏸ Replay paused: <gray>%current% / %total%"
+  playing: "<green>▶ Replay: <gray>%current% / %total% <dark_gray>(%percent%%) <aqua>[%speed%]"
+
+items:
+  pause-play: "<red>Pause / Play"
+  skip-forward: "<green>+5 seconds"
+  skip-backward: "<yellow>-5 seconds"
+  exit: "<dark_red>Exit Replay"
+  players: "<aqua>Players"
+  previous-frame: "<aqua>◀◀ Previous Frame"
+  next-frame: "<light_purple>▶▶ Next Frame"
+  slower: "<gold>⏪ Slower"
+  faster: "<blue>⏩ Faster"
+  speed-lore: "<gray>Current: %speed%"
+
+menus:
+  recorded-players: "<dark_gray>Recorded Players"

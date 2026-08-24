@@ -30,7 +30,10 @@ public enum BinaryRecordType {
     SNEAK_TOGGLE(0x0E, TimelineEvent.SneakToggle.class),
     ENTITY_SPAWN(0x0F, TimelineEvent.EntitySpawn.class),
     ENTITY_DEATH(0x10, TimelineEvent.EntityDeath.class),
-    PLAYER_QUIT(0x11, TimelineEvent.PlayerQuit.class);
+    PLAYER_QUIT(0x11, TimelineEvent.PlayerQuit.class),
+    SOUND_EFFECT(0x12, TimelineEvent.SoundEffect.class),
+    SPLASH_POTION_IMPACT(0x13, TimelineEvent.SplashPotionImpact.class),
+    HEALTH_UPDATE(0x14, TimelineEvent.HealthUpdate.class);
 
     private static final Map<Integer, BinaryRecordType> BY_TAG;
     private static final Map<Class<? extends TimelineEvent>, BinaryRecordType> BY_EVENT_TYPE;

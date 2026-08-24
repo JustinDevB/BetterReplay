@@ -138,6 +138,16 @@ final class BinaryReplayAppendLogCodec {
                 writeNullableStringRef(out, stringIndexer, e.entityType());
                 writeNullableStringRef(out, stringIndexer, e.cause());
                 writeDouble(out, e.finalDamage());
+                if (e.health() >= 0 || e.critical()) {
+                    writeDouble(out, e.health());
+                    writeBoolean(out, e.critical());
+                }
+            }
+            case TimelineEvent.HealthUpdate e -> {
+                writeInt(out, e.tick());
+                writeStringRef(out, stringIndexer, e.uuid());
+                writeNullableStringRef(out, stringIndexer, e.entityType());
+                writeDouble(out, e.health());
             }
             case TimelineEvent.SprintToggle e -> {
                 writeInt(out, e.tick());
@@ -157,6 +167,9 @@ final class BinaryReplayAppendLogCodec {
                 writeDouble(out, e.x());
                 writeDouble(out, e.y());
                 writeDouble(out, e.z());
+                if (e.item() != null) {
+                    writeNullableStringRef(out, stringIndexer, e.item());
+                }
             }
             case TimelineEvent.EntityDeath e -> {
                 writeInt(out, e.tick());
@@ -170,6 +183,26 @@ final class BinaryReplayAppendLogCodec {
             case TimelineEvent.PlayerQuit e -> {
                 writeInt(out, e.tick());
                 writeStringRef(out, stringIndexer, e.uuid());
+            }
+            case TimelineEvent.SoundEffect e -> {
+                writeInt(out, e.tick());
+                writeStringRef(out, stringIndexer, e.uuid());
+                writeNullableStringRef(out, stringIndexer, e.sound());
+                writeNullableStringRef(out, stringIndexer, e.world());
+                writeDouble(out, e.x());
+                writeDouble(out, e.y());
+                writeDouble(out, e.z());
+                writeFloat(out, e.volume());
+                writeFloat(out, e.pitch());
+            }
+            case TimelineEvent.SplashPotionImpact e -> {
+                writeInt(out, e.tick());
+                writeStringRef(out, stringIndexer, e.uuid());
+                writeNullableStringRef(out, stringIndexer, e.world());
+                writeDouble(out, e.x());
+                writeDouble(out, e.y());
+                writeDouble(out, e.z());
+                writeInt(out, e.color());
             }
         }
         return out.toByteArray();
@@ -312,7 +345,9 @@ final class BinaryReplayAppendLogCodec {
                         cursor.readStringRef(stringTable),
                         cursor.readNullableStringRef(stringTable),
                         cursor.readNullableStringRef(stringTable),
-                        cursor.readDouble());
+                        cursor.readDouble(),
+                        cursor.hasRemaining() ? cursor.readDouble() : -1,
+                        cursor.hasRemaining() && cursor.readBoolean());
                 cursor.ensureFullyRead();
                 yield event;
             }
@@ -340,7 +375,8 @@ final class BinaryReplayAppendLogCodec {
                     cursor.readNullableStringRef(stringTable),
                         cursor.readDouble(),
                         cursor.readDouble(),
-                        cursor.readDouble());
+                        cursor.readDouble(),
+                        cursor.hasRemaining() ? cursor.readNullableStringRef(stringTable) : null);
                 cursor.ensureFullyRead();
                 yield event;
             }
@@ -360,6 +396,41 @@ final class BinaryReplayAppendLogCodec {
                 TimelineEvent.PlayerQuit event = new TimelineEvent.PlayerQuit(
                         cursor.readInt(),
                         cursor.readStringRef(stringTable));
+                cursor.ensureFullyRead();
+                yield event;
+            }
+            case HEALTH_UPDATE -> {
+                TimelineEvent.HealthUpdate event = new TimelineEvent.HealthUpdate(
+                        cursor.readInt(),
+                        cursor.readStringRef(stringTable),
+                        cursor.readNullableStringRef(stringTable),
+                        cursor.readDouble());
+                cursor.ensureFullyRead();
+                yield event;
+            }
+            case SOUND_EFFECT -> {
+                TimelineEvent.SoundEffect event = new TimelineEvent.SoundEffect(
+                        cursor.readInt(),
+                        cursor.readStringRef(stringTable),
+                        cursor.readNullableStringRef(stringTable),
+                        cursor.readNullableStringRef(stringTable),
+                        cursor.readDouble(),
+                        cursor.readDouble(),
+                        cursor.readDouble(),
+                        cursor.readFloat(),
+                        cursor.readFloat());
+                cursor.ensureFullyRead();
+                yield event;
+            }
+            case SPLASH_POTION_IMPACT -> {
+                TimelineEvent.SplashPotionImpact event = new TimelineEvent.SplashPotionImpact(
+                        cursor.readInt(),
+                        cursor.readStringRef(stringTable),
+                        cursor.readNullableStringRef(stringTable),
+                        cursor.readDouble(),
+                        cursor.readDouble(),
+                        cursor.readDouble(),
+                        cursor.readInt());
                 cursor.ensureFullyRead();
                 yield event;
             }
@@ -558,6 +629,10 @@ final class BinaryReplayAppendLogCodec {
             if (offset != bytes.length) {
                 throw new IllegalArgumentException("Unexpected trailing bytes in append-log record payload");
             }
+        }
+
+        boolean hasRemaining() {
+            return offset < bytes.length;
         }
 
         private byte[] copyOfRange(int start, int length) {
