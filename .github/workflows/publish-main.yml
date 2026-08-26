@@ -2,8 +2,8 @@ name: Publish Release
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*.*.*'
 
 permissions:
   contents: read
@@ -21,12 +21,34 @@ jobs:
           java-version: 26
           distribution: 'temurin'
 
-      - name: Build
-        run: mvn install
-
       - name: Resolve version
         id: version
         run: echo "VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)" >> $GITHUB_OUTPUT
+
+      - name: Validate release tag
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+          import sys
+
+          version = os.environ["VERSION"]
+          tag = os.environ["GITHUB_REF_NAME"]
+
+          if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+              print(f"Stable releases require an X.Y.Z project version, found {version}.", file=sys.stderr)
+              sys.exit(1)
+
+          expected_tag = f"v{version}"
+          if tag != expected_tag:
+              print(f"Release tag {tag} does not match pom.xml version {version}; expected {expected_tag}.", file=sys.stderr)
+              sys.exit(1)
+          PY
+
+      - name: Build
+        run: mvn install
 
       - name: Resolve Modrinth changelog
         id: modrinth_changelog
@@ -68,7 +90,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: BetterReplay-release
-          path: target/*.jar
+          path: target/BetterReplay-${{ steps.version.outputs.VERSION }}.jar
 
       - name: Publish to Modrinth
         if: github.repository == 'justindevb/BetterReplay'
@@ -77,7 +99,7 @@ jobs:
           modrinth-id: ${{ secrets.MODRINTH_PROJECT_ID }}
           modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
           modrinth-changelog: ${{ steps.modrinth_changelog.outputs.CHANGELOG }}
-          files: target/BetterReplay-*.jar
+          files: target/BetterReplay-${{ steps.version.outputs.VERSION }}.jar
           version: ${{ steps.version.outputs.VERSION }}
           version-type: release
           loaders: |
