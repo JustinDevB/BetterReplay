@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-08-26
+
 ### Added
 - 2026-08-24: Configurable MiniMessage-based replay messages and persistent control-item metadata, plus replay viewer PDC state controls for safer inventory interactions
 - 2026-08-24: Replay playback effects for ender pearls, splash potions, arrows, tridents, combat damage, health changes, hurt sounds, and critical hits
@@ -75,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-23: Active recordings now preserve append logs and chunk temp files during plugin shutdown so startup recovery can finalize them instead of discarding the in-progress replay
 - 2026-06-24: `/replay export` now includes chunk baseline data from chunk-enabled binary replays, preserving all chunks for all-player exports and filtering chunks to the selected player's associated movement path for player-specific exports
 - 2026-07-29: Replay player skin metadata now honors ViaVersion proxy-reported client versions from `vv:proxy_details`, preventing invalid metadata when a backend reports the proxy protocol instead of the real client version
+- 2026-08-26: Stable publishing now runs from a matching `vX.Y.Z` tag instead of the nonexistent `main` branch and uploads only the exact versioned plugin JAR
 
 ## [1.4.0] - 2026-04-10
 
@@ -168,9 +171,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Item drop recording from player inventory
 - Initial commit with base plugin structure
 
-[Unreleased]: https://github.com/DriftN2Forty/BetterReplay/compare/v1.4.0...HEAD
-[1.4.0]: https://github.com/DriftN2Forty/BetterReplay/compare/v1.3.0...v1.4.0
-[1.3.0]: https://github.com/DriftN2Forty/BetterReplay/compare/v1.2.0...v1.3.0
-[1.2.0]: https://github.com/DriftN2Forty/BetterReplay/compare/v1.1.0...v1.2.0
-[1.1.0]: https://github.com/DriftN2Forty/BetterReplay/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/DriftN2Forty/BetterReplay/releases/tag/v1.0.0
+[Unreleased]: https://github.com/JustinDevB/BetterReplay/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/JustinDevB/BetterReplay/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/JustinDevB/BetterReplay/compare/v1.3.0...v1.4.0
+[1.3.0]: https://github.com/JustinDevB/BetterReplay/compare/v1.2.0...v1.3.0
+[1.2.0]: https://github.com/JustinDevB/BetterReplay/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/JustinDevB/BetterReplay/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/JustinDevB/BetterReplay/releases/tag/v1.0.0
