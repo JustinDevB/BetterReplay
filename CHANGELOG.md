@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- 2026-08-24: Configurable MiniMessage-based replay messages and persistent control-item metadata, plus replay viewer PDC state controls for safer inventory interactions
+- 2026-08-24: Replay playback effects for ender pearls, splash potions, arrows, tridents, combat damage, health changes, hurt sounds, and critical hits
 - 2026-04-17: Frame-by-frame step controls during paused replay; step backward or forward one tick group at a time via `⏮` and `⏭` inventory buttons
 - 2026-04-19: Variable playback speed controls during active replay, current speed action-bar feedback, and config keys `Playback.Speed-Step` plus `Playback.Max-Speed`
 - 2026-04-27: Finalized binary `.br` replay storage for file and MySQL backends, including crash-safe append-log recording, lazy indexed loading, preserved recording start timestamps, startup recovery of orphaned temp logs, and temporary legacy JSON compatibility during migration
@@ -23,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 2026-06-14: Config key `Velocity.Default-Replay-Server` to route `/replay play <name>` to a default Velocity replay backend when no `server:<backend>` argument is supplied
 
 ### Changed
+- 2026-08-24: Updated PacketEvents to `2.13.0` and restored replay player skin metadata dispatch
 - 2026-04-11: `RecordingStopEvent` now fires synchronously to fix async AntiCheatReplay compatibility
 - 2026-04-19: Update checks now treat `-SNAPSHOT` builds as their corresponding release version
 - 2026-04-20: Config settings ownership moved out of `Replay` into a dedicated typed, comment-preserving config manager with versioned migrations
