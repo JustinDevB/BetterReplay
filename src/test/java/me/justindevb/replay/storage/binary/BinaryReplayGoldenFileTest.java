@@ -14,6 +14,7 @@ import java.util.zip.ZipInputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BinaryReplayGoldenFileTest {
@@ -61,6 +62,9 @@ class BinaryReplayGoldenFileTest {
         assertEquals(MINIMAL_RECORDING_STARTED_AT, manifest.recordingStartedAtEpochMillis());
         assertEquals(BinaryReplayFormat.PAYLOAD_CHECKSUM_ALGORITHM, manifest.payloadChecksumAlgorithm());
         assertNotNull(manifest.payloadChecksum());
+        assertNull(manifest.payloadCompression());
+        assertEquals(BinaryReplayPayloadCompression.LZ4_FRAME,
+                BinaryReplayPayloadCompression.detect(entries.get(BinaryReplayFormat.REPLAY_ENTRY_NAME)));
     }
 
     private static byte[] readFixture(String resourcePath) throws IOException {

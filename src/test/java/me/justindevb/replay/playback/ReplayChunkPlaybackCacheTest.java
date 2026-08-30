@@ -11,6 +11,7 @@ import me.justindevb.replay.storage.binary.BinaryChunkRegionEntry;
 import me.justindevb.replay.storage.binary.BinaryReplayChunkMetadata;
 import org.junit.jupiter.api.Test;
 
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,9 +31,10 @@ class ReplayChunkPlaybackCacheTest {
     private final BinaryChunkRegionCodec regionCodec = new BinaryChunkRegionCodec();
 
     @Test
-    void loadChunk_decodesStoredChunkPayloadOnDemand() throws Exception {
+    void loadChunk_decodesLegacyLz4ChunkPayloadOnDemand() throws Exception {
         byte[] payload = payloadCodec.encode(0, 1, List.of("minecraft:stone"), new short[16 * 16]);
-        byte[] compressedPayload = compress(payload);
+        byte[] compressedPayload = Base64.getDecoder().decode(
+                "BCJNGGBwcywAAABiQlJDUwEAAQAACADyAgEPbWluZWNyYWZ0OnN0b25lGwAPAgD/41AAAAAAAAAAAAA=");
         byte[] regionBytes = regionCodec.encode(List.of(new BinaryChunkRegionEntry(0, 0, payload.length, BinaryChunkCompression.LZ4_FRAME, compressedPayload)));
         ReplayChunkData chunkData = new ReplayChunkData(
                 BinaryReplayChunkMetadata.present(1, 1, "abcd"),

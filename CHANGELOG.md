@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- 2026-08-30: Replaced the archived `org.lz4:lz4-java` dependency with the maintained `at.yawk.lz4:lz4-java` fork while preserving legacy LZ4 replay decoding (#97)
+
 ## [1.5.0] - 2026-08-26
 
 ### Added
