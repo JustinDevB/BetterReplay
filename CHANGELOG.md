@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - 2026-08-29: Replay loading now bounds file, MySQL, ZIP, LZ4, Zstd, GZIP, timeline-index, and chunk-payload allocations; validates declared sizes and codec metadata; and rejects malformed archive structures before they can exhaust server memory
+- 2026-08-30: Replaced the archived `org.lz4:lz4-java` dependency with the maintained `at.yawk.lz4:lz4-java` fork while preserving legacy LZ4 replay decoding (#97)
 
 ## [1.5.0] - 2026-08-26
 
