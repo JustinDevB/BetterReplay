@@ -8,7 +8,6 @@ import org.bukkit.entity.Player;
 
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 
@@ -95,9 +94,10 @@ public class ReplayTransferManager {
             return;
         }
 
-        CompletableFuture<?> sendTask = plugin.getFoliaLib().getScheduler()
-                .runAtEntity(player, ignored -> player.sendPluginMessage(plugin, CHANNEL, message));
-        sendTask.join();
+        plugin.getFoliaLib().getScheduler().runAtEntity(
+                player,
+                ignored -> player.sendPluginMessage(plugin, CHANNEL, message)
+        );
     }
 
     private boolean requiresEntityScheduling(Player player) {

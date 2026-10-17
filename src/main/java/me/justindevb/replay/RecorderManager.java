@@ -70,6 +70,7 @@ public class RecorderManager {
             tickTask.cancel();
             tickTask = null;
         }
+
         return true;
     }
 
@@ -178,13 +179,16 @@ public class RecorderManager {
     public void replaySession(String name, Player viewer) {
         replay.getReplayStorage().loadReplay(name)
                 .thenAccept(timeline -> {
-                   // Bukkit.getScheduler().runTask(replay, () -> {
-                    replay.getFoliaLib().getScheduler().runNextTick(task -> {
+                    replay.getFoliaLib().getScheduler().runAtEntity(viewer, task -> {
                         new ReplaySession(timeline, viewer, replay).start();
                     });
                 })
                 .exceptionally(ex -> {
-                    replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to load replay: " + name, ex);
+                    replay.getLogger().log(
+                            java.util.logging.Level.SEVERE,
+                            "Failed to load replay: " + name,
+                            ex
+                    );
                     ReplayMessages.send(viewer, "§cFailed to load replay: " + name);
                     return null;
                 });

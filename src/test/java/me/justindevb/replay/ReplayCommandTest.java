@@ -520,20 +520,11 @@ class ReplayCommandTest {
                     new ReplaySummary("protected", Instant.EPOCH, 20L, true, Instant.EPOCH, "Steve", ReplayStorageType.FILE)
             )));
 
-            try (MockedStatic<Replay> replay = mockStatic(Replay.class);
-                 MockedStatic<Bukkit> bukkit = mockStatic(Bukkit.class)) {
-                Replay plugin = mock(Replay.class);
-                org.bukkit.scheduler.BukkitScheduler bukkitScheduler = mock(org.bukkit.scheduler.BukkitScheduler.class);
-
+            try (MockedStatic<Replay> replay = mockStatic(Replay.class)) {
+                Replay plugin = immediateReplayPlugin();
                 when(plugin.getConfig()).thenReturn(configWithProtectedReplayColor("&c"));
-                doAnswer(invocation -> {
-                    Runnable runnable = invocation.getArgument(1);
-                    runnable.run();
-                    return null;
-                }).when(bukkitScheduler).runTask(eq(plugin), any(Runnable.class));
 
                 replay.when(Replay::getInstance).thenReturn(plugin);
-                bukkit.when(Bukkit::getScheduler).thenReturn(bukkitScheduler);
 
                 replayCommand.onCommand(player, command, "replay", new String[]{"list"});
 

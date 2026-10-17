@@ -18,6 +18,6 @@ public class ReplayJoinListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
 
-        plugin.getFoliaLib().getScheduler().runLater(() -> plugin.getTransferManager().requestPendingReplay(player), 20L);
+        plugin.getFoliaLib().getScheduler().runAtEntityLater(player,ignored -> plugin.getTransferManager().requestPendingReplay(player),20L);
     }
 }

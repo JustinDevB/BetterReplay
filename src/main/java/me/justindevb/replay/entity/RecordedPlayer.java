@@ -321,8 +321,8 @@ public class RecordedPlayer extends RecordedEntity {
             inv.setItem(40, toItemStack(currentEquipment.offHand()));
         }
 
-        Replay.getInstance().getFoliaLib().getScheduler().runNextTick(task -> {
-           viewer.openInventory(inv);
+        Replay.getInstance().getFoliaLib().getScheduler().runAtEntity(viewer, task -> {
+            viewer.openInventory(inv);
         });
     }
 

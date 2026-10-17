@@ -10,7 +10,6 @@ import me.justindevb.replay.util.ReplayCache;
 import me.justindevb.replay.util.ReplayMessages;
 import me.justindevb.replay.util.ReplayNames;
 import me.justindevb.replay.util.VersionUtil;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 
 import java.io.File;
@@ -78,27 +77,27 @@ public class ReplayManagerImpl implements ReplayManager {
         }
         Optional<String> invalidName = ReplayNames.validateReplayName(replayName);
         if (invalidName.isPresent()) {
-            runSync(() -> ReplayMessages.send(viewer, "§c" + invalidName.get()));
+        	runForPlayer(viewer,(() -> ReplayMessages.send(viewer, "§c" + invalidName.get())));
             return CompletableFuture.completedFuture(Optional.empty());
         }
 
         return replay.getReplayStorage().replayExists(replayName)
                 .thenCompose(exists -> {
                     if (!exists) {
-                        runSync(() -> ReplayMessages.send(viewer, "§cReplay not found: " + replayName));
+                    	runForPlayer(viewer,(() -> ReplayMessages.send(viewer, "§cReplay not found: " + replayName)));
                         return CompletableFuture.completedFuture(Optional.<ReplaySession>empty());
                     }
 
                     return replay.getReplayStorage().loadReplayData(replayName)
                             .thenApply(replayData -> {
                                 if (replayData == null || replayData.timeline().isEmpty()) {
-                                    runSync(() -> ReplayMessages.send(viewer, "§cReplay is empty or corrupted: " + replayName));
+                                	runForPlayer(viewer,(() -> ReplayMessages.send(viewer, "§cReplay is empty or corrupted: " + replayName)));
                                     return Optional.<ReplaySession>empty();
                                 }
 
                                 ReplaySession session = new ReplaySession(replayData, viewer, replay);
 
-                                runSync(session::start);
+                                runForPlayer(viewer,(session::start));
 
                                 return Optional.of(session);
                             });
@@ -109,23 +108,29 @@ public class ReplayManagerImpl implements ReplayManager {
                         cause = cause.getCause();
                     }
                     if (cause instanceof VersionUtil.ReplayVersionMismatchException mismatch) {
-                        runSync(() -> ReplayMessages.send(viewer, "§cThis recording requires BetterReplay v"
+                    	runForPlayer(viewer,(() -> ReplayMessages.send(viewer, "§cThis recording requires BetterReplay v"
                                 + mismatch.getRequiredVersion() + "+. You are running v"
-                                + mismatch.getRunningVersion() + "."));
+                                + mismatch.getRunningVersion() + ".")));
                     } else {
                         replay.getLogger().log(java.util.logging.Level.SEVERE, "Failed to start replay: " + replayName, ex);
-                        runSync(() -> ReplayMessages.send(viewer, "§cFailed to start replay: " + replayName));
+                        runForPlayer(viewer,(() -> ReplayMessages.send(viewer, "§cFailed to start replay: " + replayName)));
                     }
                     return Optional.empty();
                 });
     }
 
-    private void runSync(Runnable task) {
-        if (Bukkit.isPrimaryThread()) {
-            task.run();
-        } else {
-            replay.getFoliaLib().getScheduler().runLater(task, 1L);
+    private void runForPlayer(Player player, Runnable task) {
+        if (player == null || task == null) return;
+
+        if (replay.getFoliaLib() != null) {
+            replay.getFoliaLib().getScheduler().runAtEntity(
+                    player,
+                    ignored -> task.run()
+            );
+            return;
         }
+
+        task.run();
     }
 
     @Override
