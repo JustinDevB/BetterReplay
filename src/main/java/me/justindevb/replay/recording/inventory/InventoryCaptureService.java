@@ -8,11 +8,32 @@ import org.bukkit.inventory.PlayerInventory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class InventoryCaptureService {
 
+    private static final int EQUIPMENT_SLOTS = 6;
+
+    // Last serialized form per slot. Serializing gzips the item NBT, so unchanged slots reuse it.
+    private final Map<UUID, ItemMemo> storageMemos = new ConcurrentHashMap<>();
+    private final Map<UUID, ItemMemo> equipmentMemos = new ConcurrentHashMap<>();
+
     public CapturedInventoryStorageSnapshot captureStorage(Player player) {
-        return captureStorage(player.getInventory());
+        PlayerInventory inventory = player.getInventory();
+        ItemStack[] storageContents = inventory.getStorageContents();
+        if (storageContents == null) {
+            storageContents = new ItemStack[36];
+        }
+        ItemMemo memo = storageMemos.computeIfAbsent(player.getUniqueId(), ignored -> new ItemMemo());
+        memo.ensureSize(storageContents.length);
+        List<SerializedItemData> captured = new ArrayList<>(storageContents.length);
+        for (int slot = 0; slot < storageContents.length; slot++) {
+            captured.add(memo.serialize(slot, storageContents[slot]));
+        }
+        List<SerializedItemData> storage = List.copyOf(captured);
+        return new CapturedInventoryStorageSnapshot(storage, computeHash(storage));
     }
 
     public CapturedInventoryStorageSnapshot captureStorage(PlayerInventory inventory) {
@@ -25,7 +46,19 @@ public final class InventoryCaptureService {
     }
 
     public CapturedEquipmentState captureEquipment(Player player) {
-        return captureEquipment(player.getInventory());
+        PlayerInventory inventory = player.getInventory();
+        ItemMemo memo = equipmentMemos.computeIfAbsent(player.getUniqueId(), ignored -> new ItemMemo());
+        memo.ensureSize(EQUIPMENT_SLOTS);
+        List<SerializedItemData> armor = List.of(
+                memo.serialize(0, inventory.getBoots()),
+                memo.serialize(1, inventory.getLeggings()),
+                memo.serialize(2, inventory.getChestplate()),
+                memo.serialize(3, inventory.getHelmet())
+        );
+        SerializedItemData mainHand = memo.serialize(4, inventory.getItemInMainHand());
+        SerializedItemData offHand = memo.serialize(5, inventory.getItemInOffHand());
+        long stateHash = computeHash(armor, inventory.getHeldItemSlot(), mainHand, offHand);
+        return new CapturedEquipmentState(inventory.getHeldItemSlot(), mainHand, offHand, armor, stateHash);
     }
 
     public CapturedEquipmentState captureEquipment(PlayerInventory inventory) {
@@ -103,6 +136,34 @@ public final class InventoryCaptureService {
         hash = 31L * hash + mainHand.hashCode();
         hash = 31L * hash + offHand.hashCode();
         return hash;
+    }
+
+    private static final class ItemMemo {
+        private ItemStack[] items = new ItemStack[0];
+        private SerializedItemData[] serialized = new SerializedItemData[0];
+
+        void ensureSize(int size) {
+            if (items.length != size) {
+                items = new ItemStack[size];
+                serialized = new SerializedItemData[size];
+            }
+        }
+
+        SerializedItemData serialize(int slot, ItemStack item) {
+            if (item == null) {
+                items[slot] = null;
+                serialized[slot] = null;
+                return SerializedItemData.fromItemStack(null);
+            }
+            if (serialized[slot] != null && item.equals(items[slot])) {
+                return serialized[slot];
+            }
+            SerializedItemData data = SerializedItemData.fromItemStack(item);
+            // The inventory hands out live stacks, so keep a copy to compare against.
+            items[slot] = item.clone();
+            serialized[slot] = data;
+            return data;
+        }
     }
 
     public record CapturedInventoryStorageSnapshot(List<SerializedItemData> storage, long snapshotHash) {
